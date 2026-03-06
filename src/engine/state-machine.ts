@@ -87,3 +87,10 @@ export function validateFlow(flow: Flow): ValidationError[] {
 
   return errors;
 }
+
+/**
+ * A state is terminal if no transitions use it as fromState.
+ */
+export function isTerminal(flow: Flow, state: string): boolean {
+  return !flow.transitions.some((t) => t.fromState === state);
+}

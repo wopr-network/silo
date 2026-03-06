@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCondition, findTransition, validateFlow } from "../../src/engine/state-machine.js";
+import { evaluateCondition, findTransition, isTerminal, validateFlow } from "../../src/engine/state-machine.js";
 import type { Flow, Transition } from "../../src/repositories/interfaces.js";
 
 // ─── evaluateCondition ───
@@ -286,5 +286,23 @@ describe("validateFlow", () => {
     });
     const errors = validateFlow(flow);
     expect(errors.some((e) => e.message.includes("island") && e.message.includes("unreachable"))).toBe(true);
+  });
+});
+
+describe("isTerminal", () => {
+  it("returns true when no outgoing transitions exist", () => {
+    const flow = makeFlow({
+      states: [{ name: "open" }, { name: "closed" }],
+      transitions: [{ fromState: "open", toState: "closed", trigger: "done" }],
+    });
+    expect(isTerminal(flow, "closed")).toBe(true);
+  });
+
+  it("returns false when outgoing transitions exist", () => {
+    const flow = makeFlow({
+      states: [{ name: "open" }, { name: "closed" }],
+      transitions: [{ fromState: "open", toState: "closed", trigger: "done" }],
+    });
+    expect(isTerminal(flow, "open")).toBe(false);
   });
 });
