@@ -36,6 +36,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@linear/sdk": "^76.0.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^12.6.2",
