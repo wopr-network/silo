@@ -492,7 +492,7 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
   // emission, invocation creation, concurrency checks, and spawn logic.
   let result: Awaited<ReturnType<typeof deps.engine.processSignal>>;
   try {
-    result = await deps.engine.processSignal(entityId, signal, artifacts);
+    result = await deps.engine.processSignal(entityId, signal, artifacts, activeInvocation.id);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return errorResult(message);

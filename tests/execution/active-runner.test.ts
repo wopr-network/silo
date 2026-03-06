@@ -80,7 +80,7 @@ describe("ActiveRunner", () => {
 
     expect(invocationRepo.claim).toHaveBeenCalledWith("inv-1", "active-runner");
     expect(aiAdapter.invoke).toHaveBeenCalledWith("Write the code", { model: "claude-sonnet-4-6" });
-    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] });
+    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] }, "inv-1");
     expect(invocationRepo.complete).toHaveBeenCalledWith("inv-1", "done", { files: ["main.ts"] });
   });
 
@@ -167,7 +167,7 @@ describe("ActiveRunner", () => {
     await runner.run({ once: true });
 
     expect(invocationRepo.complete).toHaveBeenCalledWith("inv-1", "complete", {});
-    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "complete", {});
+    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "complete", {}, "inv-1");
   });
 
   it("stops on abort signal", async () => {
@@ -193,7 +193,7 @@ describe("ActiveRunner", () => {
 
     await runner.run({ once: true });
 
-    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] });
+    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] }, "inv-1");
     expect(invocationRepo.complete).not.toHaveBeenCalled();
     expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", "transition not found");
   });
@@ -206,7 +206,7 @@ describe("ActiveRunner", () => {
 
     await runner.run({ once: true });
 
-    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] });
+    expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] }, "inv-1");
     expect(invocationRepo.complete).toHaveBeenCalledWith("inv-1", "done", { files: ["main.ts"] });
     // complete() threw but the runner should not rethrow — loop continues
     expect(invocationRepo.fail).not.toHaveBeenCalled();

@@ -108,7 +108,7 @@ export class ActiveRunner {
     }
 
     try {
-      await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts);
+      await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts, invocation.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
