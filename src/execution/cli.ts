@@ -191,6 +191,12 @@ program
   .option("--poll-interval <ms>", "Poll interval in milliseconds", "5000")
   .option("--db <path>", "Database path", DB_DEFAULT)
   .action(async (opts) => {
+    const pollInterval = parseInt(opts.pollInterval, 10);
+    if (Number.isNaN(pollInterval) || pollInterval < 100) {
+      console.error(`Invalid --poll-interval: must be a number >= 100ms`);
+      process.exit(1);
+    }
+
     const { db, sqlite } = openDb(opts.db);
     const flowRepo = new DrizzleFlowRepository(db);
     const entityRepo = new DrizzleEntityRepository(db);
@@ -234,24 +240,28 @@ program
 
     const ac = new AbortController();
     let closed = false;
-    const shutdown = () => {
+    const cleanup = async () => {
+      if (closed) return;
+      closed = true;
       ac.abort();
-      if (!closed) {
-        closed = true;
-        sqlite.close();
-      }
+      // Give in-flight operations a moment to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      sqlite.close();
+      process.exit(0);
     };
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", () => {
+      cleanup().catch(() => process.exit(1));
+    });
+    process.on("SIGTERM", () => {
+      cleanup().catch(() => process.exit(1));
+    });
 
-    console.log(
-      `Active runner started${opts.flow ? ` (flow: ${opts.flow})` : ""}, poll interval: ${opts.pollInterval}ms`,
-    );
+    console.log(`Active runner started${opts.flow ? ` (flow: ${opts.flow})` : ""}, poll interval: ${pollInterval}ms`);
 
     await runner.run({
       flowName: opts.flow,
       once: opts.once ?? false,
-      pollIntervalMs: parseInt(opts.pollInterval, 10),
+      pollIntervalMs: pollInterval,
       signal: ac.signal,
     });
 

@@ -12,8 +12,18 @@ export class DrizzleTransitionLogRepository implements ITransitionLogRepository 
 
   async record(log: Omit<TransitionLog, "id">): Promise<TransitionLog> {
     const id = randomUUID();
-    // entityHistory is already written by DrizzleEntityRepository.transition();
-    // inserting again here would create duplicate rows.
+    this.db
+      .insert(entityHistory)
+      .values({
+        id,
+        entityId: log.entityId,
+        fromState: log.fromState ?? null,
+        toState: log.toState,
+        trigger: log.trigger ?? null,
+        invocationId: log.invocationId ?? null,
+        timestamp: log.timestamp.getTime(),
+      })
+      .run();
     return { id, ...log };
   }
 
