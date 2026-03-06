@@ -16,6 +16,7 @@ import { findTransition, isTerminal } from "./state-machine.js";
 
 export interface ProcessSignalResult {
   newState?: string;
+  /** Names (not IDs) of gates that evaluated and passed during this transition. */
   gatesPassed: string[];
   gated: boolean;
   gateOutput?: string;

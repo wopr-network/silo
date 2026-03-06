@@ -64,7 +64,10 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: "flow.report",
-    description: "Report completion of work on an entity. Triggers state transition and gate evaluation.",
+    description:
+      "Report completion of work on an entity. Triggers state transition and gate evaluation. " +
+      'Returns next_action: "continue" (next prompt ready), "waiting" (gate blocked or no agent state), or "completed" (terminal state). ' +
+      "gates_passed contains gate names (not IDs).",
     inputSchema: {
       type: "object" as const,
       properties: {
