@@ -8,7 +8,7 @@ This is not vibe coding. In vibe coding, you prompt an AI and hope the result is
 
 ## What's In This Repo
 
-### [`method/`](method/) — The Method
+### [`docs/method/`](docs/method/) — The Method
 
 Generic, tool-agnostic principles and patterns for building an agentic engineering system. Covers:
 
@@ -20,7 +20,7 @@ Generic, tool-agnostic principles and patterns for building an agentic engineeri
 
 Read `method/` to understand agentic engineering. Adopt it with whatever tools you use.
 
-### [`wopr/`](wopr/) — The WOPR Way
+### [`docs/wopr/`](docs/wopr/) — The WOPR Way
 
 WOPR's concrete implementation of every method/ concept. Shows:
 
@@ -32,7 +32,7 @@ WOPR's concrete implementation of every method/ concept. Shows:
 
 Read `wopr/` to see how one project implements the methodology end-to-end.
 
-### [`adoption/`](adoption/) — How To Adopt
+### [`docs/adoption/`](docs/adoption/) — How To Adopt
 
 The bridge from method/ to your own implementation. Prerequisites, checklist, migration guide.
 
@@ -51,24 +51,24 @@ Every arrow is verified. Every gate is deterministic. Every finding feeds back i
 
 | Section | Documents |
 |---------|-----------|
-| **Manifesto** | [What is Agentic Engineering](method/manifesto/what-is-agentic-engineering.md) · [Vibe Coding vs Agentic Engineering](method/manifesto/vibe-coding-vs-agentic-engineering.md) · [System Architecture Principles](method/manifesto/system-architecture-principles.md) · [Why This Works](method/manifesto/why-this-works.md) |
-| **Pipeline** | [Lifecycle](method/pipeline/lifecycle.md) · [Pipeline Schema](method/pipeline/pipeline-schema.md) |
-| **Stages** | [00 Groom](method/pipeline/stages/00-groom.md) · [01 Architect](method/pipeline/stages/01-architect.md) · [02 Implement](method/pipeline/stages/02-implement.md) · [03 Review](method/pipeline/stages/03-review.md) · [04 Fix](method/pipeline/stages/04-fix.md) · [05 Merge](method/pipeline/stages/05-merge.md) · [06 Deploy](method/pipeline/stages/06-deploy.md) · [07 Verify](method/pipeline/stages/07-verify.md) |
-| **Agents** | [Agent Definition Format](method/pipeline/agents/agent-format.md) · [Role Specifications](method/pipeline/agents/role-specifications.md) |
-| **Triggers** | [Event Bus](method/pipeline/triggers/event-bus.md) · [Trigger Taxonomy](method/pipeline/triggers/trigger-taxonomy.md) · [Cross-Session Communication](method/pipeline/triggers/cross-session.md) |
-| **Gates** | [Gate Taxonomy](method/gates/gate-taxonomy.md) · [Gate Scripts](method/gates/gate-scripts.md) · [Development Hooks](method/gates/hooks.md) |
-| **QA** | [QA Team Design](method/qa/qa-team.md) · [Post-Deploy Gate](method/qa/post-deploy-gate.md) · [Observability](method/qa/observability.md) |
-| **DevOps** | [Logbook Protocol](method/devops/logbook-protocol.md) · [Operations](method/devops/operations.md) · [CI/CD Bridge](method/devops/ci-cd-bridge.md) |
-| **Config** | [Agent Rules](method/config/agent-rules.md) · [Issue Tracker Workflow](method/config/issue-tracker-workflow.md) |
-| **Feedback** | [Learning Loop](method/feedback/learning-loop.md) · [Self-Improvement](method/feedback/self-improvement.md) |
+| **Manifesto** | [What is Agentic Engineering](docs/method/manifesto/what-is-agentic-engineering.md) · [Vibe Coding vs Agentic Engineering](docs/method/manifesto/vibe-coding-vs-agentic-engineering.md) · [System Architecture Principles](docs/method/manifesto/system-architecture-principles.md) · [Why This Works](docs/method/manifesto/why-this-works.md) |
+| **Pipeline** | [Lifecycle](docs/method/pipeline/lifecycle.md) · [Pipeline Schema](docs/method/pipeline/pipeline-schema.md) |
+| **Stages** | [00 Groom](docs/method/pipeline/stages/00-groom.md) · [01 Architect](docs/method/pipeline/stages/01-architect.md) · [02 Implement](docs/method/pipeline/stages/02-implement.md) · [03 Review](docs/method/pipeline/stages/03-review.md) · [04 Fix](docs/method/pipeline/stages/04-fix.md) · [05 Merge](docs/method/pipeline/stages/05-merge.md) · [06 Deploy](docs/method/pipeline/stages/06-deploy.md) · [07 Verify](docs/method/pipeline/stages/07-verify.md) |
+| **Agents** | [Agent Definition Format](docs/method/pipeline/agents/agent-format.md) · [Role Specifications](docs/method/pipeline/agents/role-specifications.md) |
+| **Triggers** | [Event Bus](docs/method/pipeline/triggers/event-bus.md) · [Trigger Taxonomy](docs/method/pipeline/triggers/trigger-taxonomy.md) · [Cross-Session Communication](docs/method/pipeline/triggers/cross-session.md) |
+| **Gates** | [Gate Taxonomy](docs/method/gates/gate-taxonomy.md) · [Gate Scripts](docs/method/gates/gate-scripts.md) · [Development Hooks](docs/method/gates/hooks.md) |
+| **QA** | [QA Team Design](docs/method/qa/qa-team.md) · [Post-Deploy Gate](docs/method/qa/post-deploy-gate.md) · [Observability](docs/method/qa/observability.md) |
+| **DevOps** | [Logbook Protocol](docs/method/devops/logbook-protocol.md) · [Operations](docs/method/devops/operations.md) · [CI/CD Bridge](docs/method/devops/ci-cd-bridge.md) |
+| **Config** | [Agent Rules](docs/method/config/agent-rules.md) · [Issue Tracker Workflow](docs/method/config/issue-tracker-workflow.md) |
+| **Feedback** | [Learning Loop](docs/method/feedback/learning-loop.md) · [Self-Improvement](docs/method/feedback/self-improvement.md) |
 
 ### wopr/ — The WOPR Way
 
-Every method/ document has a [1:1 counterpart in wopr/](wopr/) showing the concrete implementation with specific tools, commands, and configurations.
+Every method/ document has a [1:1 counterpart in wopr/](docs/wopr/) showing the concrete implementation with specific tools, commands, and configurations.
 
 ### adoption/ — How To Adopt
 
-[Getting Started](adoption/getting-started.md) · [Checklist](adoption/checklist.md) · [Migration Guide](adoption/migration-guide.md)
+[Getting Started](docs/adoption/getting-started.md) · [Checklist](docs/adoption/checklist.md) · [Migration Guide](docs/adoption/migration-guide.md)
 
 ## Who This Is For
 

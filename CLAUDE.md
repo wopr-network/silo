@@ -4,9 +4,12 @@ This repo documents agentic engineering as a methodology AND provides WOPR as th
 
 ## Structure
 
-- `method/` — THE METHOD. Generic, tool-agnostic principles and patterns. Anyone can adopt this.
-- `wopr/` — THE WOPR WAY. 1:1 concrete implementation of every method/ concept.
-- `adoption/` — HOW TO ADOPT. Bridge from method/ to your own implementation.
+- `docs/method/` — THE METHOD. Generic, tool-agnostic principles and patterns. Anyone can adopt this.
+- `docs/wopr/` — THE WOPR WAY. 1:1 concrete implementation of every method/ concept.
+- `docs/adoption/` — HOW TO ADOPT. Bridge from method/ to your own implementation.
+- `src/` — TypeScript source code.
+- `tests/` — Test files.
+- `drizzle/` — Drizzle ORM migrations.
 
 ## The 1:1 Rule
 
@@ -14,7 +17,7 @@ Every document in `method/` MUST have a corresponding document in `wopr/`. Every
 
 ## Writing Rules
 
-- No files in the repo root except CLAUDE.md, README.md, and LICENSE.
+- Documentation lives in `docs/` (method/, wopr/, adoption/ subdirectories). TypeScript project files live at the repo root.
 - method/ documents describe WHAT and WHY — never name specific tools (not "use Discord", but "use an event bus").
 - wopr/ documents describe HOW with specifics — name the tools, show the configs, link the scripts.
 - Conventional commits: `docs: <description>`.
