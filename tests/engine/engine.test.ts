@@ -11,6 +11,7 @@ import type {
   State,
   Transition,
   Invocation,
+  GateResult,
 } from "../../src/repositories/interfaces.js";
 import type { IEventBusAdapter, EngineEvent } from "../../src/adapters/interfaces.js";
 
@@ -331,6 +332,62 @@ describe("Engine", () => {
 
       expect(mocks.invocationRepo.create).toHaveBeenCalled();
       expect(result.invocationId).toBe("inv-1");
+    });
+  });
+
+  describe("enriched entity at buildInvocation call sites", () => {
+    it("processSignal fetches invocations and gateResults before buildInvocation", async () => {
+      const mocks = makeMockRepos();
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      await engine.processSignal("ent-1", "start");
+
+      expect(mocks.invocationRepo.findByEntity).toHaveBeenCalledWith("ent-1");
+      expect(mocks.gateRepo.resultsFor).toHaveBeenCalledWith("ent-1");
+    });
+
+    it("createEntity fetches invocations and gateResults before buildInvocation", async () => {
+      const mocks = makeMockRepos();
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      await engine.createEntity("test-flow");
+
+      expect(mocks.invocationRepo.findByEntity).toHaveBeenCalledWith("ent-1");
+      expect(mocks.gateRepo.resultsFor).toHaveBeenCalledWith("ent-1");
+    });
+
+    it("claimWork (fallback path) fetches invocations and gateResults before buildInvocation", async () => {
+      const mocks = makeMockRepos();
+      const claimedEntity = makeEntity({ state: "coding", claimedBy: "agent:coder" });
+      (mocks.entityRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue(claimedEntity);
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      await engine.claimWork("coder", "test-flow");
+
+      expect(mocks.invocationRepo.findByEntity).toHaveBeenCalledWith("ent-1");
+      expect(mocks.gateRepo.resultsFor).toHaveBeenCalledWith("ent-1");
+    });
+
+    it("claimWork (unclaimed invocation path) fetches invocations and gateResults before buildInvocation", async () => {
+      const mocks = makeMockRepos();
+      const pendingInvocation: Invocation = {
+        id: "inv-pending", entityId: "ent-1", stage: "coding", agentRole: "coder",
+        mode: "active", prompt: "Do the thing", context: null,
+        claimedBy: null, claimedAt: null, startedAt: null, completedAt: null,
+        failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 1800000,
+      };
+      const claimedEntity = makeEntity({ state: "coding", claimedBy: "agent:coder" });
+      (mocks.invocationRepo.findUnclaimed as ReturnType<typeof vi.fn>).mockResolvedValue([pendingInvocation]);
+      (mocks.entityRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue(claimedEntity);
+      (mocks.invocationRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...pendingInvocation, claimedBy: "agent:coder",
+      });
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      await engine.claimWork("coder", "test-flow");
+
+      expect(mocks.invocationRepo.findByEntity).toHaveBeenCalledWith("ent-1");
+      expect(mocks.gateRepo.resultsFor).toHaveBeenCalledWith("ent-1");
     });
   });
 

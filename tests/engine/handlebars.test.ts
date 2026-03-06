@@ -42,7 +42,7 @@ describe("getHandlebars", () => {
   it("has gate_passed helper registered", () => {
     const hbs = getHandlebars();
     const tpl = hbs.compile('{{gate_passed entity "lint"}}');
-    expect(tpl({ entity: { gateResults: [{ gate: "lint", passed: true }] } })).toBe("true");
+    expect(tpl({ entity: { gateResults: [{ gateId: "lint", passed: true }] } })).toBe("true");
   });
 
   it("has has_artifact helper registered", () => {

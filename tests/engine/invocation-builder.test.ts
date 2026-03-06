@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildInvocation } from "../../src/engine/invocation-builder.js";
-import type { Entity, State } from "../../src/repositories/interfaces.js";
+import type { EnrichedEntity, Entity, State } from "../../src/repositories/interfaces.js";
 
 function makeState(overrides: Partial<State> = {}): State {
   return {
@@ -62,5 +62,21 @@ describe("buildInvocation", () => {
     const entity = makeEntity();
     const result = buildInvocation(state, entity);
     expect(result.mode).toBe("passive");
+  });
+
+  it("renders built-in helpers from shared Handlebars instance", () => {
+    const state = makeState({
+      promptTemplate: "Count: {{invocation_count entity \"coding\"}}",
+    });
+    const entity: EnrichedEntity = {
+      ...makeEntity(),
+      invocations: [
+        { id: "i-1", entityId: "ent-1", stage: "coding", agentRole: null, mode: "active", prompt: "", context: null, claimedBy: null, claimedAt: null, startedAt: null, completedAt: null, failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 0 },
+        { id: "i-2", entityId: "ent-1", stage: "coding", agentRole: null, mode: "active", prompt: "", context: null, claimedBy: null, claimedAt: null, startedAt: null, completedAt: null, failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 0 },
+        { id: "i-3", entityId: "ent-1", stage: "review", agentRole: null, mode: "active", prompt: "", context: null, claimedBy: null, claimedAt: null, startedAt: null, completedAt: null, failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 0 },
+      ],
+    };
+    const result = buildInvocation(state, entity);
+    expect(result.prompt).toBe("Count: 2");
   });
 });

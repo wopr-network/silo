@@ -67,8 +67,8 @@ describe("evaluateCondition", () => {
     const ctx = {
       entity: {
         gateResults: [
-          { gate: "lint", passed: true },
-          { gate: "test", passed: false },
+          { gateId: "lint", passed: true },
+          { gateId: "test", passed: false },
         ],
       },
     };
@@ -201,7 +201,7 @@ describe("findTransition", () => {
     const ctxNoGate = { entity: { gateResults: [] } };
     expect(findTransition(flow, "open", "go", ctxNoGate)!.toState).toBe("fallback");
 
-    const ctxGatePassed = { entity: { gateResults: [{ gate: "lint", passed: true }] } };
+    const ctxGatePassed = { entity: { gateResults: [{ gateId: "lint", passed: true }] } };
     expect(findTransition(flow, "open", "go", ctxGatePassed)!.toState).toBe("gated");
   });
 

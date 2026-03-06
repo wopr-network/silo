@@ -10,8 +10,10 @@ hbs.registerHelper("invocation_count", (entity: { invocations?: { stage: string 
   String(entity.invocations?.filter((i) => i.stage === stage).length ?? 0),
 );
 
-hbs.registerHelper("gate_passed", (entity: { gateResults?: { gate: string; passed: boolean }[] }, gateName: string) =>
-  (entity.gateResults?.some((g) => g.gate === gateName && g.passed) ?? false) ? "true" : "",
+hbs.registerHelper(
+  "gate_passed",
+  (entity: { gateResults?: { gateId: string; passed: boolean }[] }, gateName: string) =>
+    (entity.gateResults?.some((g) => g.gateId === gateName && g.passed) ?? false) ? "true" : "",
 );
 
 hbs.registerHelper("has_artifact", (entity: { artifacts?: Record<string, unknown> }, key: string) =>

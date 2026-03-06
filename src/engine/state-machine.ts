@@ -31,8 +31,8 @@ export function findTransition(
 
   for (const candidate of candidates) {
     if (!skipGateCheck && candidate.gateId !== null) {
-      const entity = context.entity as { gateResults?: { gate: string; passed: boolean }[] } | undefined;
-      const gatePassed = entity?.gateResults?.some((g) => g.gate === candidate.gateId && g.passed) ?? false;
+      const entity = context.entity as { gateResults?: { gateId: string; passed: boolean }[] } | undefined;
+      const gatePassed = entity?.gateResults?.some((g) => g.gateId === candidate.gateId && g.passed) ?? false;
       if (!gatePassed) continue;
     }
     if (candidate.condition === null || evaluateCondition(candidate.condition, context)) {

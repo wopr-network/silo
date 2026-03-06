@@ -53,6 +53,16 @@ export interface GateResult {
   evaluatedAt: Date | null;
 }
 
+/**
+ * Entity with pre-fetched related data for use in Handlebars template helpers.
+ * The `invocations` and `gateResults` fields are populated by the engine before
+ * rendering prompt templates; they are never present on raw DB rows.
+ */
+export interface EnrichedEntity extends Entity {
+  invocations?: Invocation[];
+  gateResults?: GateResult[];
+}
+
 /** Audit-log entry for an entity state transition */
 export interface TransitionLog {
   id: string;
