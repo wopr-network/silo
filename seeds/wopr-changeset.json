@@ -89,7 +89,6 @@
       "fromState": "backlog",
       "toState": "architecting",
       "trigger": "start",
-      "gateName": "is_unblocked",
       "priority": 0
     },
     {
@@ -111,7 +110,6 @@
       "fromState": "reviewing",
       "toState": "merging",
       "trigger": "clean",
-      "gateName": "ci_passes",
       "priority": 0
     },
     {
@@ -126,8 +124,7 @@
       "fromState": "reviewing",
       "toState": "stuck",
       "trigger": "escalate",
-      "priority": 2,
-      "condition": "stuckCount >= 3"
+      "priority": 2
     },
     {
       "flowName": "wopr-changeset",

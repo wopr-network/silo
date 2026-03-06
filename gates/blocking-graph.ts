@@ -7,11 +7,17 @@
  * NOTE: Function gates are not yet evaluated by the engine (gate-evaluator.ts
  * throws for type "function"). This file exists as the implementation target
  * for when function gate support lands.
+ *
+ * NOTE: This file is intentionally outside src/ — it is loaded dynamically at
+ * runtime, not compiled by the main build.
  */
 
 import { LinearClient } from "@linear/sdk";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Entity } from "../src/repositories/interfaces.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface BlockingGraphResult {
   passed: boolean;
@@ -41,7 +47,7 @@ export async function isUnblocked(entity: Entity): Promise<BlockingGraphResult> 
   const relations = await issue.relations();
 
   const blockers = relations.nodes.filter(
-    (r) => r.type === "blocks" || r.type === "is-blocked-by",
+    (r) => r.type === "is-blocked-by",
   );
 
   if (blockers.length === 0) {
@@ -60,11 +66,12 @@ export async function isUnblocked(entity: Entity): Promise<BlockingGraphResult> 
     // Convention: PR branches contain the issue key lowercase
     const key = identifier.toLowerCase();
     try {
-      const result = execFileSync(
+      const { stdout } = await execFileAsync(
         "gh",
         ["pr", "list", "--state", "merged", "--search", key, "--json", "number", "--jq", "length"],
         { encoding: "utf-8", timeout: 10000 },
-      ).trim();
+      );
+      const result = stdout.trim();
 
       if (result === "0" || result === "") {
         unmerged.push(identifier);
