@@ -52,7 +52,7 @@ export function findTransition(
 
   for (const candidate of candidates) {
     if (candidate.gateId !== null) {
-      const entity = context["entity"] as { gateResults?: { gate: string; passed: boolean }[] } | undefined;
+      const entity = context.entity as { gateResults?: { gate: string; passed: boolean }[] } | undefined;
       const gatePassed = entity?.gateResults?.some((g) => g.gate === candidate.gateId && g.passed) ?? false;
       if (!gatePassed) continue;
     }

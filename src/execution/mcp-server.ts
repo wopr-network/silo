@@ -200,7 +200,13 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
 
   // Iterate candidates to handle race conditions: try each until one succeeds
   for (const invocation of candidates) {
-    const claimed = await deps.invocations.claim(invocation.id, role);
+    let claimed: Awaited<ReturnType<typeof deps.invocations.claim>>;
+    try {
+      claimed = await deps.invocations.claim(invocation.id, role);
+    } catch (err) {
+      console.error(`Failed to claim invocation ${invocation.id}:`, err);
+      continue;
+    }
     if (claimed) {
       return jsonResult({
         entity_id: claimed.entityId,
@@ -266,18 +272,24 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
     return errorResult(`No transition from state '${entity.state}' with signal '${signal}' in flow '${flow.name}'`);
   }
 
-  await deps.invocations.complete(activeInvocation.id, signal, artifacts);
-
+  // Check gate BEFORE completing — if gate blocks, fail the invocation so entity can be reclaimed
   const gatesPassed: string[] = [];
   if (transition.gateId) {
     const gate = await deps.gates.get(transition.gateId);
     if (gate) {
-      // Gates must be evaluated, not auto-passed. Without an evaluator in deps, block the transition.
-      return errorResult(
-        `Gate '${gate.name}' must be evaluated before transition can proceed. Use a gate evaluator to process this gate.`,
-      );
+      // Check if the gate already has a prior passing result — if so, proceed
+      const priorResults = await deps.gates.resultsFor(entityId);
+      const alreadyPassed = priorResults.some((r) => r.gateId === transition.gateId && r.passed === true);
+      if (!alreadyPassed) {
+        const gateError = `Gate '${gate.name}' must be evaluated before transition can proceed. Use a gate evaluator to process this gate.`;
+        await deps.invocations.fail(activeInvocation.id, gateError);
+        return errorResult(gateError);
+      }
+      gatesPassed.push(gate.name);
     }
   }
+
+  await deps.invocations.complete(activeInvocation.id, signal, artifacts);
 
   const updated = await deps.entities.transition(entityId, transition.toState, signal, artifacts);
 
@@ -350,7 +362,7 @@ async function handleQueryEntity(deps: McpServerDeps, args: Record<string, unkno
 async function handleQueryEntities(deps: McpServerDeps, args: Record<string, unknown>) {
   const flowName = args.flow as string | undefined;
   const state = args.state as string | undefined;
-  const limit = Math.max(1, Math.min(parseInt(String(args.limit ?? 50)) || 50, 250));
+  const limit = Math.max(1, Math.min(parseInt(String(args.limit ?? 50), 10) || 50, 100));
 
   if (!flowName) return errorResult("Missing required parameter: flow");
   if (!state) return errorResult("Missing required parameter: state");
