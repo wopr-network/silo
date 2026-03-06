@@ -8,7 +8,7 @@ export class EventEmitter implements IEventBusAdapter {
   }
 
   async emit(event: EngineEvent): Promise<void> {
-    const results = await Promise.allSettled(this.adapters.map((a) => a.emit(event)));
+    const results = await Promise.allSettled(this.adapters.map((a) => Promise.resolve().then(() => a.emit(event))));
     for (const r of results) {
       if (r.status === "rejected") {
         console.error("[EventEmitter] adapter error:", r.reason);

@@ -82,16 +82,11 @@ describe("StdoutAdapter", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const adapter = new StdoutAdapter();
 
-    const event: EngineEvent = {
-      type: "entity.claimed",
-      entityId: "e",
-      flowId: "f",
-      agentId: "a",
-      emittedAt: new Date(),
-    };
+    const event = { type: "unknown.event", entityId: "e", emittedAt: new Date() } as unknown as EngineEvent;
     await adapter.emit(event);
 
     expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0]).toContain("📋");
     spy.mockRestore();
   });
 });

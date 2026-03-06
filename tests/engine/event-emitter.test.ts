@@ -80,4 +80,19 @@ describe("EventEmitter", () => {
     const emitter = new EventEmitter();
     await expect(emitter.emit(makeEvent())).resolves.toBeUndefined();
   });
+
+  it("does not throw when an adapter throws synchronously", async () => {
+    const emitter = new EventEmitter();
+    const syncThrowing: IEventBusAdapter = {
+      emit: vi.fn().mockImplementation(() => {
+        throw new Error("sync boom");
+      }),
+    };
+    const healthy: IEventBusAdapter = { emit: vi.fn().mockResolvedValue(undefined) };
+    emitter.register(syncThrowing);
+    emitter.register(healthy);
+
+    await expect(emitter.emit(makeEvent())).resolves.toBeUndefined();
+    expect(healthy.emit).toHaveBeenCalled();
+  });
 });

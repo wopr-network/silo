@@ -3,7 +3,6 @@ import type { EngineEvent, IEventBusAdapter } from "./interfaces.js";
 const EVENT_EMOJI: Record<string, string> = {
   "entity.created": "🆕",
   "entity.transitioned": "➡️",
-  "entity.completed": "✅",
   "entity.claimed": "🔒",
   "entity.released": "🔓",
   "invocation.created": "📝",
@@ -14,7 +13,6 @@ const EVENT_EMOJI: Record<string, string> = {
   "gate.passed": "🟢",
   "gate.failed": "🔴",
   "flow.spawned": "🌱",
-  "definition.changed": "⚙️",
 };
 
 export class StdoutAdapter implements IEventBusAdapter {
