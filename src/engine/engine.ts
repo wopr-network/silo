@@ -153,7 +153,12 @@ export class Engine {
     if (newStateDef?.agentRole) {
       const canCreate = await this.checkConcurrency(flow, entity);
       if (canCreate) {
-        const build = buildInvocation(newStateDef, updated);
+        const [invocations, gateResults] = await Promise.all([
+          this.invocationRepo.findByEntity(updated.id),
+          this.gateRepo.resultsFor(updated.id),
+        ]);
+        const enriched: EnrichedEntity = { ...updated, invocations, gateResults };
+        const build = await buildInvocation(newStateDef, enriched, this.adapters);
         const invocation = await this.invocationRepo.create(
           entityId,
           transition.toState,
@@ -225,7 +230,12 @@ export class Engine {
     // Create invocation if initial state has an agent role
     const initialState = flow.states.find((s) => s.name === flow.initialState);
     if (initialState?.agentRole) {
-      const build = buildInvocation(initialState, entity);
+      const [invocations, gateResults] = await Promise.all([
+        this.invocationRepo.findByEntity(entity.id),
+        this.gateRepo.resultsFor(entity.id),
+      ]);
+      const enriched: EnrichedEntity = { ...entity, invocations, gateResults };
+      const build = await buildInvocation(initialState, enriched, this.adapters);
       await this.invocationRepo.create(
         entity.id,
         flow.initialState,
@@ -259,7 +269,17 @@ export class Engine {
           if (!claimedInvocation) continue;
 
           const state = flow.states.find((s) => s.name === pending.stage);
-          const build = state ? buildInvocation(state, claimed) : { prompt: pending.prompt, context: null };
+          let build: { prompt: string; context: Record<string, unknown> | null };
+          if (state) {
+            const [invocations, gateResults] = await Promise.all([
+              this.invocationRepo.findByEntity(claimed.id),
+              this.gateRepo.resultsFor(claimed.id),
+            ]);
+            const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
+            build = await buildInvocation(state, enriched, this.adapters);
+          } else {
+            build = { prompt: pending.prompt, context: null };
+          }
 
           await this.eventEmitter.emit({
             type: "entity.claimed",
@@ -282,7 +302,12 @@ export class Engine {
       for (const state of claimableStates) {
         const claimed = await this.entityRepo.claim(flow.id, state.name, `agent:${role}`);
         if (claimed) {
-          const build = buildInvocation(state, claimed);
+          const [invocations, gateResults] = await Promise.all([
+            this.invocationRepo.findByEntity(claimed.id),
+            this.gateRepo.resultsFor(claimed.id),
+          ]);
+          const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
+          const build = await buildInvocation(state, enriched, this.adapters);
           const invocation = await this.invocationRepo.create(
             claimed.id,
             state.name,
