@@ -54,7 +54,7 @@ export class GitHubCodeHostAdapter implements ICodeHostAdapter {
       ]);
       return JSON.parse(raw) as Record<string, unknown>;
     } catch (err: unknown) {
-      const stderr = (err as { stderr?: string }).stderr ?? "";
+      const stderr = String((err as { stderr?: unknown }).stderr ?? "");
       if (stderr.includes("Could not resolve")) {
         throw new PRNotFoundError(repo, number);
       }
@@ -63,16 +63,24 @@ export class GitHubCodeHostAdapter implements ICodeHostAdapter {
   }
 
   async getDiff(repo: string, number: number): Promise<string> {
-    return this.gh(["pr", "diff", String(number), "--repo", repo]);
+    try {
+      return await this.gh(["pr", "diff", String(number), "--repo", repo]);
+    } catch (err: unknown) {
+      const stderr = String((err as { stderr?: unknown }).stderr ?? "");
+      if (stderr.includes("Could not resolve")) {
+        throw new PRNotFoundError(repo, number);
+      }
+      throw err;
+    }
   }
 
   async getChecks(repo: string, number: number): Promise<{ name: string; status: string; conclusion?: string }[]> {
-    const raw = await this.gh(["pr", "checks", String(number), "--repo", repo, "--json", "name,state,bucket"]);
-    const checks = JSON.parse(raw) as { name: string; state: string; bucket: string }[];
+    const raw = await this.gh(["pr", "checks", String(number), "--repo", repo, "--json", "name,state,conclusion"]);
+    const checks = JSON.parse(raw) as { name: string; state: string; conclusion: string }[];
     return checks.map((c) => ({
       name: c.name,
       status: c.state,
-      conclusion: c.bucket,
+      conclusion: c.conclusion,
     }));
   }
 
@@ -105,7 +113,7 @@ export class GitHubCodeHostAdapter implements ICodeHostAdapter {
     try {
       await this.gh(["pr", "merge", String(number), "--repo", repo, `--${strategy}`, "--auto"]);
     } catch (err: unknown) {
-      const stderr = (err as { stderr?: string }).stderr ?? "";
+      const stderr = String((err as { stderr?: unknown }).stderr ?? "");
       if (stderr.includes("not mergeable") || stderr.includes("merge conflict")) {
         throw new MergeConflictError(repo, number);
       }
@@ -113,13 +121,13 @@ export class GitHubCodeHostAdapter implements ICodeHostAdapter {
     }
   }
 
-  async createWorktree(repo: string, branch: string, path: string): Promise<string> {
-    await this.git(["-C", repo, "worktree", "add", "-b", branch, path]);
+  async createWorktree(localRepoPath: string, branch: string, path: string): Promise<string> {
+    await this.git(["-C", localRepoPath, "worktree", "add", "-b", branch, path]);
     return path;
   }
 
-  async removeWorktree(path: string): Promise<void> {
-    await this.git(["worktree", "remove", "--force", path]);
-    await this.git(["worktree", "prune"]);
+  async removeWorktree(path: string, localRepoPath: string): Promise<void> {
+    await this.git(["-C", localRepoPath, "worktree", "remove", "--force", path]);
+    await this.git(["-C", localRepoPath, "worktree", "prune"]);
   }
 }

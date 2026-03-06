@@ -56,23 +56,31 @@ describe("getDiff", () => {
     expect(mockExec).toHaveBeenCalledWith("gh", ["pr", "diff", "42", "--repo", "org/repo"]);
     expect(result).toBe(diff.trim());
   });
+
+  it("throws PRNotFoundError when PR does not exist", async () => {
+    mockExec.mockRejectedValueOnce(
+      Object.assign(new Error("exit code 1"), { stderr: "Could not resolve to a PullRequest" }),
+    );
+
+    await expect(adapter.getDiff("org/repo", 999)).rejects.toThrow(PRNotFoundError);
+  });
 });
 
 describe("getChecks", () => {
   it("parses gh pr checks JSON output", async () => {
     const checksJson = [
-      { name: "Build", state: "SUCCESS", bucket: "pass" },
-      { name: "Lint", state: "PENDING", bucket: "pending" },
+      { name: "Build", state: "SUCCESS", conclusion: "success" },
+      { name: "Lint", state: "PENDING", conclusion: "pending" },
     ];
     mockExec.mockResolvedValueOnce({ stdout: JSON.stringify(checksJson), stderr: "" });
 
     const result = await adapter.getChecks("org/repo", 42);
 
     expect(mockExec).toHaveBeenCalledWith("gh", [
-      "pr", "checks", "42", "--repo", "org/repo", "--json", "name,state,bucket",
+      "pr", "checks", "42", "--repo", "org/repo", "--json", "name,state,conclusion",
     ]);
     expect(result).toEqual([
-      { name: "Build", status: "SUCCESS", conclusion: "pass" },
+      { name: "Build", status: "SUCCESS", conclusion: "success" },
       { name: "Lint", status: "PENDING", conclusion: "pending" },
     ]);
   });
@@ -151,29 +159,29 @@ describe("createWorktree", () => {
   it("calls git worktree add and returns the path", async () => {
     mockExec.mockResolvedValueOnce({ stdout: "", stderr: "" });
 
-    const result = await adapter.createWorktree("org/repo", "feat-branch", "/tmp/wt/feat");
+    const result = await adapter.createWorktree("/home/user/repos/org-repo", "feat-branch", "/tmp/wt/feat");
 
     expect(mockExec).toHaveBeenCalledWith("git", [
-      "-C", "org/repo", "worktree", "add", "-b", "feat-branch", "/tmp/wt/feat",
+      "-C", "/home/user/repos/org-repo", "worktree", "add", "-b", "feat-branch", "/tmp/wt/feat",
     ]);
     expect(result).toBe("/tmp/wt/feat");
   });
 });
 
 describe("removeWorktree", () => {
-  it("calls git worktree remove --force then prune", async () => {
+  it("calls git worktree remove --force then prune with repo context", async () => {
     mockExec
       .mockResolvedValueOnce({ stdout: "", stderr: "" })
       .mockResolvedValueOnce({ stdout: "", stderr: "" });
 
-    await adapter.removeWorktree("/tmp/wt/feat");
+    await adapter.removeWorktree("/tmp/wt/feat", "/home/user/repos/org-repo");
 
     expect(mockExec).toHaveBeenCalledTimes(2);
     expect(mockExec).toHaveBeenNthCalledWith(1, "git", [
-      "worktree", "remove", "--force", "/tmp/wt/feat",
+      "-C", "/home/user/repos/org-repo", "worktree", "remove", "--force", "/tmp/wt/feat",
     ]);
     expect(mockExec).toHaveBeenNthCalledWith(2, "git", [
-      "worktree", "prune",
+      "-C", "/home/user/repos/org-repo", "worktree", "prune",
     ]);
   });
 });
