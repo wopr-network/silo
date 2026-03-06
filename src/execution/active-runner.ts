@@ -108,7 +108,13 @@ export class ActiveRunner {
     }
 
     await this.invocationRepo.complete(invocation.id, parsed.signal, parsed.artifacts);
-    await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts);
+    try {
+      await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
+      await this.invocationRepo.fail(invocation.id, message);
+    }
   }
 
   private async resolveModel(invocation: Invocation): Promise<string> {
@@ -137,6 +143,10 @@ export class ActiveRunner {
         artifacts = JSON.parse(artifactsMatch[1].trim());
       } catch {
         // Invalid JSON in artifacts — use empty object
+        console.warn(
+          "[active-runner] Failed to parse ARTIFACTS JSON, using empty object. Raw content:",
+          artifactsMatch[1].trim(),
+        );
       }
     }
 

@@ -46,6 +46,7 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
         mode,
         agentRole: agentRole ?? null,
         ttlMs: ttlMs ?? 1800000,
+        createdAt: Date.now(),
       })
       .run();
     const created = await this.get(id);
@@ -122,7 +123,8 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .select()
       .from(invocations)
       .where(eq(invocations.entityId, entityId))
-      .orderBy(asc(sql`rowid`))
+      // order by creation time for stable chronological ordering across databases
+      .orderBy(asc(invocations.createdAt))
       .all();
     return rows.map(toInvocation);
   }
@@ -151,7 +153,8 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .from(invocations)
       .innerJoin(entities, eq(invocations.entityId, entities.id))
       .where(eq(entities.flowId, flowId))
-      .orderBy(asc(sql`rowid`))
+      // order by creation time for stable chronological ordering across databases
+      .orderBy(asc(invocations.createdAt))
       .all();
     return rows.map((r) => toInvocation(r.inv));
   }
@@ -171,7 +174,8 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .from(invocations)
       .innerJoin(entities, eq(invocations.entityId, entities.id))
       .where(and(...conditions))
-      .orderBy(asc(sql`rowid`))
+      // raw SQL: order by creation time for fair FIFO claim ordering across databases
+      .orderBy(asc(invocations.createdAt))
       .all();
     return rows.map((r) => toInvocation(r.inv));
   }

@@ -131,6 +131,7 @@ export const invocations = sqliteTable(
     artifacts: text("artifacts", { mode: "json" }),
     error: text("error"),
     ttlMs: integer("ttl_ms").default(1800000),
+    createdAt: integer("created_at"),
   },
   (table) => ({
     entityIdx: index("invocations_entity_idx").on(table.entityId),
