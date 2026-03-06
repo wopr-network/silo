@@ -145,6 +145,17 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
     return rows.map((r) => toInvocation(r.inv));
   }
 
+  async findByFlow(flowId: string): Promise<Invocation[]> {
+    const rows = this.db
+      .select({ inv: invocations })
+      .from(invocations)
+      .innerJoin(entities, eq(invocations.entityId, entities.id))
+      .where(eq(entities.flowId, flowId))
+      .orderBy(asc(sql`rowid`))
+      .all();
+    return rows.map((r) => toInvocation(r.inv));
+  }
+
   async reapExpired(): Promise<Invocation[]> {
     const now = Date.now();
     const rows = this.db
