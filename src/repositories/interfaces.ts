@@ -302,9 +302,36 @@ export interface IGateRepository {
   /** Get a gate by unique name, or null if not found. */
   getByName(name: string): Promise<Gate | null>;
 
+  /** List all gate definitions. */
+  listAll(): Promise<Gate[]>;
+
   /** Record the result of evaluating a gate against an entity. */
   record(entityId: string, gateId: string, passed: boolean, output: string): Promise<GateResult>;
 
   /** Get all gate results for a given entity. */
   resultsFor(entityId: string): Promise<GateResult[]>;
+}
+
+/** An integration config entry */
+export interface IntegrationConfig {
+  id: string;
+  capability: string;
+  adapter: string;
+  config: Record<string, unknown> | null;
+}
+
+/** Input for creating an integration config entry */
+export interface CreateIntegrationConfigInput {
+  capability: string;
+  adapter: string;
+  config?: Record<string, unknown>;
+}
+
+/** Data-access contract for integration configuration. */
+export interface IIntegrationConfigRepository {
+  /** Insert a new integration config entry. */
+  create(input: CreateIntegrationConfigInput): Promise<IntegrationConfig>;
+
+  /** List all integration config entries. */
+  listAll(): Promise<IntegrationConfig[]>;
 }

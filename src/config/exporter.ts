@@ -1,29 +1,30 @@
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type * as schema from "../repositories/drizzle/schema.js";
-import { integrationConfig } from "../repositories/drizzle/schema.js";
-import type { IFlowRepository, IGateRepository } from "../repositories/interfaces.js";
+import type { IFlowRepository, IGateRepository, IIntegrationConfigRepository } from "../repositories/interfaces.js";
 import type { SeedFile } from "./zod-schemas.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
-
-export async function exportSeed(flowRepo: IFlowRepository, gateRepo: IGateRepository, db: Db): Promise<SeedFile> {
+export async function exportSeed(
+  flowRepo: IFlowRepository,
+  gateRepo: IGateRepository,
+  integrationRepo: IIntegrationConfigRepository,
+): Promise<SeedFile> {
   const flows = await flowRepo.listAll();
 
-  // Build gate ID -> name map by scanning all transitions for gate references
-  const gateIdToName = new Map<string, string>();
+  // Fetch all gates once, build ID->name map (no N+1)
+  const allGates = await gateRepo.listAll();
+  const gateIdToName = new Map<string, string>(allGates.map((g) => [g.id, g.name]));
+  const gateById = new Map(allGates.map((g) => [g.id, g]));
+
+  // Collect gate IDs referenced by transitions
+  const referencedGateIds = new Set<string>();
   for (const flow of flows) {
     for (const t of flow.transitions) {
-      if (t.gateId && !gateIdToName.has(t.gateId)) {
-        const gate = await gateRepo.get(t.gateId);
-        if (gate) gateIdToName.set(gate.id, gate.name);
-      }
+      if (t.gateId) referencedGateIds.add(t.gateId);
     }
   }
 
-  // Build gates array from all unique gate IDs found
+  // Build gates array from referenced gates (already loaded)
   const gateEntries: SeedFile["gates"] = [];
-  for (const [gateId] of gateIdToName) {
-    const gate = await gateRepo.get(gateId);
+  for (const gateId of referencedGateIds) {
+    const gate = gateById.get(gateId);
     if (!gate) continue;
     if (gate.type === "command" && gate.command) {
       gateEntries.push({ name: gate.name, type: "command", command: gate.command, timeoutMs: gate.timeoutMs });
@@ -71,11 +72,11 @@ export async function exportSeed(flowRepo: IFlowRepository, gateRepo: IGateRepos
     })),
   );
 
-  const integrationRows = db.select().from(integrationConfig).all();
+  const integrationRows = await integrationRepo.listAll();
   const seedIntegrations: SeedFile["integrations"] = integrationRows.map((r) => ({
     capability: r.capability,
     adapter: r.adapter,
-    config: (r.config as Record<string, unknown>) ?? undefined,
+    config: r.config ?? undefined,
   }));
 
   return {

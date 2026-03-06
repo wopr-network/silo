@@ -8,11 +8,13 @@ import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { DrizzleFlowRepository } from "../repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../repositories/drizzle/gate.repo.js";
+import { DrizzleIntegrationConfigRepository } from "../repositories/drizzle/integration-config.repo.js";
 import * as schema from "../repositories/drizzle/schema.js";
 import {
   entities,
   entityHistory,
   flowDefinitions,
+  flowVersions,
   gateDefinitions,
   gateResults,
   integrationConfig,
@@ -76,11 +78,13 @@ async function main() {
       db.delete(transitionRules).run();
       db.delete(stateDefinitions).run();
       db.delete(integrationConfig).run();
+      db.delete(flowVersions).run();
       db.delete(gateDefinitions).run();
       db.delete(flowDefinitions).run();
     }
 
-    const result = await loadSeed(resolve(seedPath), flowRepo, gateRepo, db);
+    const integrationRepo = new DrizzleIntegrationConfigRepository(db);
+    const result = await loadSeed(resolve(seedPath), flowRepo, gateRepo, integrationRepo, sqlite);
     console.log(`Loaded seed: flows: ${result.flows}, gates: ${result.gates}, integrations: ${result.integrations}`);
     sqlite.close();
   } else if (command === "export") {
@@ -88,7 +92,8 @@ async function main() {
     const flowRepo = new DrizzleFlowRepository(db);
     const gateRepo = new DrizzleGateRepository(db);
 
-    const seed = await exportSeed(flowRepo, gateRepo, db);
+    const integrationRepo = new DrizzleIntegrationConfigRepository(db);
+    const seed = await exportSeed(flowRepo, gateRepo, integrationRepo);
     const json = JSON.stringify(seed, null, 2);
 
     const outPath = flags.out;

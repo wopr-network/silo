@@ -60,6 +60,11 @@ export class DrizzleGateRepository implements IGateRepository {
     return row ? toGate(row) : null;
   }
 
+  async listAll(): Promise<Gate[]> {
+    const rows = this.db.select().from(gateDefinitions).all();
+    return rows.map(toGate);
+  }
+
   async record(entityId: string, gateId: string, passed: boolean, output: string): Promise<GateResult> {
     const id = randomUUID();
     const evaluatedAt = Date.now();

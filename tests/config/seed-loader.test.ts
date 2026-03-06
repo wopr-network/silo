@@ -7,9 +7,9 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { loadSeed } from "../../src/config/seed-loader.js";
 import * as schema from "../../src/repositories/drizzle/schema.js";
-import { integrationConfig } from "../../src/repositories/drizzle/schema.js";
 import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../../src/repositories/drizzle/gate.repo.js";
+import { DrizzleIntegrationConfigRepository } from "../../src/repositories/drizzle/integration-config.repo.js";
 
 function setupDb() {
   const sqlite = new Database(":memory:");
@@ -19,7 +19,8 @@ function setupDb() {
   migrate(db, { migrationsFolder: "./drizzle" });
   const flowRepo = new DrizzleFlowRepository(db);
   const gateRepo = new DrizzleGateRepository(db);
-  return { db, sqlite, flowRepo, gateRepo };
+  const integrationRepo = new DrizzleIntegrationConfigRepository(db);
+  return { db, sqlite, flowRepo, gateRepo, integrationRepo };
 }
 
 function writeSeedFile(seed: unknown): string {
@@ -53,10 +54,10 @@ const validSeed = {
 
 describe("loadSeed", () => {
   it("loads a valid seed file and creates all records", async () => {
-    const { db, sqlite, flowRepo, gateRepo } = setupDb();
+    const { sqlite, flowRepo, gateRepo, integrationRepo } = setupDb();
     const seedPath = writeSeedFile(validSeed);
 
-    const result = await loadSeed(seedPath, flowRepo, gateRepo, db);
+    const result = await loadSeed(seedPath, flowRepo, gateRepo, integrationRepo, sqlite);
 
     expect(result).toEqual({ flows: 1, gates: 1, integrations: 1 });
 
@@ -72,7 +73,7 @@ describe("loadSeed", () => {
 
     expect(flow?.transitions[0].gateId).toBe(gate?.id);
 
-    const integrations = db.select().from(integrationConfig).all();
+    const integrations = await integrationRepo.listAll();
     expect(integrations).toHaveLength(1);
     expect(integrations[0].capability).toBe("notifications");
     expect(integrations[0].adapter).toBe("discord");
@@ -81,24 +82,24 @@ describe("loadSeed", () => {
   });
 
   it("rejects invalid seed file with Zod errors", async () => {
-    const { db, sqlite, flowRepo, gateRepo } = setupDb();
+    const { sqlite, flowRepo, gateRepo, integrationRepo } = setupDb();
     const seedPath = writeSeedFile({ flows: [], states: [], transitions: [] });
 
-    await expect(loadSeed(seedPath, flowRepo, gateRepo, db)).rejects.toThrow();
+    await expect(loadSeed(seedPath, flowRepo, gateRepo, integrationRepo, sqlite)).rejects.toThrow();
 
     sqlite.close();
   });
 
   it("rejects non-existent file", async () => {
-    const { db, sqlite, flowRepo, gateRepo } = setupDb();
+    const { sqlite, flowRepo, gateRepo, integrationRepo } = setupDb();
 
-    await expect(loadSeed("/tmp/nonexistent-seed.json", flowRepo, gateRepo, db)).rejects.toThrow();
+    await expect(loadSeed("/tmp/nonexistent-seed.json", flowRepo, gateRepo, integrationRepo, sqlite)).rejects.toThrow();
 
     sqlite.close();
   });
 
   it("loads seed without gates or integrations", async () => {
-    const { db, sqlite, flowRepo, gateRepo } = setupDb();
+    const { sqlite, flowRepo, gateRepo, integrationRepo } = setupDb();
     const seed = {
       flows: [{ name: "simple", initialState: "start" }],
       states: [{ name: "start", flowName: "simple" }],
@@ -106,8 +107,29 @@ describe("loadSeed", () => {
     };
     const seedPath = writeSeedFile(seed);
 
-    const result = await loadSeed(seedPath, flowRepo, gateRepo, db);
+    const result = await loadSeed(seedPath, flowRepo, gateRepo, integrationRepo, sqlite);
     expect(result).toEqual({ flows: 1, gates: 0, integrations: 0 });
+
+    sqlite.close();
+  });
+
+  it("throws a descriptive error when a transition references an unknown gate", async () => {
+    const { sqlite, flowRepo, gateRepo, integrationRepo } = setupDb();
+    const seed = {
+      flows: [{ name: "broken", initialState: "start" }],
+      states: [{ name: "start", flowName: "broken" }, { name: "end", flowName: "broken" }],
+      gates: [],
+      transitions: [
+        { flowName: "broken", fromState: "start", toState: "end", trigger: "go", gateName: "nonexistent-gate" },
+      ],
+      integrations: [],
+    };
+    const seedPath = writeSeedFile(seed);
+
+    // The Zod schema validates gate references and throws with a descriptive message
+    await expect(loadSeed(seedPath, flowRepo, gateRepo, integrationRepo, sqlite)).rejects.toThrow(
+      "nonexistent-gate",
+    );
 
     sqlite.close();
   });
