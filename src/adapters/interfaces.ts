@@ -65,7 +65,7 @@ export interface ICodeHostAdapter {
   createWorktree(repo: string, branch: string, path: string): Promise<string>;
 
   /** Remove a git worktree. */
-  removeWorktree(path: string): Promise<void>;
+  removeWorktree(path: string, localRepoPath: string): Promise<void>;
 }
 
 /** Adapter for AI model providers (Anthropic, OpenAI, etc.). */
