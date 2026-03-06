@@ -63,7 +63,7 @@ program
   .action(async (opts) => {
     const seedPath = opts.seed;
     if (typeof seedPath !== "string") {
-      console.log("Usage: agentic init --seed <path> [--force]");
+      console.log("Usage: defcon init --seed <path> [--force]");
       return;
     }
 
@@ -129,7 +129,12 @@ program
     const gateRepo = new DrizzleGateRepository(db);
     const transitionLogRepo = new DrizzleTransitionLogRepository(db);
 
-    const eventEmitter = new CompositeEventBusAdapter([new StdoutAdapter()]);
+    // Suppress stdout events in stdio mode — stdout carries the JSON-RPC stream
+    // and any extra output corrupts it.
+    const eventEmitter =
+      opts.transport === "stdio"
+        ? new CompositeEventBusAdapter([])
+        : new CompositeEventBusAdapter([new StdoutAdapter()]);
 
     const engine = new Engine({
       entityRepo,
