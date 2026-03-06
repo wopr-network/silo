@@ -51,6 +51,11 @@ export function findTransition(
     .sort((a, b) => b.priority - a.priority);
 
   for (const candidate of candidates) {
+    if (candidate.gateId !== null) {
+      const entity = context["entity"] as { gateResults?: { gate: string; passed: boolean }[] } | undefined;
+      const gatePassed = entity?.gateResults?.some((g) => g.gate === candidate.gateId && g.passed) ?? false;
+      if (!gatePassed) continue;
+    }
     if (candidate.condition === null || evaluateCondition(candidate.condition, context)) {
       return candidate;
     }

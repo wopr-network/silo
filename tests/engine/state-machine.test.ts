@@ -190,6 +190,21 @@ describe("findTransition", () => {
     expect(findTransition(flow, "open", "done", {})!.toState).toBe("closed");
   });
 
+  it("skips transition if gateId is set and gate has not passed", () => {
+    const flow = makeFlow({
+      states: [{ name: "open" }, { name: "gated" }, { name: "fallback" }],
+      transitions: [
+        { fromState: "open", toState: "gated", trigger: "go", priority: 10, gateId: "lint" },
+        { fromState: "open", toState: "fallback", trigger: "go", priority: 0 },
+      ],
+    });
+    const ctxNoGate = { entity: { gateResults: [] } };
+    expect(findTransition(flow, "open", "go", ctxNoGate)!.toState).toBe("fallback");
+
+    const ctxGatePassed = { entity: { gateResults: [{ gate: "lint", passed: true }] } };
+    expect(findTransition(flow, "open", "go", ctxGatePassed)!.toState).toBe("gated");
+  });
+
   it("stuck detection pattern — invocation_count > 3", () => {
     const flow = makeFlow({
       states: [{ name: "review" }, { name: "done" }, { name: "stuck" }],
