@@ -8,6 +8,20 @@
       "when": 1772820079904,
       "tag": "0000_simple_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1772820079905,
+      "tag": "0001_peaceful_marvel_apes",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772820079906,
+      "tag": "0002_add_invocations_created_at",
+      "breakpoints": true
     }
   ]
 }

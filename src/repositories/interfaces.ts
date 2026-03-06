@@ -280,6 +280,9 @@ export interface IInvocationRepository {
 
   /** Find and mark expired invocations (where now - claimedAt > row's ttlMs). Returns the expired invocations. */
   reapExpired(): Promise<Invocation[]>;
+
+  /** Find unclaimed active-mode invocations, optionally filtered by flow. */
+  findUnclaimedActive(flowId?: string): Promise<Invocation[]>;
 }
 
 /** Data-access contract for entity state-transition audit trails. */
