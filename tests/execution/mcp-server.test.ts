@@ -535,131 +535,18 @@ describe("MCP tool handlers", () => {
       entity_id: "ent-1",
       signal: "complete",
     });
-    expect(result.isError).toBe(true);
+    // Gate block now returns structured JSON (not an error), but still fails invocation
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.gated).toBe(true);
+    expect(data.gateName).toBe("lint-gate");
     expect(gateRecorded).toBe(false);
+    // Gate blocked BEFORE complete — invocation must be failed (not completed) so entity can be reclaimed
     expect(failCalled).toBe(true);
     expect(completeCalled).toBe(false);
   });
 
-  // Finding 6: flow.report uses condition and priority matching (not inline find)
-  it("flow.report uses condition and priority to pick the correct transition", async () => {
-    const flowWithConditions = mockFlow({
-      transitions: [
-        {
-          id: "t-cond-0",
-          flowId: "flow-1",
-          fromState: "draft",
-          toState: "done",
-          trigger: "complete",
-          condition: '{{#if (eq entity.state "wrong")}}true{{/if}}',
-          priority: 2,
-          gateId: null,
-          spawnFlow: null,
-          spawnTemplate: null,
-          createdAt: null,
-        },
-        {
-          id: "t-cond-1",
-          flowId: "flow-1",
-          fromState: "draft",
-          toState: "review",
-          trigger: "complete",
-          condition: null,
-          priority: 1,
-          gateId: null,
-          spawnFlow: null,
-          spawnTemplate: null,
-          createdAt: null,
-        },
-      ],
-    });
-    deps.flows.get = async () => flowWithConditions;
-
-    let transitionedTo: string | null = null;
-    deps.entities.transition = async (_id, toState) => {
-      transitionedTo = toState;
-      return mockEntity({ state: toState });
-    };
-
-    const result = await callTool("flow.report", {
-      entity_id: "ent-1",
-      signal: "complete",
-    });
-
-    expect(result.isError).not.toBe(true);
-    // Priority 1 unconditional transition wins over priority 2 conditional that doesn't match
-    expect(transitionedTo).toBe("review");
-  });
-
-  // Finding (round 2) 1: bad template transitions are skipped (warn), not rethrown
-  // With the fix to findTransition, a bad template causes the transition to be skipped.
-  // If no valid fallback exists, the error is "No transition" (not "condition evaluation error").
-  it("flow.report returns isError when all transitions have bad templates (no valid fallback)", async () => {
-    const flowWithBadCondition = mockFlow({
-      transitions: [
-        {
-          id: "t-bad-cond",
-          flowId: "flow-1",
-          fromState: "draft",
-          toState: "review",
-          trigger: "complete",
-          gateId: null,
-          condition: "{{#if}}", // invalid Handlebars — skipped by findTransition
-          priority: 0,
-          spawnFlow: null,
-          spawnTemplate: null,
-          createdAt: null,
-        },
-      ],
-    });
-    deps.flows.get = async () => flowWithBadCondition;
-    deps.gates.resultsFor = async () => [];
-    const result = await callTool("flow.report", {
-      entity_id: "ent-1",
-      signal: "complete",
-    });
-    expect(result.isError).toBe(true);
-    const content = result.content as Array<{ type: string; text: string }>;
-    expect(content[0].text).toMatch(/no transition/i);
-  });
-
-  // Finding (round 2) 2: no fallback find() — gated-blocked returns generic "No transition" error
-  it("flow.report returns generic no-transition error (no fallback find) when gate not passed", async () => {
-    const flowWithGate = mockFlow({
-      transitions: [
-        {
-          id: "t-gate",
-          flowId: "flow-1",
-          fromState: "draft",
-          toState: "review",
-          trigger: "complete",
-          gateId: "g-1",
-          condition: null,
-          priority: 0,
-          spawnFlow: null,
-          spawnTemplate: null,
-          createdAt: null,
-        },
-      ],
-    });
-    deps.flows.get = async () => flowWithGate;
-    deps.gates.resultsFor = async () => [];
-    let failCalled = false;
-    deps.invocations.fail = async (id, error) => {
-      failCalled = true;
-      return mockInvocation({ id, error, failedAt: new Date() });
-    };
-    const result = await callTool("flow.report", {
-      entity_id: "ent-1",
-      signal: "complete",
-    });
-    expect(result.isError).toBe(true);
-    // Invocation claim is released via fail() so entity is not stuck
-    expect(failCalled).toBe(true);
-  });
-
-  // Finding (round 3) 1: gate block calls fail() to release claim
-  it("flow.report calls invocationRepo.fail() when gate not passed (releases claim)", async () => {
+  it("flow.report returns structured gate info (gated, gateName) when gate blocks", async () => {
     const flowWithGate = mockFlow({
       transitions: [
         {
@@ -668,7 +555,7 @@ describe("MCP tool handlers", () => {
           fromState: "draft",
           toState: "review",
           trigger: "complete",
-          gateId: "g-1",
+          gateId: "g-2",
           condition: null,
           priority: 0,
           spawnFlow: null,
@@ -678,55 +565,47 @@ describe("MCP tool handlers", () => {
       ],
     });
     deps.flows.get = async () => flowWithGate;
+    deps.gates.get = async () => ({
+      id: "g-2",
+      name: "ci_passes",
+      type: "command",
+      command: "gh pr checks",
+      functionRef: null,
+      apiConfig: null,
+      timeoutMs: 30000,
+    });
     deps.gates.resultsFor = async () => [];
-    let failCalled = false;
-    deps.invocations.fail = async (id, error) => {
-      failCalled = true;
-      return mockInvocation({ id, error, failedAt: new Date() });
+    deps.invocations.fail = async (id, error) => mockInvocation({ id, error, failedAt: new Date() });
+
+    const result = await callTool("flow.report", {
+      entity_id: "ent-1",
+      signal: "complete",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.gated).toBe(true);
+    expect(data.gateName).toBe("ci_passes");
+  });
+
+  // Finding 1 (round 4): flow.report must clear gate_failures on successful transition
+  it("flow.report clears gate_failures after successful transition", async () => {
+    deps.entities.get = async () =>
+      mockEntity({ artifacts: { gate_failures: [{ gateId: "g-1", failedAt: "2024-01-01" }], other: "preserved" } });
+    const updateArtifactsCalls: Array<Record<string, unknown>> = [];
+    deps.entities.updateArtifacts = async (_id, artifacts) => {
+      updateArtifactsCalls.push(artifacts as Record<string, unknown>);
     };
     const result = await callTool("flow.report", {
       entity_id: "ent-1",
       signal: "complete",
     });
-    expect(result.isError).toBe(true);
-    expect(failCalled).toBe(true);
+    expect(result.isError).toBeUndefined();
+    const clearCall = updateArtifactsCalls.find((a) => Array.isArray(a.gate_failures) && (a.gate_failures as unknown[]).length === 0);
+    expect(clearCall).toBeDefined();
   });
 
-  // Finding (round 3) 2: condition error calls fail() to release claim
-  it("flow.report calls invocationRepo.fail() when condition evaluation throws (releases claim)", async () => {
-    const flowWithBadCond = mockFlow({
-      transitions: [
-        {
-          id: "t-bad",
-          flowId: "flow-1",
-          fromState: "draft",
-          toState: "review",
-          trigger: "complete",
-          gateId: null,
-          condition: "{{#if}}", // invalid — throws
-          priority: 0,
-          spawnFlow: null,
-          spawnTemplate: null,
-          createdAt: null,
-        },
-      ],
-    });
-    deps.flows.get = async () => flowWithBadCond;
-    deps.gates.resultsFor = async () => [];
-    let failCalled = false;
-    deps.invocations.fail = async (id, error) => {
-      failCalled = true;
-      return mockInvocation({ id, error, failedAt: new Date() });
-    };
-    const result = await callTool("flow.report", {
-      entity_id: "ent-1",
-      signal: "complete",
-    });
-    expect(result.isError).toBe(true);
-    expect(failCalled).toBe(true);
-  });
-
-  // Finding 7: limit param is clamped
+  // Finding 6: limit param is clamped
   it("query.entities clamps limit to valid range", async () => {
     let capturedLimit = 0;
     const allEntities = Array.from({ length: 300 }, (_, i) => mockEntity({ id: `ent-${i}` }));

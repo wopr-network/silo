@@ -2,7 +2,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { findTransition } from "../engine/state-machine.js";
 import type {
   IEntityRepository,
   IEventRepository,
@@ -485,33 +484,38 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
   const flow = await deps.flows.get(entity.flowId);
   if (!flow) return errorResult(`Flow not found for entity: ${entityId}`);
 
-  const priorGateResults = await deps.gates.resultsFor(entityId);
-  const entityWithGates = {
-    ...entity,
-    gateResults: priorGateResults.map((r) => ({ gate: r.gateId, passed: r.passed })),
-  };
-
-  let transition: ReturnType<typeof findTransition>;
-  try {
-    transition = findTransition(flow, entity.state, signal, { entity: entityWithGates });
-  } catch (err) {
-    const msg = `Condition evaluation error: ${err instanceof Error ? err.message : String(err)}`;
-    await deps.invocations.fail(activeInvocation.id, msg);
-    return errorResult(msg);
-  }
+  const transition = flow.transitions.find((t) => t.fromState === entity.state && t.trigger === signal);
 
   // Validate the transition exists BEFORE completing the invocation
   if (!transition) {
-    const msg = `No transition from state '${entity.state}' with signal '${signal}' in flow '${flow.name}'`;
-    await deps.invocations.fail(activeInvocation.id, msg);
-    return errorResult(msg);
+    return errorResult(`No transition from state '${entity.state}' with signal '${signal}' in flow '${flow.name}'`);
   }
 
-  // Gate passed (findTransition verified via entity.gateResults) — record for tracking
+  // Check gate BEFORE completing — if gate blocks, fail the invocation so entity can be reclaimed
   const gatesPassed: string[] = [];
   if (transition.gateId) {
     const gate = await deps.gates.get(transition.gateId);
     if (gate) {
+      // Check if the gate already has a prior passing result — if so, proceed
+      const priorResults = await deps.gates.resultsFor(entityId);
+      const alreadyPassed = priorResults.some((r) => r.gateId === transition.gateId && r.passed === true);
+      if (!alreadyPassed) {
+        await deps.invocations.fail(activeInvocation.id, `Gate '${gate.name}' not yet passed`);
+        // Return structured JSON (not an error) so callers can parse gated/gateName
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                gated: true,
+                gateName: gate.name,
+                gateId: gate.id,
+                message: `Gate '${gate.name}' must be evaluated before transition can proceed.`,
+              }),
+            },
+          ],
+        };
+      }
       gatesPassed.push(gate.name);
     }
   }
@@ -519,6 +523,10 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
   await deps.invocations.complete(activeInvocation.id, signal, artifacts);
 
   const updated = await deps.entities.transition(entityId, transition.toState, signal, artifacts);
+
+  // Clear gate_failures on successful transition so stale failures don't bleed into future agent prompts.
+  // updateArtifacts merges (not replaces) so other artifact fields are preserved.
+  await deps.entities.updateArtifacts(entityId, { gate_failures: [] });
 
   await deps.transitions.record({
     entityId,

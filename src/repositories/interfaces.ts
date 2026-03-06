@@ -197,7 +197,8 @@ export interface IEntityRepository {
   /** Transition an entity to a new state, recording the trigger and optional artifacts. */
   transition(id: string, toState: string, trigger: string, artifacts?: Partial<Artifacts>): Promise<Entity>;
 
-  /** Merge partial artifacts into an entity's existing artifact bag. */
+  /** Merge partial artifacts into an entity's existing artifact bag. Performs a shallow merge
+   *  ({ ...existing, ...artifacts }) — only the specified keys are updated; unspecified keys are preserved. */
   updateArtifacts(id: string, artifacts: Partial<Artifacts>): Promise<void>;
 
   /** Atomically claim one unclaimed entity in the given flow+state for the specified agent. Returns null if none available. Uses compare-and-swap (UPDATE WHERE claimedBy IS NULL). */

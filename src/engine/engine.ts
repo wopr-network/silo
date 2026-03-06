@@ -1,7 +1,6 @@
 import type { IEventBusAdapter } from "../adapters/interfaces.js";
 import type {
   Artifacts,
-  EnrichedEntity,
   Entity,
   Flow,
   IEntityRepository,
@@ -20,6 +19,7 @@ export interface ProcessSignalResult {
   gatesPassed: string[];
   gated: boolean;
   gateOutput?: string;
+  gateName?: string;
   invocationId?: string;
   spawned?: string[];
   terminal: boolean;
@@ -89,13 +89,29 @@ export class Engine {
 
       const gateResult = await evaluateGate(gate, entity, this.gateRepo);
       if (!gateResult.passed) {
+        // Persist gate failure into entity artifacts for retry context
+        const priorFailures = Array.isArray(entity.artifacts?.gate_failures)
+          ? (entity.artifacts.gate_failures as Array<Record<string, unknown>>)
+          : [];
+        await this.entityRepo.updateArtifacts(entityId, {
+          gate_failures: [
+            ...priorFailures,
+            {
+              gateId: gate.id,
+              gateName: gate.name,
+              output: gateResult.output,
+              failedAt: new Date().toISOString(),
+            },
+          ],
+        });
+
         await this.eventEmitter.emit({
           type: "gate.failed",
           entityId,
           gateId: gate.id,
           emittedAt: new Date(),
         });
-        return { gated: true, gateOutput: gateResult.output, gatesPassed, terminal: false };
+        return { gated: true, gateOutput: gateResult.output, gateName: gate.name, gatesPassed, terminal: false };
       }
       gatesPassed.push(gate.id);
       await this.eventEmitter.emit({
@@ -107,7 +123,12 @@ export class Engine {
     }
 
     // 5. Transition entity
-    const updated = await this.entityRepo.transition(entityId, transition.toState, signal, artifacts);
+    let updated = await this.entityRepo.transition(entityId, transition.toState, signal, artifacts);
+
+    // Clear gate_failures on successful transition so stale failures don't bleed into future agent prompts
+    await this.entityRepo.updateArtifacts(entityId, { gate_failures: [] });
+    // Keep the in-memory entity in sync so buildInvocation sees the cleared failures
+    updated = { ...updated, artifacts: { ...updated.artifacts, gate_failures: [] } };
 
     // 6. Emit transition event
     await this.eventEmitter.emit({
@@ -132,12 +153,7 @@ export class Engine {
     if (newStateDef?.agentRole) {
       const canCreate = await this.checkConcurrency(flow, entity);
       if (canCreate) {
-        const [invocations, gateResults] = await Promise.all([
-          this.invocationRepo.findByEntity(updated.id),
-          this.gateRepo.resultsFor(updated.id),
-        ]);
-        const enriched: EnrichedEntity = { ...updated, invocations, gateResults };
-        const build = buildInvocation(newStateDef, enriched);
+        const build = buildInvocation(newStateDef, updated);
         const invocation = await this.invocationRepo.create(
           entityId,
           transition.toState,
@@ -209,12 +225,7 @@ export class Engine {
     // Create invocation if initial state has an agent role
     const initialState = flow.states.find((s) => s.name === flow.initialState);
     if (initialState?.agentRole) {
-      const [invocations, gateResults] = await Promise.all([
-        this.invocationRepo.findByEntity(entity.id),
-        this.gateRepo.resultsFor(entity.id),
-      ]);
-      const enriched: EnrichedEntity = { ...entity, invocations, gateResults };
-      const build = buildInvocation(initialState, enriched);
+      const build = buildInvocation(initialState, entity);
       await this.invocationRepo.create(
         entity.id,
         flow.initialState,
@@ -248,17 +259,7 @@ export class Engine {
           if (!claimedInvocation) continue;
 
           const state = flow.states.find((s) => s.name === pending.stage);
-          let build: { prompt: string; context: Record<string, unknown> | null };
-          if (state) {
-            const [invocations, gateResults] = await Promise.all([
-              this.invocationRepo.findByEntity(claimed.id),
-              this.gateRepo.resultsFor(claimed.id),
-            ]);
-            const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
-            build = buildInvocation(state, enriched);
-          } else {
-            build = { prompt: pending.prompt, context: null };
-          }
+          const build = state ? buildInvocation(state, claimed) : { prompt: pending.prompt, context: null };
 
           await this.eventEmitter.emit({
             type: "entity.claimed",
@@ -281,12 +282,7 @@ export class Engine {
       for (const state of claimableStates) {
         const claimed = await this.entityRepo.claim(flow.id, state.name, `agent:${role}`);
         if (claimed) {
-          const [invocations, gateResults] = await Promise.all([
-            this.invocationRepo.findByEntity(claimed.id),
-            this.gateRepo.resultsFor(claimed.id),
-          ]);
-          const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
-          const build = buildInvocation(state, enriched);
+          const build = buildInvocation(state, claimed);
           const invocation = await this.invocationRepo.create(
             claimed.id,
             state.name,
