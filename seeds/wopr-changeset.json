@@ -1,0 +1,177 @@
+{
+  "flows": [
+    {
+      "name": "wopr-changeset",
+      "description": "WOPR continuous delivery pipeline: architect -> code -> review -> fix -> merge. Replaces the hand-coded /wopr:auto skill.",
+      "initialState": "backlog",
+      "maxConcurrent": 4,
+      "maxConcurrentPerRepo": 4,
+      "createdBy": "seed:wopr-changeset"
+    }
+  ],
+  "states": [
+    {
+      "name": "backlog",
+      "flowName": "wopr-changeset",
+      "mode": "passive"
+    },
+    {
+      "name": "architecting",
+      "flowName": "wopr-changeset",
+      "agentRole": "wopr-architect",
+      "modelTier": "opus",
+      "mode": "active",
+      "promptTemplate": "Your name is \"architect-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## YOUR ROLE — READ ONLY\nYou are a spec writer, NOT a coder. Do NOT create, edit, or write any code files.\nDo NOT create branches, worktrees, or PRs. Do NOT run git checkout or git commit.\nYour ONLY deliverable is an implementation spec posted as a Linear comment.\nRead the codebase at the path below for context only. Then post your spec and send \"Spec ready: {{entity.refs.linear.key}}\" to team-lead.\n\n## Assignment\nIssue: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nLinear ID: {{entity.refs.linear.id}}\nRepo: {{entity.refs.github.repo}}\nCodebase (READ ONLY): {{entity.artifacts.codebasePath}}\n\n## Issue Description\n{{entity.refs.linear.description}}\n\n## Deliverable\nPost a detailed implementation spec as a Linear comment on the issue. The spec must include:\n1. Exact files to create/modify with full paths\n2. Function signatures and data structures\n3. Step-by-step implementation tasks (TDD: failing test first, then implementation)\n4. Edge cases and gotchas from CLAUDE.md and codebase analysis\n5. Exact test commands and commit messages per task\n\nThen send to team-lead: \"Spec ready: {{entity.refs.linear.key}}\""
+    },
+    {
+      "name": "coding",
+      "flowName": "wopr-changeset",
+      "agentRole": "wopr-coder",
+      "modelTier": "sonnet",
+      "mode": "active",
+      "promptTemplate": "Your name is \"coder-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIssue: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\nWorktree: {{entity.artifacts.worktreePath}}\nBranch: {{entity.artifacts.branch}}\n\n## Step 1: Read the architect spec\nFetch comments from Linear issue {{entity.refs.linear.id}} and find the implementation spec posted by the architect.\n\n## Step 2: Follow the spec\nWork in the worktree at {{entity.artifacts.worktreePath}}. Follow the spec step by step:\n1. Write the failing test first\n2. Implement minimal code to pass the test\n3. Run targeted tests: `npx vitest run <test-file>` — NEVER `pnpm test` in worktrees (OOMs)\n4. Commit after each green task\n\n## Step 3: Create PR\n```bash\ncd {{entity.artifacts.worktreePath}}\ngit push -u origin {{entity.artifacts.branch}}\ngh pr create --repo {{entity.refs.github.repo}} \\\n  --title \"feat: {{entity.refs.linear.title}} ({{entity.refs.linear.key}})\" \\\n  --body \"Closes {{entity.refs.linear.key}}\"\n```\n\n## Completion\nSend to team-lead: \"PR created: <PR_URL> for {{entity.refs.linear.key}}\""
+    },
+    {
+      "name": "reviewing",
+      "flowName": "wopr-changeset",
+      "agentRole": "wopr-reviewer",
+      "modelTier": "sonnet",
+      "mode": "active",
+      "promptTemplate": "Your name is \"reviewer-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nPR: {{entity.artifacts.prUrl}} (#{{entity.artifacts.prNumber}})\nIssue: {{entity.refs.linear.key}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Wait for review bots\n```bash\n~/wopr-await-reviews.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}}\n```\n\n## Step 2: Check CI status\n```bash\ngh pr checks {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}}\n```\nIf ANY check is FAILING, report ISSUES immediately — no code review needed.\n\n## Step 3: Read ALL review comments\n```bash\n# Inline comments (WHERE QODO /improve SUGGESTIONS APPEAR)\ngh api repos/{{entity.refs.github.repo}}/pulls/{{entity.artifacts.prNumber}}/comments \\\n  --jq '.[] | \"[\\(.user.login)] \\(.path):\\(.line // \"?\") — \\(.body)\"'\n\n# Formal reviews\ngh pr view {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}} --json reviews \\\n  --jq '.reviews[]? | \"[\\(.author.login) / \\(.state)] \\(.body)\"'\n\n# Top-level comments\ngh api repos/{{entity.refs.github.repo}}/issues/{{entity.artifacts.prNumber}}/comments \\\n  --jq '.[] | \"[\\(.user.login)] \\(.body)\"'\n```\n\nIMPORTANT: ALWAYS call `gh api repos/.../pulls/N/comments` for inline comments.\nIf a Qodo comment has `line: null`, it is outdated — reply to resolve it, do NOT treat as blocking.\nNEVER declare CLEAN if Qodo has any open /improve suggestions on current code.\n\n## Step 4: Read the diff\n```bash\ngh pr diff {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}}\n```\n\n## Step 5: Render verdict\n- If all CI green AND no actionable findings: \"CLEAN: {{entity.artifacts.prUrl}}\"\n- If issues found: \"ISSUES: {{entity.artifacts.prUrl}} — <finding1>; <finding2>\"\n\n## Signal Format\nEnd your message to team-lead with exactly one of:\n- \"CLEAN: <pr-url>\" — if all checks pass and no findings\n- \"ISSUES: <pr-url> — <finding1>; <finding2>\" — if any issues found"
+    },
+    {
+      "name": "fixing",
+      "flowName": "wopr-changeset",
+      "agentRole": "wopr-fixer",
+      "modelTier": "sonnet",
+      "mode": "active",
+      "promptTemplate": "Your name is \"fixer-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nPR: {{entity.artifacts.prUrl}} (#{{entity.artifacts.prNumber}})\nIssue: {{entity.refs.linear.key}}\nRepo: {{entity.refs.github.repo}}\nWorktree: {{entity.artifacts.worktreePath}}\nBranch: {{entity.artifacts.branch}}\n\n## Step 1: Rebase before touching anything\n```bash\ncd {{entity.artifacts.worktreePath}}\ngit fetch origin\ngit rebase origin/main\n```\nIf rebase conflicts and you cannot resolve: send \"Can't resolve: {{entity.artifacts.prUrl}} — rebase conflict in <filename>: <description>\"\n\n## Step 2: Fix the findings\n\n### Reviewer Findings\n{{entity.artifacts.reviewFindings}}\n\nAddress each finding. Run targeted tests after each fix: `npx vitest run <test-file>`\n\n## Step 3: Push fixes\n```bash\ngit add <specific-files>\ngit commit -m \"fix: address review findings\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\"\ngit push origin {{entity.artifacts.branch}}\n```\n\n## Completion\nSend to team-lead: \"Fixes pushed: {{entity.artifacts.prUrl}}\""
+    },
+    {
+      "name": "merging",
+      "flowName": "wopr-changeset",
+      "agentRole": "watcher",
+      "modelTier": "haiku",
+      "mode": "active",
+      "promptTemplate": "Your name is \"watcher-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\nRun ~/wopr-pr-watch.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}} and report the result.\n\n- If MERGED: send \"Merged: {{entity.artifacts.prUrl}} for {{entity.refs.linear.key}}\"\n- If BLOCKED: send \"BLOCKED: {{entity.artifacts.prUrl}} for {{entity.refs.linear.key}} — CI failing: <checks>\"\n- If CLOSED: send \"CLOSED: {{entity.artifacts.prUrl}} for {{entity.refs.linear.key}}\"\n- If TIMEOUT: send \"TIMEOUT: {{entity.artifacts.prUrl}} for {{entity.refs.linear.key}}\""
+    },
+    {
+      "name": "stuck",
+      "flowName": "wopr-changeset",
+      "mode": "passive",
+      "constraints": {
+        "description": "Issue has been flagged 3+ times for the same finding. Requires human intervention."
+      }
+    },
+    {
+      "name": "done",
+      "flowName": "wopr-changeset",
+      "mode": "passive"
+    }
+  ],
+  "gates": [],
+  "transitions": [
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "backlog",
+      "toState": "architecting",
+      "trigger": "start",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "architecting",
+      "toState": "coding",
+      "trigger": "spec_ready",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "coding",
+      "toState": "reviewing",
+      "trigger": "pr_created",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "reviewing",
+      "toState": "merging",
+      "trigger": "clean",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "reviewing",
+      "toState": "fixing",
+      "trigger": "issues",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "fixing",
+      "toState": "reviewing",
+      "trigger": "fixes_pushed",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "fixing",
+      "toState": "stuck",
+      "trigger": "cant_resolve",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "merging",
+      "toState": "done",
+      "trigger": "merged",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "merging",
+      "toState": "reviewing",
+      "trigger": "blocked",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-changeset",
+      "fromState": "merging",
+      "toState": "stuck",
+      "trigger": "closed",
+      "priority": 2
+    }
+  ],
+  "integrations": [
+    {
+      "capability": "issue_tracker",
+      "adapter": "linear",
+      "config": {
+        "teamKey": "WOP",
+        "stateMapping": {
+          "backlog": "Backlog",
+          "architecting": "In Progress",
+          "coding": "In Progress",
+          "reviewing": "In Review",
+          "fixing": "In Progress",
+          "merging": "In Review",
+          "done": "Done",
+          "stuck": "Backlog"
+        }
+      }
+    },
+    {
+      "capability": "vcs",
+      "adapter": "github",
+      "config": {
+        "org": "wopr-network",
+        "mergeStrategy": "squash",
+        "branchPattern": "agent/coder-{{issueNum}}/{{issueKey}}"
+      }
+    },
+    {
+      "capability": "notifications",
+      "adapter": "stdout"
+    }
+  ]
+}
