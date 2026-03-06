@@ -72,41 +72,88 @@ These aren't suggestions in a prompt. They're shell commands the engine executes
 
 DEFCON runs in two modes. Same escalation. Same gates. Different driver.
 
-**Mode 1: Your agent drives.** You're already running Claude Code, Cursor, Copilot — whatever. Your agent connects to DEFCON via MCP and pulls work. It does the task. It reports the result. DEFCON runs the gate and decides what happens next.
+**Mode 1: Your agent drives.** You're already running Claude Code, Cursor, Copilot — whatever. Your agent connects to DEFCON via MCP and asks for work. DEFCON tells it exactly what to do, the agent does it, and DEFCON decides what happens next.
 
 ```
-# Your agent asks: "what should I work on?"
-→ flow.claim()
-← { entityId: "feat-392", state: "coding", prompt: "Implement the auth middleware..." }
+Agent: flow.claim()
+DEFCON: Here's feat-392. It's in "backlog." Write an implementation spec.
+        Read the codebase. Identify the files, the function signatures,
+        the edge cases. Post the spec as a comment on the issue.
+        When you're done, report back with signal "spec_ready".
 
-# Your agent does the work, then reports back
-→ flow.report({ signal: "pr_created", artifacts: { prUrl: "https://..." } })
+        ... agent writes the spec ...
 
-# DEFCON runs the gate. CI passes? Entity moves to reviewing.
-# CI fails? Entity stays in coding. Your agent gets told why.
-← { transitioned: true, newState: "reviewing" }
+Agent: flow.report({ signal: "spec_ready" })
+DEFCON: Gate passed. feat-392 is now in "coding." Claim it again when
+        you're ready.
+
+Agent: flow.claim()
+DEFCON: feat-392 is in "coding." Implement the spec you wrote. Create a
+        branch, write failing tests first, then implementation. Push a PR.
+        Report back with signal "pr_created" and the PR URL.
+
+        ... agent writes the code, pushes the PR ...
+
+Agent: flow.report({ signal: "pr_created", artifacts: { prUrl: "..." } })
+DEFCON: Running gate... tsc --noEmit: PASS. biome check: PASS. npm test: PASS.
+        Gate passed. feat-392 is now in "reviewing."
+
+Agent: flow.claim()
+DEFCON: feat-392 is in "reviewing." Check CI status on the PR. Read all
+        review bot comments. Read the diff. If everything is clean,
+        report "clean". If there are findings, report "issues" with
+        the details.
+
+        ... agent reviews, finds a security bot flagged something ...
+
+Agent: flow.report({ signal: "issues", artifacts: { findings: "..." } })
+DEFCON: feat-392 is now in "fixing." The findings are attached.
+
+Agent: flow.claim()
+DEFCON: feat-392 is in "fixing." Here are the findings from the reviewer:
+        [security bot: unvalidated user input on line 47 of auth.ts]
+        Fix them. Push. Report "fixes_pushed".
+
+        ... agent fixes, pushes ...
+
+Agent: flow.report({ signal: "fixes_pushed" })
+DEFCON: feat-392 is back in "reviewing."
+
+        ... agent claims, reviews again, everything clean this time ...
+
+Agent: flow.report({ signal: "clean" })
+DEFCON: Gate passed. feat-392 is now in "merging." Merge queue entered.
+
+        ... CI passes on merge commit ...
+
+DEFCON: feat-392 is "done." Merged.
 ```
 
-Your agent never decides whether the work is good enough to move forward. It does the work and reports a signal. DEFCON evaluates the gate. The engine decides.
+The agent never decides whether the work is good enough. It does the work, reports a signal, and DEFCON runs the gate. The engine decides what moves forward. The agent just follows the escalation path.
 
-**Mode 2: DEFCON drives.** You give DEFCON your API key. It calls the model directly. It spawns the right agent for each state, feeds it the prompt, parses the signal from the response, runs the gate, and moves to the next state. You don't run anything. DEFCON runs the pipeline end to end.
+**Mode 2: DEFCON drives.** You give DEFCON your API key. It runs the entire pipeline autonomously — spawning the right agent for each state, feeding it the prompt, parsing the signal, running the gate, advancing the entity. You start it and walk away.
 
 ```bash
-# Give DEFCON your key and a flow definition. Walk away.
 export ANTHROPIC_API_KEY=sk-ant-...
 npx defcon run --flow my-pipeline
-
-# DEFCON spawns an architect agent for the spec state.
-# Architect emits spec_ready. Gate passes. Entity moves to coding.
-# DEFCON spawns a coder agent. Coder emits pr_created. Gate runs CI.
-# CI fails. Entity stays in coding. DEFCON spawns the coder again
-# with the failure context baked into the prompt.
-# CI passes. Entity moves to reviewing. DEFCON spawns a reviewer.
-# Reviewer emits clean. Entity moves to merging. PR merges.
-# Done.
 ```
 
-Same flow. Same gates. Same escalation path. The only difference is who's turning the crank — your agent or DEFCON's runner. Either way, the work doesn't advance until the evidence says it should.
+```
+[defcon] feat-392 entered "spec" — spawning architect (opus)
+[defcon] architect → spec_ready — running gate... PASS
+[defcon] feat-392 entered "coding" — spawning coder (sonnet)
+[defcon] coder → pr_created — running gate: tsc... PASS, biome... PASS, tests... PASS
+[defcon] feat-392 entered "reviewing" — spawning reviewer (sonnet)
+[defcon] reviewer → issues — "unvalidated input in auth.ts:47"
+[defcon] feat-392 entered "fixing" — spawning fixer (sonnet)
+[defcon] fixer → fixes_pushed — returning to reviewing
+[defcon] feat-392 entered "reviewing" — spawning reviewer (sonnet)
+[defcon] reviewer → clean — running gate... PASS
+[defcon] feat-392 entered "merging" — merge queue entered
+[defcon] feat-392 → done. Merged.
+```
+
+Same flow. Same gates. Same escalation. The only difference is who's turning the crank — your agent or DEFCON's runner. Either way, the work doesn't advance until the evidence says it should.
 
 ## The Engine
 
