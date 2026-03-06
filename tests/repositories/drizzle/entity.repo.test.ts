@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { bootstrap } from "../../../src/main.js";
 import { DrizzleEntityRepository } from "../../../src/repositories/drizzle/entity.repo.js";
-import { flowDefinitions, entities, entityHistory } from "../../../src/repositories/drizzle/schema.js";
+import { flowDefinitions, entities } from "../../../src/repositories/drizzle/schema.js";
 import type Database from "better-sqlite3";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
@@ -83,17 +83,15 @@ describe("DrizzleEntityRepository", () => {
   });
 
   describe("transition", () => {
-    it("updates entity state and records history", async () => {
+    it("updates entity state", async () => {
       const entity = await repo.create(TEST_FLOW_ID, "open");
       const updated = await repo.transition(entity.id, "in_progress", "start_work");
       expect(updated.state).toBe("in_progress");
       expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(entity.updatedAt.getTime());
 
-      const history = await db.select().from(entityHistory).where(eq(entityHistory.entityId, entity.id));
-      expect(history).toHaveLength(1);
-      expect(history[0].fromState).toBe("open");
-      expect(history[0].toState).toBe("in_progress");
-      expect(history[0].trigger).toBe("start_work");
+      const rows = await db.select().from(entities).where(eq(entities.id, entity.id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].state).toBe("in_progress");
     });
 
     it("merges artifacts during transition", async () => {

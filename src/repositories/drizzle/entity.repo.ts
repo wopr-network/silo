@@ -2,7 +2,7 @@ import { and, eq, isNull, lt, not } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { Artifacts, Entity, IEntityRepository, Refs } from "../interfaces.js";
 import type * as schema from "./schema.js";
-import { entities, entityHistory } from "./schema.js";
+import { entities } from "./schema.js";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -59,9 +59,9 @@ export class DrizzleEntityRepository implements IEntityRepository {
   async transition(
     id: string,
     toState: string,
-    trigger: string,
+    _trigger: string,
     artifacts?: Partial<Artifacts>,
-    invocationId?: string | null,
+    _invocationId?: string | null,
   ): Promise<Entity> {
     return this.db.transaction((tx) => {
       const rows = tx.select().from(entities).where(eq(entities.id, id)).limit(1).all();
@@ -75,18 +75,6 @@ export class DrizzleEntityRepository implements IEntityRepository {
       tx.update(entities)
         .set({ state: toState, artifacts: mergedArtifacts, updatedAt: now })
         .where(eq(entities.id, id))
-        .run();
-
-      tx.insert(entityHistory)
-        .values({
-          id: crypto.randomUUID(),
-          entityId: id,
-          fromState: row.state,
-          toState,
-          trigger,
-          invocationId: invocationId ?? null,
-          timestamp: now,
-        })
         .run();
 
       return this.toEntity({
