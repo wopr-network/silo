@@ -68,6 +68,46 @@ That flow diagram looks simple. But every arrow is doing real work. Here's what'
 
 These aren't suggestions in a prompt. They're shell commands the engine executes. `tsc` either exits 0 or it doesn't. `biome check` either passes or it doesn't. The gate is a process that returns a status code. There's nothing to interpret. Nothing to negotiate. Nothing to skip.
 
+### See It In Action
+
+DEFCON runs in two modes. Same escalation. Same gates. Different driver.
+
+**Mode 1: Your agent drives.** You're already running Claude Code, Cursor, Copilot — whatever. Your agent connects to DEFCON via MCP and pulls work. It does the task. It reports the result. DEFCON runs the gate and decides what happens next.
+
+```
+# Your agent asks: "what should I work on?"
+→ flow.claim()
+← { entityId: "feat-392", state: "coding", prompt: "Implement the auth middleware..." }
+
+# Your agent does the work, then reports back
+→ flow.report({ signal: "pr_created", artifacts: { prUrl: "https://..." } })
+
+# DEFCON runs the gate. CI passes? Entity moves to reviewing.
+# CI fails? Entity stays in coding. Your agent gets told why.
+← { transitioned: true, newState: "reviewing" }
+```
+
+Your agent never decides whether the work is good enough to move forward. It does the work and reports a signal. DEFCON evaluates the gate. The engine decides.
+
+**Mode 2: DEFCON drives.** You give DEFCON your API key. It calls the model directly. It spawns the right agent for each state, feeds it the prompt, parses the signal from the response, runs the gate, and moves to the next state. You don't run anything. DEFCON runs the pipeline end to end.
+
+```bash
+# Give DEFCON your key and a flow definition. Walk away.
+export ANTHROPIC_API_KEY=sk-ant-...
+npx defcon run --flow my-pipeline
+
+# DEFCON spawns an architect agent for the spec state.
+# Architect emits spec_ready. Gate passes. Entity moves to coding.
+# DEFCON spawns a coder agent. Coder emits pr_created. Gate runs CI.
+# CI fails. Entity stays in coding. DEFCON spawns the coder again
+# with the failure context baked into the prompt.
+# CI passes. Entity moves to reviewing. DEFCON spawns a reviewer.
+# Reviewer emits clean. Entity moves to merging. PR merges.
+# Done.
+```
+
+Same flow. Same gates. Same escalation path. The only difference is who's turning the crank — your agent or DEFCON's runner. Either way, the work doesn't advance until the evidence says it should.
+
 ## The Engine
 
 A **flow** is a state machine. Entities enter it and move through states. At each state an agent does work. At each boundary a deterministic gate verifies the output. Transitions fire on signals — not parsed natural language, not regex, but typed strings agents emit via tool call. The entire definition lives in a database and can be mutated at runtime.
