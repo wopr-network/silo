@@ -31,7 +31,7 @@ export interface Invocation {
   agentRole: string | null;
   mode: Mode;
   prompt: string;
-  context: Record<string, unknown>;
+  context: Record<string, unknown> | null;
   claimedBy: string | null;
   claimedAt: Date | null;
   startedAt: Date | null;
@@ -50,7 +50,7 @@ export interface GateResult {
   gateId: string;
   passed: boolean;
   output: string | null;
-  evaluatedAt: Date;
+  evaluatedAt: Date | null;
 }
 
 /** Audit-log entry for an entity state transition */
@@ -196,6 +196,15 @@ export interface IEntityRepository {
   reapExpired(ttlMs: number): Promise<string[]>;
 }
 
+/** Fields that can be updated on a flow's top-level definition */
+export type UpdateFlowInput = Partial<Omit<Flow, "id" | "states" | "transitions" | "createdAt" | "updatedAt">>;
+
+/** Fields that can be updated on a state definition */
+export type UpdateStateInput = Partial<Omit<State, "id" | "flowId">>;
+
+/** Fields that can be updated on a transition rule */
+export type UpdateTransitionInput = Partial<Omit<Transition, "id" | "flowId">>;
+
 /** Data-access contract for flow definition CRUD and versioning. */
 export interface IFlowRepository {
   /** Create a new flow definition. */
@@ -208,19 +217,19 @@ export interface IFlowRepository {
   getByName(name: string): Promise<Flow | null>;
 
   /** Update a flow's top-level fields. */
-  update(id: string, changes: Partial<Omit<Flow, "states" | "transitions">>): Promise<Flow>;
+  update(id: string, changes: UpdateFlowInput): Promise<Flow>;
 
   /** Add a state definition to a flow. */
   addState(flowId: string, state: CreateStateInput): Promise<State>;
 
   /** Update an existing state definition. */
-  updateState(stateId: string, changes: Partial<State>): Promise<State>;
+  updateState(stateId: string, changes: UpdateStateInput): Promise<State>;
 
   /** Add a transition rule to a flow. */
   addTransition(flowId: string, transition: CreateTransitionInput): Promise<Transition>;
 
   /** Update an existing transition rule. */
-  updateTransition(transitionId: string, changes: Partial<Transition>): Promise<Transition>;
+  updateTransition(transitionId: string, changes: UpdateTransitionInput): Promise<Transition>;
 
   /** Create a versioned snapshot of the current flow definition. */
   snapshot(flowId: string): Promise<FlowVersion>;
@@ -261,6 +270,15 @@ export interface IInvocationRepository {
 
   /** Find and mark expired invocations (where now - claimedAt > row's ttlMs). Returns the expired invocations. */
   reapExpired(): Promise<Invocation[]>;
+}
+
+/** Data-access contract for entity state-transition audit trails. */
+export interface ITransitionLogRepository {
+  /** Record a state transition for an entity. */
+  record(log: Omit<TransitionLog, "id">): Promise<TransitionLog>;
+
+  /** Get full transition history for an entity, ordered by timestamp. */
+  historyFor(entityId: string): Promise<TransitionLog[]>;
 }
 
 /** Data-access contract for gate definitions and result recording. */
