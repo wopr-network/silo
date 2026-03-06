@@ -15,6 +15,22 @@ function run(args: string[], env: Record<string, string> = {}): string {
   });
 }
 
+function runExpectFail(args: string[], env: Record<string, string> = {}): string {
+  try {
+    execFileSync("npx", ["tsx", CLI, ...args], {
+      cwd: join(import.meta.dirname, "../.."),
+      encoding: "utf-8",
+      env: { ...process.env, ...env },
+      timeout: 15000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    throw new Error("Expected process to exit with non-zero code");
+  } catch (err: unknown) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    return e.stderr ?? e.stdout ?? e.message ?? "";
+  }
+}
+
 function writeSeedFile(seed: unknown): string {
   const dir = join(tmpdir(), `cli-test-${Date.now()}`);
   mkdirSync(dir, { recursive: true });
@@ -130,5 +146,33 @@ describe("CLI", () => {
     expect(output).toContain("--flow");
     expect(output).toContain("--filter");
     expect(output).toContain("--dry-run");
+  });
+
+  it("serve rejects non-numeric --reaper-interval", () => {
+    const dbPath = join(tmpdir(), `cli-serve-nan-${Date.now()}.db`);
+    const output = runExpectFail(["serve", "--reaper-interval", "abc"], { AGENTIC_DB_PATH: dbPath });
+    expect(output).toMatch(/reaper-interval/i);
+    if (existsSync(dbPath)) rmSync(dbPath);
+  });
+
+  it("serve rejects --reaper-interval below 1000", () => {
+    const dbPath = join(tmpdir(), `cli-serve-low-${Date.now()}.db`);
+    const output = runExpectFail(["serve", "--reaper-interval", "500"], { AGENTIC_DB_PATH: dbPath });
+    expect(output).toMatch(/reaper-interval/i);
+    if (existsSync(dbPath)) rmSync(dbPath);
+  });
+
+  it("run rejects non-numeric --reaper-interval", () => {
+    const dbPath = join(tmpdir(), `cli-run-nan-${Date.now()}.db`);
+    const output = runExpectFail(["run", "--reaper-interval", "abc"], { AGENTIC_DB_PATH: dbPath });
+    expect(output).toMatch(/reaper-interval/i);
+    if (existsSync(dbPath)) rmSync(dbPath);
+  });
+
+  it("run rejects --claim-ttl below 5000", () => {
+    const dbPath = join(tmpdir(), `cli-run-ttl-${Date.now()}.db`);
+    const output = runExpectFail(["run", "--claim-ttl", "100"], { AGENTIC_DB_PATH: dbPath });
+    expect(output).toMatch(/claim-ttl/i);
+    if (existsSync(dbPath)) rmSync(dbPath);
   });
 });

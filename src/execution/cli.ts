@@ -142,7 +142,19 @@ program
       adapters: new Map(),
       eventEmitter: new CompositeEventBusAdapter([]),
     });
-    const stopReaper = engine.startReaper(parseInt(opts.reaperInterval, 10), parseInt(opts.claimTtl, 10));
+    const reaperInterval = parseInt(opts.reaperInterval, 10);
+    if (Number.isNaN(reaperInterval) || reaperInterval < 1000) {
+      console.error("--reaper-interval must be a number >= 1000ms");
+      sqlite.close();
+      process.exit(1);
+    }
+    const claimTtl = parseInt(opts.claimTtl, 10);
+    if (Number.isNaN(claimTtl) || claimTtl < 5000) {
+      console.error("--claim-ttl must be a number >= 5000ms");
+      sqlite.close();
+      process.exit(1);
+    }
+    const stopReaper = engine.startReaper(reaperInterval, claimTtl);
 
     if (opts.transport === "sse") {
       const { SSEServerTransport } = await import("@modelcontextprotocol/sdk/server/sse.js");
@@ -215,6 +227,16 @@ program
       console.error(`Invalid --poll-interval: must be a number >= 100ms`);
       process.exit(1);
     }
+    const reaperInterval = parseInt(opts.reaperInterval, 10);
+    if (Number.isNaN(reaperInterval) || reaperInterval < 1000) {
+      console.error("--reaper-interval must be a number >= 1000ms");
+      process.exit(1);
+    }
+    const claimTtl = parseInt(opts.claimTtl, 10);
+    if (Number.isNaN(claimTtl) || claimTtl < 5000) {
+      console.error("--claim-ttl must be a number >= 5000ms");
+      process.exit(1);
+    }
 
     const { db, sqlite } = openDb(opts.db);
     const flowRepo = new DrizzleFlowRepository(db);
@@ -249,7 +271,7 @@ program
       eventEmitter,
     });
 
-    const stopReaper = engine.startReaper(parseInt(opts.reaperInterval, 10), parseInt(opts.claimTtl, 10));
+    const stopReaper = engine.startReaper(reaperInterval, claimTtl);
 
     const runner = new ActiveRunner({
       engine,
