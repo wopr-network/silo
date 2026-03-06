@@ -32,7 +32,7 @@ interface LinearIssuePayload {
 }
 
 interface LinearCreateIssueResult {
-  issue: Promise<{ id: string } | null | undefined>;
+  issue: { id: string } | null | undefined;
   success: boolean;
 }
 
@@ -59,7 +59,10 @@ export class LinearAdapter implements IIssueTrackerAdapter {
   }
 
   async get(id: string): Promise<Record<string, unknown>> {
-    const issue = (await this.client.issue(id)) as unknown as LinearIssuePayload;
+    const issue = (await this.client.issue(id)) as unknown as LinearIssuePayload | null | undefined;
+    if (!issue) {
+      throw new Error(`Issue not found: ${id}`);
+    }
     return this.normalize(issue);
   }
 
@@ -76,7 +79,7 @@ export class LinearAdapter implements IIssueTrackerAdapter {
       linearFilter.project = { name: { eq: filter.project } };
     }
     if (filter.labels !== undefined) {
-      linearFilter.labels = { name: { in: filter.labels } };
+      linearFilter.labels = { some: { name: { in: filter.labels } } };
     }
     if (this.teamId) {
       linearFilter.team = { id: { eq: this.teamId } };
@@ -92,7 +95,7 @@ export class LinearAdapter implements IIssueTrackerAdapter {
     }
     const payload = Object.assign({}, data, { teamId: this.teamId });
     const result = (await this.client.createIssue(payload as never)) as unknown as LinearCreateIssueResult;
-    const issue = await result.issue;
+    const issue = result.issue;
     if (!issue) {
       throw new Error("Failed to create issue: no issue returned");
     }

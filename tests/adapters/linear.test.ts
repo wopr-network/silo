@@ -73,6 +73,12 @@ describe("LinearAdapter", () => {
       });
     });
 
+    it("should throw when issue not found", async () => {
+      mockClient.issue.mockResolvedValue(null);
+
+      await expect(adapter.get("missing-id")).rejects.toThrow("Issue not found: missing-id");
+    });
+
     it("should handle null optional fields", async () => {
       mockClient.issue.mockResolvedValue({
         id: "issue-2",
@@ -152,7 +158,7 @@ describe("LinearAdapter", () => {
 
       expect(mockClient.issues).toHaveBeenCalledWith({
         filter: {
-          labels: { name: { in: ["bug", "urgent"] } },
+          labels: { some: { name: { in: ["bug", "urgent"] } } },
           team: { id: { eq: "team-1" } },
         },
       });
@@ -189,7 +195,7 @@ describe("LinearAdapter", () => {
   describe("create", () => {
     it("should create an issue and return id", async () => {
       mockClient.createIssue.mockResolvedValue({
-        issue: Promise.resolve({ id: "new-issue-1" }),
+        issue: { id: "new-issue-1" },
         success: true,
       });
 
