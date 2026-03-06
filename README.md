@@ -45,6 +45,31 @@ Agentic Engineering:  Human → AI → Gate → AI → Gate → AI → Gate → 
 
 Every arrow is verified. Every gate is deterministic. Every finding feeds back into the system to prevent recurrence. The methodology compounds — sprint 100 is easier than sprint 1 because the gates evolve.
 
+## Table of Contents
+
+### method/ — The Method
+
+| Section | Documents |
+|---------|-----------|
+| **Manifesto** | [What is Agentic Engineering](method/manifesto/what-is-agentic-engineering.md) · [Vibe Coding vs Agentic Engineering](method/manifesto/vibe-coding-vs-agentic-engineering.md) · [System Architecture Principles](method/manifesto/system-architecture-principles.md) · [Why This Works](method/manifesto/why-this-works.md) |
+| **Pipeline** | [Lifecycle](method/pipeline/lifecycle.md) · [Pipeline Schema](method/pipeline/pipeline-schema.md) |
+| **Stages** | [00 Groom](method/pipeline/stages/00-groom.md) · [01 Architect](method/pipeline/stages/01-architect.md) · [02 Implement](method/pipeline/stages/02-implement.md) · [03 Review](method/pipeline/stages/03-review.md) · [04 Fix](method/pipeline/stages/04-fix.md) · [05 Merge](method/pipeline/stages/05-merge.md) · [06 Deploy](method/pipeline/stages/06-deploy.md) · [07 Verify](method/pipeline/stages/07-verify.md) |
+| **Agents** | [Agent Definition Format](method/pipeline/agents/agent-format.md) · [Role Specifications](method/pipeline/agents/role-specifications.md) |
+| **Triggers** | [Event Bus](method/pipeline/triggers/event-bus.md) · [Trigger Taxonomy](method/pipeline/triggers/trigger-taxonomy.md) · [Cross-Session Communication](method/pipeline/triggers/cross-session.md) |
+| **Gates** | [Gate Taxonomy](method/gates/gate-taxonomy.md) · [Gate Scripts](method/gates/gate-scripts.md) · [Development Hooks](method/gates/hooks.md) |
+| **QA** | [QA Team Design](method/qa/qa-team.md) · [Post-Deploy Gate](method/qa/post-deploy-gate.md) · [Observability](method/qa/observability.md) |
+| **DevOps** | [Logbook Protocol](method/devops/logbook-protocol.md) · [Operations](method/devops/operations.md) · [CI/CD Bridge](method/devops/ci-cd-bridge.md) |
+| **Config** | [Agent Rules](method/config/agent-rules.md) · [Issue Tracker Workflow](method/config/issue-tracker-workflow.md) |
+| **Feedback** | [Learning Loop](method/feedback/learning-loop.md) · [Self-Improvement](method/feedback/self-improvement.md) |
+
+### wopr/ — The WOPR Way
+
+Every method/ document has a [1:1 counterpart in wopr/](wopr/) showing the concrete implementation with specific tools, commands, and configurations.
+
+### adoption/ — How To Adopt
+
+[Getting Started](adoption/getting-started.md) · [Checklist](adoption/checklist.md) · [Migration Guide](adoption/migration-guide.md)
+
 ## Who This Is For
 
 - **Human developers** adopting AI-assisted development who want reliability, not vibes
