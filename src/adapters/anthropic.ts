@@ -29,11 +29,14 @@ export class AnthropicAdapter implements IAIProviderAdapter {
         max_tokens: 8192,
         messages: [{ role: "user", content: prompt }],
       });
-      const textBlock = response.content.find((block) => block.type === "text");
-      return { content: textBlock && textBlock.type === "text" ? textBlock.text : "" };
+      const content = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .join("");
+      return { content };
     } catch (err) {
       if (err instanceof Anthropic.APIError) {
-        throw new Error(`Anthropic API error (${err.status}): ${err.message}`);
+        throw new Error(`Anthropic API error (${err.status}): ${err.message}`, { cause: err });
       }
       throw err;
     }

@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicAdapter } from "../../src/adapters/anthropic.js";
 import type { IAIProviderAdapter } from "../../src/adapters/interfaces.js";
@@ -115,19 +116,37 @@ describe("AnthropicAdapter", () => {
     expect(result).toEqual({ content: "" });
   });
 
-  it("throws on API authentication error", async () => {
-    createMock.mockRejectedValueOnce(new Error("Invalid API key"));
+  it("concatenates multiple text blocks in response", async () => {
+    createMock.mockResolvedValueOnce({
+      content: [
+        { type: "text", text: "Hello " },
+        { type: "tool_use", id: "t1", name: "foo", input: {} },
+        { type: "text", text: "World" },
+      ],
+    });
 
-    await expect(adapter.invoke("Hi", { model: "execution" })).rejects.toThrow(
-      /Invalid API key/,
-    );
+    const result = await adapter.invoke("Multi-block", { model: "execution" });
+
+    expect(result).toEqual({ content: "Hello World" });
   });
 
-  it("throws on rate limit error", async () => {
-    createMock.mockRejectedValueOnce(new Error("Rate limit exceeded"));
+  it("throws on API authentication error with cause preserved", async () => {
+    createMock.mockRejectedValueOnce(new Anthropic.APIError(401, "Invalid API key"));
 
-    await expect(adapter.invoke("Hi", { model: "execution" })).rejects.toThrow(
-      /Rate limit/,
-    );
+    const err = await adapter.invoke("Hi", { model: "execution" }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/Anthropic API error \(401\)/);
+    expect(err.cause).toBeInstanceOf(Anthropic.APIError);
+  });
+
+  it("throws on rate limit error with cause preserved", async () => {
+    createMock.mockRejectedValueOnce(new Anthropic.APIError(429, "Rate limit exceeded"));
+
+    const err = await adapter.invoke("Hi", { model: "execution" }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/Anthropic API error \(429\)/);
+    expect(err.cause).toBeInstanceOf(Anthropic.APIError);
   });
 });
