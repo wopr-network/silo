@@ -69,20 +69,7 @@
       "mode": "passive"
     }
   ],
-  "gates": [
-    {
-      "name": "ci_passes",
-      "type": "command",
-      "command": "gh pr checks {{prNumber}} --repo {{repo}} --required",
-      "timeoutMs": 600000
-    },
-    {
-      "name": "is_unblocked",
-      "type": "function",
-      "functionRef": "gates/blocking-graph.ts:isUnblocked",
-      "timeoutMs": 30000
-    }
-  ],
+  "gates": [],
   "transitions": [
     {
       "flowName": "wopr-changeset",

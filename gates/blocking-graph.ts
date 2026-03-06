@@ -13,11 +13,8 @@
  */
 
 import { LinearClient } from "@linear/sdk";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { execFileSync } from "node:child_process";
 import type { Entity } from "../src/repositories/interfaces.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface BlockingGraphResult {
   passed: boolean;
@@ -43,12 +40,17 @@ export async function isUnblocked(entity: Entity): Promise<BlockingGraphResult> 
   }
 
   const client = new LinearClient({ apiKey: linearApiKey });
-  const issue = await client.issue(issueId);
-  const relations = await issue.relations();
+  let issue: Awaited<ReturnType<LinearClient["issue"]>>;
+  let inverseRelations: Awaited<ReturnType<typeof issue.inverseRelations>>;
+  try {
+    issue = await client.issue(issueId);
+    inverseRelations = await issue.inverseRelations();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { passed: false, output: `Linear API error: ${message}` };
+  }
 
-  const blockers = relations.nodes.filter(
-    (r) => r.type === "is-blocked-by",
-  );
+  const blockers = inverseRelations.nodes.filter((r) => r.type === "blocks");
 
   if (blockers.length === 0) {
     return { passed: true, output: "No blockers" };
@@ -62,18 +64,30 @@ export async function isUnblocked(entity: Entity): Promise<BlockingGraphResult> 
 
     const identifier = relatedIssue.identifier;
 
-    // Check if this blocker has a merged PR by searching GitHub
-    // Convention: PR branches contain the issue key lowercase
-    const key = identifier.toLowerCase();
+    // Resolve the PR via Linear attachment — the attachment URL tells us which repo
+    const attachments = await relatedIssue.attachments();
+    const prAttachment = attachments.nodes.find(
+      (a) => a.url?.includes("github.com") && a.url?.includes("/pull/"),
+    );
+    if (!prAttachment?.url) {
+      unmerged.push(`${identifier} (no PR found)`);
+      continue;
+    }
+    const match = prAttachment.url.match(
+      /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/,
+    );
+    if (!match) {
+      unmerged.push(`${identifier} (unrecognized PR URL)`);
+      continue;
+    }
+    const [, repo, prNum] = match;
     try {
-      const { stdout } = await execFileAsync(
+      const state = execFileSync(
         "gh",
-        ["pr", "list", "--state", "merged", "--search", key, "--json", "number", "--jq", "length"],
+        ["pr", "view", prNum, "--repo", repo, "--json", "state", "--jq", ".state"],
         { encoding: "utf-8", timeout: 10000 },
-      );
-      const result = stdout.trim();
-
-      if (result === "0" || result === "") {
+      ).trim();
+      if (state !== "MERGED") {
         unmerged.push(identifier);
       }
     } catch {
