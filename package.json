@@ -8,7 +8,6 @@
   "packageManager": "pnpm@9.15.4",
   "main": "./dist/main.js",
   "bin": {
-    "agentic": "./dist/execution/cli.js",
     "defcon": "./dist/execution/cli.js"
   },
   "types": "./dist/main.d.ts",
