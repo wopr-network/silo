@@ -110,22 +110,27 @@ export class DrizzleEntityRepository implements IEntityRepository {
       if (rows.length === 0) return null;
       const row = rows[0];
       const now = Date.now();
-      tx.update(entities).set({ claimedBy: agentId, claimedAt: now }).where(eq(entities.id, row.id)).run();
-      return this.toEntity({ ...row, claimedBy: agentId, claimedAt: now } as typeof entities.$inferSelect);
+      tx.update(entities)
+        .set({ claimedBy: agentId, claimedAt: now, updatedAt: now })
+        .where(eq(entities.id, row.id))
+        .run();
+      return this.toEntity({
+        ...row,
+        claimedBy: agentId,
+        claimedAt: now,
+        updatedAt: now,
+      } as typeof entities.$inferSelect);
     });
   }
 
   async reapExpired(ttlMs: number): Promise<string[]> {
     const cutoff = Date.now() - ttlMs;
-    const expired = await this.db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(and(not(isNull(entities.claimedBy)), lt(entities.claimedAt, cutoff)));
-    if (expired.length === 0) return [];
-    const ids = expired.map((r) => r.id);
-    for (const id of ids) {
-      await this.db.update(entities).set({ claimedBy: null, claimedAt: null }).where(eq(entities.id, id));
-    }
-    return ids;
+    const rows = this.db
+      .update(entities)
+      .set({ claimedBy: null, claimedAt: null, updatedAt: Date.now() })
+      .where(and(not(isNull(entities.claimedBy)), lt(entities.claimedAt, cutoff)))
+      .returning({ id: entities.id })
+      .all();
+    return rows.map((r) => r.id);
   }
 }

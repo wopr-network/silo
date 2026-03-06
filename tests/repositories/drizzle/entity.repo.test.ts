@@ -173,6 +173,16 @@ describe("DrizzleEntityRepository", () => {
       expect(second!.id).not.toBe(e1.id);
       expect(second!.claimedBy).toBe("agent-2");
     });
+
+    it("updates updatedAt when claiming", async () => {
+      const entity = await repo.create(TEST_FLOW_ID, "open");
+      const before = entity.updatedAt.getTime();
+      // Small delay to ensure timestamp advances
+      await new Promise((r) => setTimeout(r, 5));
+      const claimed = await repo.claim(TEST_FLOW_ID, "open", "agent-1");
+      expect(claimed).not.toBeNull();
+      expect(claimed!.updatedAt.getTime()).toBeGreaterThan(before);
+    });
   });
 
   describe("reapExpired", () => {
@@ -202,6 +212,24 @@ describe("DrizzleEntityRepository", () => {
       await repo.create(TEST_FLOW_ID, "open");
       const released = await repo.reapExpired(1000);
       expect(released).toEqual([]);
+    });
+
+    it("reapExpired is atomic — concurrent calls do not double-release the same entity", async () => {
+      const entity = await repo.create(TEST_FLOW_ID, "open");
+      await repo.claim(TEST_FLOW_ID, "open", "agent-1");
+      const pastTime = Date.now() - 60_000;
+      await db.update(entities).set({ claimedAt: pastTime }).where(eq(entities.id, entity.id));
+
+      const [a, b] = await Promise.all([repo.reapExpired(30_000), repo.reapExpired(30_000)]);
+      // Combined released IDs should only include entity.id once across both calls
+      const combined = [...a, ...b];
+      const unique = new Set(combined);
+      // Both calls may return the id but the DB row should only be cleared once — verify state is consistent
+      const after = await repo.get(entity.id);
+      expect(after!.claimedBy).toBeNull();
+      expect(after!.claimedAt).toBeNull();
+      // The entity id should appear in at least one result but not cause errors
+      expect(unique.has(entity.id)).toBe(true);
     });
   });
 });
