@@ -54,6 +54,15 @@ describe("evaluateCondition", () => {
     expect(evaluateCondition('{{invocation_count entity "review"}}', ctx)).toBe(true);
   });
 
+  it("invocation_count returns 0 is treated as falsy", () => {
+    const ctx = {
+      entity: {
+        invocations: [{ stage: "build" }],
+      },
+    };
+    expect(evaluateCondition('{{invocation_count entity "review"}}', ctx)).toBe(false);
+  });
+
   it("gate_passed helper works", () => {
     const ctx = {
       entity: {

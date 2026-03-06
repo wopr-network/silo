@@ -7,7 +7,7 @@ const hbs = Handlebars.create();
 
 hbs.registerHelper("gt", (a: number, b: number) => (a > b ? "true" : ""));
 hbs.registerHelper("lt", (a: number, b: number) => (a < b ? "true" : ""));
-hbs.registerHelper("eq", (a: unknown, b: unknown) => (a === b ? "true" : ""));
+hbs.registerHelper("eq", (a: unknown, b: unknown) => (String(a) === String(b) ? "true" : ""));
 
 hbs.registerHelper("invocation_count", (entity: { invocations?: { stage: string }[] }, stage: string) =>
   String(entity.invocations?.filter((i) => i.stage === stage).length ?? 0),
@@ -31,8 +31,9 @@ export function evaluateCondition(condition: string, context: Record<string, unk
   try {
     const template = hbs.compile(condition);
     const result = template(context).trim();
-    return result.length > 0 && result !== "false";
-  } catch {
+    return result.length > 0 && result !== "false" && result !== "0";
+  } catch (err) {
+    console.error("[state-machine] evaluateCondition error:", err);
     return false;
   }
 }
