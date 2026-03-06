@@ -91,4 +91,12 @@ describe("evaluateGate", () => {
 
     await expect(evaluateGate(gate, entity, gateRepo)).rejects.toThrow("API gates not yet implemented");
   });
+
+  it("throws for unknown gate types", async () => {
+    const gate = makeGate({ type: "webhook" });
+    const entity = makeEntity();
+    const gateRepo = {} as IGateRepository;
+
+    await expect(evaluateGate(gate, entity, gateRepo)).rejects.toThrow("Unknown gate type: webhook");
+  });
 });

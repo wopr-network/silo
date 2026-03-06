@@ -21,6 +21,7 @@ export interface ProcessSignalResult {
   gateOutput?: string;
   invocationId?: string;
   spawned?: string[];
+  terminal: boolean;
 }
 
 export interface ClaimWorkResult {
@@ -93,7 +94,7 @@ export class Engine {
           gateId: gate.id,
           emittedAt: new Date(),
         });
-        return { gated: true, gateOutput: gateResult.output, gatesPassed };
+        return { gated: true, gateOutput: gateResult.output, gatesPassed, terminal: false };
       }
       gatesPassed.push(gate.id);
       await this.eventEmitter.emit({
@@ -132,6 +133,7 @@ export class Engine {
       newState: transition.toState,
       gatesPassed,
       gated: false,
+      terminal: false,
     };
 
     // 8. Create invocation if new state has an agent role
@@ -174,6 +176,7 @@ export class Engine {
     // 10. Mark terminal — no invocation is created for terminal states (handled above),
     //     but we surface terminality in the result for callers.
     if (isTerminal(flow, transition.toState)) {
+      result.terminal = true;
       result.spawned = result.spawned ?? [];
     }
 
@@ -219,8 +222,7 @@ export class Engine {
       const flow = await this.flowRepo.getByName(flowName);
       flows = flow ? [flow] : [];
     } else {
-      // IFlowRepository has no listAll — claimWork requires flowName without it.
-      return null;
+      flows = await this.flowRepo.listAll();
     }
 
     for (const flow of flows) {
@@ -266,17 +268,21 @@ export class Engine {
   }
 
   startReaper(intervalMs: number): () => void {
-    const timer = setInterval(async () => {
-      const expired = await this.invocationRepo.reapExpired();
-      for (const inv of expired) {
-        await this.eventEmitter.emit({
-          type: "invocation.expired",
-          entityId: inv.entityId,
-          invocationId: inv.id,
-          emittedAt: new Date(),
-        });
-      }
-      await this.entityRepo.reapExpired(intervalMs);
+    const timer = setInterval(() => {
+      (async () => {
+        const expired = await this.invocationRepo.reapExpired();
+        for (const inv of expired) {
+          await this.eventEmitter.emit({
+            type: "invocation.expired",
+            entityId: inv.entityId,
+            invocationId: inv.id,
+            emittedAt: new Date(),
+          });
+        }
+        await this.entityRepo.reapExpired(intervalMs);
+      })().catch((err) => {
+        console.error("[reaper] error:", err);
+      });
     }, intervalMs);
 
     return () => clearInterval(timer);
@@ -285,10 +291,27 @@ export class Engine {
   private async checkConcurrency(flow: Flow, entity: Entity): Promise<boolean> {
     if (flow.maxConcurrent <= 0 && flow.maxConcurrentPerRepo <= 0) return true;
 
-    const invocations = await this.invocationRepo.findByEntity(entity.id);
-    const active = invocations.filter((i) => i.startedAt && !i.completedAt && !i.failedAt);
+    const allInvocations = await this.invocationRepo.findByFlow(flow.id);
+    // Count active AND pending (unclaimed, not yet started) invocations
+    const activeOrPending = allInvocations.filter((i) => !i.completedAt && !i.failedAt);
 
-    if (flow.maxConcurrent > 0 && active.length >= flow.maxConcurrent) return false;
+    if (flow.maxConcurrent > 0 && activeOrPending.length >= flow.maxConcurrent) return false;
+
+    if (flow.maxConcurrentPerRepo > 0 && entity.refs) {
+      // Identify invocations for entities sharing the same repo ref as this entity.
+      // Fetch each unique entity involved in active/pending invocations to compare refs.
+      const uniqueEntityIds = [...new Set(activeOrPending.map((i) => i.entityId))];
+      const peerEntities = await Promise.all(uniqueEntityIds.map((id) => this.entityRepo.get(id)));
+      const repoCount = peerEntities.filter((peer) => {
+        if (!peer?.refs || !entity.refs) return false;
+        // Two entities share the same repo if any ref adapter+id pair matches
+        const peerRefs = peer.refs;
+        return Object.values(entity.refs).some((ref) =>
+          Object.values(peerRefs).some((peerRef) => peerRef.adapter === ref.adapter && peerRef.id === ref.id),
+        );
+      }).length;
+      if (repoCount >= flow.maxConcurrentPerRepo) return false;
+    }
 
     return true;
   }

@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 
 export interface GateEvalResult {
@@ -23,6 +23,8 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
     throw new Error(`Function gates not yet implemented: ${gate.functionRef}`);
   } else if (gate.type === "api") {
     throw new Error(`API gates not yet implemented`);
+  } else {
+    throw new Error(`Unknown gate type: ${gate.type}`);
   }
 
   await gateRepo.record(entity.id, gate.id, passed, output);
@@ -30,8 +32,10 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
 }
 
 function runCommand(command: string, timeoutMs: number): Promise<{ exitCode: number; output: string }> {
+  // Split into file + args to avoid shell injection (no shell: true)
+  const [file, ...args] = command.split(/\s+/);
   return new Promise((resolve) => {
-    exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
       resolve({
         exitCode: error ? 1 : 0,
         output: (stdout + stderr).trim(),

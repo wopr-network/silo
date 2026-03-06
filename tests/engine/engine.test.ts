@@ -86,6 +86,7 @@ function makeMockRepos() {
     updateTransition: vi.fn(),
     snapshot: vi.fn(),
     restore: vi.fn(),
+    listAll: vi.fn().mockResolvedValue([flow]),
   };
   const invocationRepo: IInvocationRepository = {
     create: vi.fn().mockResolvedValue({
@@ -100,6 +101,7 @@ function makeMockRepos() {
     fail: vi.fn(),
     findByEntity: vi.fn().mockResolvedValue([]),
     findUnclaimed: vi.fn().mockResolvedValue([]),
+    findByFlow: vi.fn().mockResolvedValue([]),
     reapExpired: vi.fn().mockResolvedValue([]),
   };
   const gateRepo: IGateRepository = {
@@ -195,6 +197,25 @@ describe("Engine", () => {
       expect(mocks.invocationRepo.create).not.toHaveBeenCalled();
     });
 
+    it("sets terminal=true when transitioning to a terminal state", async () => {
+      const mocks = makeMockRepos();
+      (mocks.entityRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(makeEntity({ state: "coding" }));
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      const result = await engine.processSignal("ent-1", "complete");
+
+      expect(result.terminal).toBe(true);
+    });
+
+    it("sets terminal=false when transitioning to a non-terminal state", async () => {
+      const mocks = makeMockRepos();
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      const result = await engine.processSignal("ent-1", "start");
+
+      expect(result.terminal).toBe(false);
+    });
+
     it("emits entity.transitioned event", async () => {
       const mocks = makeMockRepos();
       const engine = new Engine({ ...mocks, adapters: new Map() });
@@ -265,13 +286,51 @@ describe("Engine", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when no flowName provided", async () => {
+    it("searches all flows when no flowName provided", async () => {
       const mocks = makeMockRepos();
       const engine = new Engine({ ...mocks, adapters: new Map() });
 
+      // entityRepo.claim returns null by default — no work available, but all flows searched
       const result = await engine.claimWork("coder");
 
+      expect(mocks.flowRepo.listAll).toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+  });
+
+  describe("concurrency", () => {
+    it("respects maxConcurrent by counting pending invocations", async () => {
+      const mocks = makeMockRepos();
+      const flowWithLimit = makeFlow({ maxConcurrent: 1 });
+      (mocks.flowRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(flowWithLimit);
+      // Simulate one pending invocation already in the flow
+      (mocks.invocationRepo.findByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "inv-existing", entityId: "ent-other", stage: "coding", agentRole: "coder",
+          mode: "active", prompt: "Do thing", context: null, claimedBy: null, claimedAt: null,
+          startedAt: null, completedAt: null, failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 1800000,
+        },
+      ]);
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      const result = await engine.processSignal("ent-1", "start");
+
+      // Concurrency limit hit: no new invocation created
+      expect(mocks.invocationRepo.create).not.toHaveBeenCalled();
+      expect(result.invocationId).toBeUndefined();
+    });
+
+    it("allows invocation when no active/pending invocations exist", async () => {
+      const mocks = makeMockRepos();
+      const flowWithLimit = makeFlow({ maxConcurrent: 1 });
+      (mocks.flowRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(flowWithLimit);
+      (mocks.invocationRepo.findByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      const result = await engine.processSignal("ent-1", "start");
+
+      expect(mocks.invocationRepo.create).toHaveBeenCalled();
+      expect(result.invocationId).toBe("inv-1");
     });
   });
 
@@ -298,6 +357,20 @@ describe("Engine", () => {
 
       expect(mocks.invocationRepo.reapExpired).toHaveBeenCalled();
       expect(mocks.entityRepo.reapExpired).toHaveBeenCalled();
+    });
+
+    it("does not crash the process when reaper callback throws", async () => {
+      const mocks = makeMockRepos();
+      (mocks.invocationRepo.reapExpired as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("db error"));
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+
+      const stop = engine.startReaper(50);
+      // Wait long enough for the timer to fire at least once
+      await new Promise((r) => setTimeout(r, 120));
+      stop();
+
+      // If we reach here without an unhandled rejection crash, the test passes
+      expect(true).toBe(true);
     });
   });
 });
