@@ -436,6 +436,51 @@ describe("SeedFileSchema", () => {
     }
   });
 
+  it("rejects duplicate integration capabilities", () => {
+    const seed = {
+      flows: [{ name: "pr-review", initialState: "open" }],
+      states: [{ name: "open", flowName: "pr-review" }],
+      transitions: [
+        { flowName: "pr-review", fromState: "open", toState: "open", trigger: "loop" },
+      ],
+      integrations: [
+        { capability: "notifications", adapter: "discord" },
+        { capability: "notifications", adapter: "slack" }, // duplicate capability
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.toLowerCase().includes("duplicate") && m.includes("notifications"))).toBe(true);
+    }
+  });
+
+  it("rejects duplicate state names within a flow", () => {
+    const seed = {
+      flows: [
+        { name: "pr-review", initialState: "open" },
+        { name: "other-flow", initialState: "start" },
+      ],
+      states: [
+        { name: "open", flowName: "pr-review" },
+        { name: "open", flowName: "pr-review" }, // duplicate within same flow
+        { name: "open", flowName: "other-flow" }, // same name in different flow is OK
+        { name: "start", flowName: "other-flow" },
+      ],
+      transitions: [
+        { flowName: "pr-review", fromState: "open", toState: "open", trigger: "loop" },
+        { flowName: "other-flow", fromState: "start", toState: "open", trigger: "go" },
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.toLowerCase().includes("duplicate") && m.includes("open") && m.includes("pr-review"))).toBe(true);
+    }
+  });
+
   it("defaults gates and integrations to empty arrays", () => {
     const seed = {
       flows: [{ name: "simple", initialState: "start" }],

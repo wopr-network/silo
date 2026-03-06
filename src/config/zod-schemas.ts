@@ -109,6 +109,40 @@ export const SeedFileSchema = z
       }
     }
 
+    // Detect duplicate integration capabilities
+    const integrationCapabilities = new Set<string>();
+    for (let i = 0; i < seed.integrations.length; i++) {
+      const cap = seed.integrations[i].capability;
+      if (integrationCapabilities.has(cap)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Duplicate integration capability: ${cap}`,
+          path: ["integrations", i, "capability"],
+        });
+      } else {
+        integrationCapabilities.add(cap);
+      }
+    }
+
+    // Detect duplicate state names within a flow
+    const stateNamesByFlow = new Map<string, Set<string>>();
+    for (let i = 0; i < seed.states.length; i++) {
+      const s = seed.states[i];
+      if (!stateNamesByFlow.has(s.flowName)) {
+        stateNamesByFlow.set(s.flowName, new Set());
+      }
+      const seen = stateNamesByFlow.get(s.flowName);
+      if (seen?.has(s.name)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Duplicate state name '${s.name}' in flow '${s.flowName}'`,
+          path: ["states", i, "name"],
+        });
+      } else {
+        seen?.add(s.name);
+      }
+    }
+
     // Bug 1 fix: only populate statesByFlow for flows that actually exist,
     // so that transitions referencing unknown flows don't find stale state data.
     const statesByFlow = new Map<string, Set<string>>();
