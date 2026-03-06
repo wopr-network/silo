@@ -484,6 +484,10 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
     return errorResult("Engine not available — MCP server started without engine dependency");
   }
 
+  // Complete the current invocation BEFORE calling processSignal so the
+  // concurrency check inside the engine doesn't count it as still-active.
+  await deps.invocations.complete(activeInvocation.id, signal, artifacts);
+
   // Delegate to the engine — it handles gate evaluation, transition, event
   // emission, invocation creation, concurrency checks, and spawn logic.
   let result: Awaited<ReturnType<typeof deps.engine.processSignal>>;
@@ -491,13 +495,19 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
     result = await deps.engine.processSignal(entityId, signal, artifacts);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await deps.invocations.fail(activeInvocation.id, message);
     return errorResult(message);
   }
 
-  // Gate blocked — fail the invocation so entity can be reclaimed
+  // Gate blocked — create a replacement unclaimed invocation so the entity
+  // can be reclaimed; without it the entity would be permanently orphaned.
   if (result.gated) {
-    await deps.invocations.fail(activeInvocation.id, result.gateOutput ?? "Gate failed");
+    await deps.invocations.create(
+      entityId,
+      activeInvocation.stage,
+      activeInvocation.prompt,
+      activeInvocation.mode,
+      activeInvocation.agentRole ?? undefined,
+    );
     return jsonResult({
       new_state: null,
       gated: true,
@@ -506,9 +516,6 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       next_action: "waiting",
     });
   }
-
-  // Transition succeeded — complete the invocation
-  await deps.invocations.complete(activeInvocation.id, signal, artifacts);
 
   // If the engine created a next invocation, fetch its prompt
   let nextPrompt: string | null = null;

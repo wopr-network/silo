@@ -436,8 +436,10 @@ describe("MCP tool handlers", () => {
     expect(result.isError).toBe(true);
   });
 
-  // Finding 1: flow.report must validate transition before completing invocation
-  it("flow.report returns error (not completing invocation) when signal has no matching transition", async () => {
+  // Finding 1: flow.report completes the invocation before delegating to the engine
+  // (so the concurrency check doesn't count it as active). If the signal has no
+  // matching transition the engine throws and the invocation is already completed.
+  it("flow.report returns error when signal has no matching transition", async () => {
     let completeCalled = false;
     deps.invocations.complete = async (id, signal, artifacts) => {
       completeCalled = true;
@@ -448,7 +450,7 @@ describe("MCP tool handlers", () => {
       signal: "nonexistent-signal",
     });
     expect(result.isError).toBe(true);
-    expect(completeCalled).toBe(false);
+    expect(completeCalled).toBe(true);
   });
 
   // Finding 2: flow.claim with no flow searches all flows
@@ -560,10 +562,11 @@ describe("MCP tool handlers", () => {
     });
     const content = result.content as Array<{ type: string; text: string }>;
     const data = JSON.parse(content[0].text);
-    // Gate blocked — invocation failed, entity not transitioned
+    // Gate blocked — invocation completed (so concurrency count is correct),
+    // and a replacement unclaimed invocation is created so entity can be reclaimed.
     expect(data.gated).toBe(true);
-    expect(failCalled).toBe(true);
-    expect(completeCalled).toBe(false);
+    expect(failCalled).toBe(false);
+    expect(completeCalled).toBe(true);
   });
 
   it("flow.report returns structured gate info (gated, gateName) when gate blocks", async () => {

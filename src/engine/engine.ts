@@ -112,7 +112,7 @@ export class Engine {
         });
         return { gated: true, gateOutput: gateResult.output, gateName: gate.name, gatesPassed, terminal: false };
       }
-      gatesPassed.push(gate.id);
+      gatesPassed.push(gate.name);
       await this.eventEmitter.emit({
         type: "gate.passed",
         entityId,
