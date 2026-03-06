@@ -79,12 +79,41 @@ export const SeedFileSchema = z
     integrations: z.array(IntegrationConfigSchema).optional().default([]),
   })
   .superRefine((seed, ctx) => {
-    const flowNames = new Set(seed.flows.map((f) => f.name));
-    const statesByFlow = new Map<string, Set<string>>();
-    const gateNames = new Set(seed.gates.map((g) => g.name));
+    // Bug 2 fix: detect duplicate flow names explicitly before building the Set
+    const flowNames = new Set<string>();
+    for (let i = 0; i < seed.flows.length; i++) {
+      const name = seed.flows[i].name;
+      if (flowNames.has(name)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Duplicate flow name "${name}"`,
+          path: ["flows", i, "name"],
+        });
+      } else {
+        flowNames.add(name);
+      }
+    }
 
-    // Build state sets per flow
+    // Bug 2 fix: detect duplicate gate names explicitly before building the Set
+    const gateNames = new Set<string>();
+    for (let i = 0; i < seed.gates.length; i++) {
+      const name = seed.gates[i].name;
+      if (gateNames.has(name)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Duplicate gate name "${name}"`,
+          path: ["gates", i, "name"],
+        });
+      } else {
+        gateNames.add(name);
+      }
+    }
+
+    // Bug 1 fix: only populate statesByFlow for flows that actually exist,
+    // so that transitions referencing unknown flows don't find stale state data.
+    const statesByFlow = new Map<string, Set<string>>();
     for (const s of seed.states) {
+      if (!flowNames.has(s.flowName)) continue;
       if (!statesByFlow.has(s.flowName)) {
         statesByFlow.set(s.flowName, new Set());
       }
@@ -125,9 +154,10 @@ export const SeedFileSchema = z
           message: `Transition references unknown flow "${t.flowName}"`,
           path: ["transitions", i, "flowName"],
         });
-      }
-      const flowStates = statesByFlow.get(t.flowName);
-      if (flowStates) {
+      } else {
+        // Bug 3 fix: flow exists — check fromState/toState even if the flow has
+        // zero states (statesByFlow entry will be missing or empty in that case).
+        const flowStates = statesByFlow.get(t.flowName) ?? new Set<string>();
         if (!flowStates.has(t.fromState)) {
           ctx.addIssue({
             code: "custom",
