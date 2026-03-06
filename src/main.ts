@@ -33,4 +33,8 @@ export function bootstrap(dbPath = DB_PATH): {
   return { db, sqlite };
 }
 
+export { CompositeEventBusAdapter } from "./adapters/composite.js";
+export { DiscordEventBusAdapter } from "./adapters/discord.js";
+export { matchEventPattern } from "./adapters/glob.js";
+export { WebhookEventBusAdapter } from "./adapters/webhook.js";
 export * from "./engine/index.js";
