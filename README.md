@@ -1,23 +1,21 @@
-# Agentic Engineering
+# DEFCON
 
-**The methodology for AI-gated software development.**
+**You don't get to launch until the system says you're ready.**
 
-Agentic engineering is the discipline where AI agents do the work and deterministic gates verify every action. No human in the loop for verification — the gates ARE the verification. The result is software that's more reliable than what either humans or AI produce alone.
+DEFCON is a state machine engine for AI-gated software pipelines. Work enters at the beginning and can only reach production by passing every gate in sequence. No skipping levels. No shortcuts. The gates enforce the escalation path — and the escalation path is the point.
 
-This is not vibe coding. In vibe coding, you prompt an AI and hope the result is correct. In agentic engineering, every AI action passes through deterministic, holistic checks before it can affect the codebase, the infrastructure, or the users.
+This is not vibe coding. In vibe coding, you prompt an AI and hope the result is correct. DEFCON makes hope irrelevant: every AI action passes through a deterministic gate before it can affect the codebase, the infrastructure, or the users. The gates are the system.
 
 ## The Engine
 
-The methodology describes a system. This repo also ships the primitives to build one.
-
 For a long time, the WOPR pipeline ran on `/wopr:auto` — a ~500-line skill prompt that hand-coded every state transition as an if-statement. "Spec ready" → spawn coder. "CLEAN" → merge. "ISSUES" → spawn fixer. Every new workflow type needed another hand-coded skill. The orchestration logic was frozen in prompts that agents couldn't modify at runtime.
 
-**`src/`** is the flow engine: a configurable state machine runtime that makes this methodology executable without hand-coding it.
+DEFCON replaces that with a configurable state machine runtime. Define your escalation path once. The engine enforces it forever.
 
-A **flow** is a state machine for any type of work. Entities (issues, deployments, incidents) enter a flow and move through states. At each state an agent does work. At each boundary a deterministic gate verifies the output. Transitions fire on signals — not parsed natural language, not regex, but typed strings agents emit via MCP tool call. The entire definition lives in a database. Agents can mutate it at runtime via the admin API. The methodology's self-improvement loop becomes a literal API call.
+A **flow** is a state machine for any type of work. Entities (issues, deployments, incidents) enter a flow and move through states. At each state an agent does work. At each boundary a deterministic gate verifies the output. Transitions fire on signals — not parsed natural language, not regex, but typed strings agents emit via MCP tool call. The entire definition lives in a database. Agents can mutate it at runtime via the admin API. The pipeline's self-improvement loop becomes a literal API call.
 
 ```
-/wopr:auto (before)          Flow engine (after)
+/wopr:auto (before)          DEFCON (after)
 ────────────────────         ──────────────────────────────────
 500-line skill prompt    →   JSON seed file
 if-statement routing     →   signal → transition → gate → state
@@ -95,11 +93,11 @@ The bridge from method/ to your own implementation. Prerequisites, checklist, mi
 ## The Core Idea
 
 ```
-Vibe Coding:     Human → AI → Hope → Production
-Agentic Engineering:  Human → AI → Gate → AI → Gate → AI → Gate → Production
+Vibe Coding:  Human → AI → Hope → Production
+DEFCON:       Human → AI → Gate → AI → Gate → AI → Gate → Production
 ```
 
-Every arrow is verified. Every gate is deterministic. Every finding feeds back into the system to prevent recurrence. The methodology compounds — sprint 100 is easier than sprint 1 because the gates evolve.
+Every transition is earned. Every gate is deterministic. Every finding feeds back into the system to prevent recurrence. The pipeline compounds — sprint 100 is easier than sprint 1 because the gates evolve.
 
 ## Table of Contents
 
