@@ -39,6 +39,8 @@ import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
 const DB_DEFAULT = process.env.AGENTIC_DB_PATH ?? "./agentic-flow.db";
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
+const REAPER_INTERVAL_DEFAULT = "30000"; // 30s
+const CLAIM_TTL_DEFAULT = "300000"; // 5min
 
 function openDb(dbPath: string) {
   const sqlite = new Database(dbPath);
@@ -117,6 +119,8 @@ program
   .option("--transport <type>", "Transport: stdio or sse", "stdio")
   .option("--port <number>", "Port for SSE transport", "3000")
   .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--reaper-interval <ms>", "Reaper poll interval in milliseconds", REAPER_INTERVAL_DEFAULT)
+  .option("--claim-ttl <ms>", "Claim TTL in milliseconds", CLAIM_TTL_DEFAULT)
   .action(async (opts) => {
     const { db, sqlite } = openDb(opts.db);
     const deps: McpServerDeps = {
@@ -128,6 +132,29 @@ program
       eventRepo: new DrizzleEventRepository(db),
       integrationRepo: new DrizzleIntegrationRepository(db),
     };
+
+    const engine = new Engine({
+      entityRepo: deps.entities,
+      flowRepo: deps.flows,
+      invocationRepo: deps.invocations,
+      gateRepo: deps.gates,
+      transitionLogRepo: deps.transitions,
+      adapters: new Map(),
+      eventEmitter: new CompositeEventBusAdapter([]),
+    });
+    const reaperInterval = parseInt(opts.reaperInterval, 10);
+    if (Number.isNaN(reaperInterval) || reaperInterval < 1000) {
+      console.error("--reaper-interval must be a number >= 1000ms");
+      sqlite.close();
+      process.exit(1);
+    }
+    const claimTtl = parseInt(opts.claimTtl, 10);
+    if (Number.isNaN(claimTtl) || claimTtl < 5000) {
+      console.error("--claim-ttl must be a number >= 5000ms");
+      sqlite.close();
+      process.exit(1);
+    }
+    const stopReaper = engine.startReaper(reaperInterval, claimTtl);
 
     if (opts.transport === "sse") {
       const { SSEServerTransport } = await import("@modelcontextprotocol/sdk/server/sse.js");
@@ -163,9 +190,11 @@ program
       });
 
       const shutdown = () => {
-        httpServer.close();
-        sqlite.close();
-        process.exit(0);
+        stopReaper().then(() => {
+          httpServer.close();
+          sqlite.close();
+          process.exit(0);
+        });
       };
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
@@ -173,8 +202,10 @@ program
       // stdio (default)
       console.error("Starting MCP server on stdio...");
       const cleanup = () => {
-        sqlite.close();
-        process.exit(0);
+        stopReaper().then(() => {
+          sqlite.close();
+          process.exit(0);
+        });
       };
       process.on("SIGINT", cleanup);
       process.on("SIGTERM", cleanup);
@@ -190,10 +221,22 @@ program
   .option("--once", "Process one item and exit")
   .option("--poll-interval <ms>", "Poll interval in milliseconds", "5000")
   .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--reaper-interval <ms>", "Reaper poll interval in milliseconds", REAPER_INTERVAL_DEFAULT)
+  .option("--claim-ttl <ms>", "Claim TTL in milliseconds", CLAIM_TTL_DEFAULT)
   .action(async (opts) => {
     const pollInterval = parseInt(opts.pollInterval, 10);
     if (Number.isNaN(pollInterval) || pollInterval < 100) {
       console.error(`Invalid --poll-interval: must be a number >= 100ms`);
+      process.exit(1);
+    }
+    const reaperInterval = parseInt(opts.reaperInterval, 10);
+    if (Number.isNaN(reaperInterval) || reaperInterval < 1000) {
+      console.error("--reaper-interval must be a number >= 1000ms");
+      process.exit(1);
+    }
+    const claimTtl = parseInt(opts.claimTtl, 10);
+    if (Number.isNaN(claimTtl) || claimTtl < 5000) {
+      console.error("--claim-ttl must be a number >= 5000ms");
       process.exit(1);
     }
 
@@ -230,6 +273,8 @@ program
       eventEmitter,
     });
 
+    const stopReaper = engine.startReaper(reaperInterval, claimTtl);
+
     const runner = new ActiveRunner({
       engine,
       aiAdapter,
@@ -244,8 +289,7 @@ program
       if (closed) return;
       closed = true;
       ac.abort();
-      // Give in-flight operations a moment to complete
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await stopReaper();
       sqlite.close();
       process.exit(0);
     };
@@ -267,6 +311,7 @@ program
 
     if (!closed) {
       closed = true;
+      await stopReaper();
       sqlite.close();
     }
   });

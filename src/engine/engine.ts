@@ -296,9 +296,11 @@ export class Engine {
     };
   }
 
-  startReaper(intervalMs: number, entityTtlMs: number = 60_000): () => void {
+  startReaper(intervalMs: number, entityTtlMs: number = 60_000): () => Promise<void> {
+    let inFlightTick: Promise<void> = Promise.resolve();
+
     const timer = setInterval(() => {
-      (async () => {
+      inFlightTick = (async () => {
         const expired = await this.invocationRepo.reapExpired();
         for (const inv of expired) {
           await this.eventEmitter.emit({
@@ -314,7 +316,10 @@ export class Engine {
       });
     }, intervalMs);
 
-    return () => clearInterval(timer);
+    return async () => {
+      clearInterval(timer);
+      await inFlightTick;
+    };
   }
 
   private async checkConcurrency(flow: Flow, entity: Entity): Promise<boolean> {
