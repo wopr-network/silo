@@ -498,12 +498,26 @@ describe("MCP tool handlers", () => {
       gateRecorded = true;
       return { id: "gr-1", entityId, gateId, passed, output, evaluatedAt: new Date() };
     };
+    deps.gates.resultsFor = async () => [];
+    let failCalled = false;
+    deps.invocations.fail = async (id, error) => {
+      failCalled = true;
+      return mockInvocation({ id, error, failedAt: new Date() });
+    };
+    let completeCalled = false;
+    deps.invocations.complete = async (id, signal, artifacts) => {
+      completeCalled = true;
+      return mockInvocation({ id, signal, artifacts: artifacts ?? null, completedAt: new Date() });
+    };
     const result = await callTool("flow.report", {
       entity_id: "ent-1",
       signal: "complete",
     });
     expect(result.isError).toBe(true);
     expect(gateRecorded).toBe(false);
+    // Gate blocked BEFORE complete — invocation must be failed (not completed) so entity can be reclaimed
+    expect(failCalled).toBe(true);
+    expect(completeCalled).toBe(false);
   });
 
   // Finding 6: limit param is clamped

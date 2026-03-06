@@ -362,7 +362,7 @@ async function handleQueryEntity(deps: McpServerDeps, args: Record<string, unkno
 async function handleQueryEntities(deps: McpServerDeps, args: Record<string, unknown>) {
   const flowName = args.flow as string | undefined;
   const state = args.state as string | undefined;
-  const limit = Math.max(1, Math.min(parseInt(String(args.limit ?? 50), 10) || 50, 100));
+  const limit = Math.max(1, Math.min(parseInt(String(args.limit ?? 50)) || 50, 250));
 
   if (!flowName) return errorResult("Missing required parameter: flow");
   if (!state) return errorResult("Missing required parameter: state");
