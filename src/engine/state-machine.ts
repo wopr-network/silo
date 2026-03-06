@@ -23,13 +23,14 @@ export function findTransition(
   currentState: string,
   signal: string,
   context: Record<string, unknown>,
+  skipGateCheck = false,
 ): Transition | null {
   const candidates = flow.transitions
     .filter((t) => t.fromState === currentState && t.trigger === signal)
     .sort((a, b) => b.priority - a.priority);
 
   for (const candidate of candidates) {
-    if (candidate.gateId !== null) {
+    if (!skipGateCheck && candidate.gateId !== null) {
       const entity = context.entity as { gateResults?: { gate: string; passed: boolean }[] } | undefined;
       const gatePassed = entity?.gateResults?.some((g) => g.gate === candidate.gateId && g.passed) ?? false;
       if (!gatePassed) continue;
@@ -86,4 +87,11 @@ export function validateFlow(flow: Flow): ValidationError[] {
   }
 
   return errors;
+}
+
+/**
+ * A state is terminal if no transitions use it as fromState.
+ */
+export function isTerminal(flow: Flow, state: string): boolean {
+  return !flow.transitions.some((t) => t.fromState === state);
 }

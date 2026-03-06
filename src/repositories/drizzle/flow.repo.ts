@@ -123,6 +123,10 @@ export class DrizzleFlowRepository implements IFlowRepository {
     return rows.map((row) => this.hydrateFlow(row));
   }
 
+  async listAll(): Promise<Flow[]> {
+    return this.list();
+  }
+
   async update(id: string, changes: UpdateFlowInput): Promise<Flow> {
     const now = Date.now();
     const current = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.id, id)).all();

@@ -240,6 +240,9 @@ export interface IFlowRepository {
 
   /** Restore a flow definition to a previous version. */
   restore(flowId: string, version: number): Promise<void>;
+
+  /** List all flow definitions. */
+  listAll(): Promise<Flow[]>;
 }
 
 /** Data-access contract for invocation lifecycle and claiming. */
@@ -271,6 +274,9 @@ export interface IInvocationRepository {
 
   /** Find unclaimed invocations for a given flow and agent role. */
   findUnclaimed(flowId: string, role: string): Promise<Invocation[]>;
+
+  /** Find all invocations for a given flow (across all entities). */
+  findByFlow(flowId: string): Promise<Invocation[]>;
 
   /** Find and mark expired invocations (where now - claimedAt > row's ttlMs). Returns the expired invocations. */
   reapExpired(): Promise<Invocation[]>;

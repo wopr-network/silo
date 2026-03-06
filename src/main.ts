@@ -32,3 +32,5 @@ export function bootstrap(dbPath = DB_PATH): {
   }
   return { db, sqlite };
 }
+
+export * from "./engine/index.js";
