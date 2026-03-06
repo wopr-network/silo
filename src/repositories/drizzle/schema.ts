@@ -160,7 +160,7 @@ export const entityHistory = sqliteTable(
     fromState: text("from_state"),
     toState: text("to_state").notNull(),
     trigger: text("trigger"),
-    invocationId: text("invocation_id"),
+    invocationId: text("invocation_id").references(() => invocations.id),
     timestamp: integer("timestamp").notNull(),
   },
   (table) => ({
