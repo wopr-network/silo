@@ -2,6 +2,7 @@
 
 export type { ClaimWorkResult, EngineDeps, EngineStatus, ProcessSignalResult } from "./engine.js";
 export { Engine } from "./engine.js";
+export { EventEmitter } from "./event-emitter.js";
 export { executeSpawn } from "./flow-spawner.js";
 export type { GateEvalResult } from "./gate-evaluator.js";
 export { evaluateGate } from "./gate-evaluator.js";
