@@ -47,7 +47,7 @@ function writeSeedFile(seed: unknown): string {
 }
 
 const validSeed = {
-  flows: [{ name: "pr-review", initialState: "open" }],
+  flows: [{ name: "pr-review", initialState: "open", discipline: "engineering" }],
   states: [
     { name: "open", flowName: "pr-review" },
     { name: "reviewing", flowName: "pr-review" },

@@ -5,14 +5,16 @@
       "description": "Parent flow that spawns child-flow on completion",
       "initialState": "working",
       "maxConcurrent": 0,
-      "maxConcurrentPerRepo": 0
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering"
     },
     {
       "name": "child-flow",
       "description": "Child flow spawned by parent",
       "initialState": "pending",
       "maxConcurrent": 0,
-      "maxConcurrentPerRepo": 0
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering"
     }
   ],
   "states": [

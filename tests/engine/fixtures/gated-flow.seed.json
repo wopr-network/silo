@@ -5,7 +5,8 @@
       "description": "Flow with a command gate on the review transition",
       "initialState": "coding",
       "maxConcurrent": 0,
-      "maxConcurrentPerRepo": 0
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering"
     }
   ],
   "states": [
