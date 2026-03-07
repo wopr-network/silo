@@ -268,7 +268,7 @@ describe("validateFlow", () => {
       initialState: "nonexistent",
     });
     const errors = validateFlow(flow);
-    expect(errors.some((e) => e.message.includes("initialState"))).toBe(true);
+    expect(errors.map((e) => e.message).join("; ")).toContain("initialState");
   });
 
   it("errors for transitions to non-existent states", () => {
@@ -278,7 +278,7 @@ describe("validateFlow", () => {
       initialState: "open",
     });
     const errors = validateFlow(flow);
-    expect(errors.some((e) => e.message.includes("ghost"))).toBe(true);
+    expect(errors.map((e) => e.message).join("; ")).toContain("ghost");
   });
 
   it("errors for transitions from non-existent states", () => {
@@ -288,7 +288,7 @@ describe("validateFlow", () => {
       initialState: "open",
     });
     const errors = validateFlow(flow);
-    expect(errors.some((e) => e.message.includes("ghost"))).toBe(true);
+    expect(errors.map((e) => e.message).join("; ")).toContain("ghost");
   });
 
   it("errors for unreachable states", () => {
@@ -298,7 +298,8 @@ describe("validateFlow", () => {
       initialState: "open",
     });
     const errors = validateFlow(flow);
-    expect(errors.some((e) => e.message.includes("island") && e.message.includes("unreachable"))).toBe(true);
+    expect(errors.map((e) => e.message).join("; ")).toContain("island");
+    expect(errors.map((e) => e.message).join("; ")).toContain("unreachable");
   });
 });
 

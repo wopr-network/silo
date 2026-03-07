@@ -34,7 +34,8 @@ describe("DrizzleEntityRepository", () => {
   describe("create", () => {
     it("creates entity with generated id and initial state", async () => {
       const entity = await repo.create(TEST_FLOW_ID, "open");
-      expect(entity.id).toBeDefined();
+      expect(typeof entity.id).toBe("string");
+      expect(entity.id.length).toBeGreaterThan(0);
       expect(entity.flowId).toBe(TEST_FLOW_ID);
       expect(entity.state).toBe("open");
       expect(entity.refs).toBeNull();

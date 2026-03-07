@@ -130,7 +130,7 @@ describe("HTTP Server - basic", () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/flows`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
+    expect(body).toEqual([]);
   });
 
   it("GET /api/entities without query params returns 400", async () => {
@@ -183,6 +183,6 @@ describe("HTTP Server - basic", () => {
       body: JSON.stringify({ role: "worker" }),
     });
     // No work available → 204 (no entity) or 404 (unknown flow)
-    expect([204, 404].includes(res.status)).toBe(true);
+    expect([204, 404]).toContain(res.status);
   });
 });
