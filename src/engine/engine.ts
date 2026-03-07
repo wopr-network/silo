@@ -20,6 +20,7 @@ export interface ProcessSignalResult {
   /** Names (not IDs) of gates that evaluated and passed during this transition. */
   gatesPassed: string[];
   gated: boolean;
+  gateTimedOut?: boolean;
   gateOutput?: string;
   gateName?: string;
   invocationId?: string;
@@ -111,13 +112,29 @@ export class Engine {
             },
           ],
         });
-        await this.eventEmitter.emit({
-          type: "gate.failed",
-          entityId,
-          gateId: gate.id,
-          emittedAt: new Date(),
-        });
-        return { gated: true, gateOutput: gateResult.output, gateName: gate.name, gatesPassed, terminal: false };
+        if (gateResult.timedOut) {
+          await this.eventEmitter.emit({
+            type: "gate.timedOut",
+            entityId,
+            gateId: gate.id,
+            emittedAt: new Date(),
+          });
+        } else {
+          await this.eventEmitter.emit({
+            type: "gate.failed",
+            entityId,
+            gateId: gate.id,
+            emittedAt: new Date(),
+          });
+        }
+        return {
+          gated: true,
+          gateTimedOut: gateResult.timedOut,
+          gateOutput: gateResult.output,
+          gateName: gate.name,
+          gatesPassed,
+          terminal: false,
+        };
       }
       gatesPassed.push(gate.name);
       await this.eventEmitter.emit({

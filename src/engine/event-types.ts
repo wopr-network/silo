@@ -19,6 +19,7 @@ export type EngineEvent =
   | { type: "invocation.expired"; entityId: string; invocationId: string; emittedAt: Date }
   | { type: "gate.passed"; entityId: string; gateId: string; emittedAt: Date }
   | { type: "gate.failed"; entityId: string; gateId: string; emittedAt: Date }
+  | { type: "gate.timedOut"; entityId: string; gateId: string; emittedAt: Date }
   | { type: "flow.spawned"; entityId: string; flowId: string; spawnedFlowId: string; emittedAt: Date }
   | { type: "definition.changed"; flowId: string; tool: string; payload: Record<string, unknown>; emittedAt: Date };
 

@@ -700,6 +700,107 @@ describe("MCP tool handlers", () => {
     const text = (result.content as Array<{ text: string }>)[0].text;
     expect(text).toContain("Validation error");
   });
+
+  // WOP-1884: three distinct flow.report outcomes — continue, waiting, check_back
+
+  it("flow.report returns next_action waiting when gate fails (not timeout)", async () => {
+    const flowWithGate = mockFlow({
+      transitions: [
+        {
+          id: "t-gate-fail",
+          flowId: "flow-1",
+          fromState: "draft",
+          toState: "review",
+          trigger: "complete",
+          gateId: "g-fail",
+          condition: null,
+          priority: 0,
+          spawnFlow: null,
+          spawnTemplate: null,
+          createdAt: null,
+        },
+      ],
+    });
+    deps.flows.get = async () => flowWithGate;
+    deps.flows.getByName = async () => flowWithGate;
+    deps.gates.get = async () => ({
+      id: "g-fail",
+      name: "always-fail",
+      type: "command",
+      command: "false",
+      functionRef: null,
+      apiConfig: null,
+      timeoutMs: 30000,
+    });
+    deps.gates.resultsFor = async () => [];
+    const noopEventEmitter = { emit: async () => {} };
+    deps.engine = new Engine({
+      entityRepo: deps.entities,
+      flowRepo: deps.flows,
+      invocationRepo: deps.invocations,
+      gateRepo: deps.gates,
+      transitionLogRepo: deps.transitions,
+      adapters: new Map(),
+      eventEmitter: noopEventEmitter,
+    });
+
+    const result = await callTool("flow.report", {
+      entity_id: "ent-1",
+      signal: "complete",
+    });
+    const content = result.content as Array<{ type: string; text: string }>;
+    const data = JSON.parse(content[0].text);
+    expect(data.next_action).toBe("waiting");
+    expect(data.gated).toBe(true);
+    expect(data.next_action).not.toBe("check_back");
+  });
+
+  it("flow.report returns next_action check_back when gate times out", async () => {
+    // Mock engine.processSignal to simulate gate timeout
+    const mockEngine = {
+      processSignal: async () => ({
+        gated: true,
+        gateTimedOut: true,
+        gateOutput: "Function gate timed out after 30000ms",
+        gateName: "slow-gate",
+        gatesPassed: [],
+        terminal: false,
+      }),
+    } as unknown as Engine;
+    deps.engine = mockEngine;
+
+    let replacementCreated = false;
+    deps.invocations.create = async () => {
+      replacementCreated = true;
+      return mockInvocation();
+    };
+
+    const result = await callTool("flow.report", {
+      entity_id: "ent-1",
+      signal: "complete",
+    });
+    const content = result.content as Array<{ type: string; text: string }>;
+    const data = JSON.parse(content[0].text);
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(30000);
+    expect(data.message).toContain("not an error");
+    expect(data.message).toContain("flow.report");
+    expect(replacementCreated).toBe(true);
+    expect(data.gated).toBeUndefined();
+  });
+
+  it("flow.report returns next_action continue when gate passes (no gate on transition)", async () => {
+    // Default mock has no gate — gate passes implicitly, entity transitions to review
+    const result = await callTool("flow.report", {
+      entity_id: "ent-1",
+      signal: "complete",
+    });
+    const content = result.content as Array<{ type: string; text: string }>;
+    const data = JSON.parse(content[0].text);
+    expect(data.new_state).toBe("review");
+    expect(["continue", "waiting", "completed"]).toContain(data.next_action);
+    expect(data.next_action).not.toBe("check_back");
+  });
 });
 
 describe("MCP integration: claim -> report -> verify", () => {

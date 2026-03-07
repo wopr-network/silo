@@ -83,7 +83,9 @@ const TOOL_DEFINITIONS = [
     name: "flow.report",
     description:
       "Report completion of work on an entity. Triggers state transition and gate evaluation. " +
-      'Returns next_action: "continue" (next prompt ready), "waiting" (gate blocked or no agent state), or "completed" (terminal state). ' +
+      'Returns next_action: "continue" (next prompt ready), "waiting" (gate explicitly failed — stop until something external changes), ' +
+      '"check_back" (gate is still evaluating — this is not an error, call flow.report again with the same arguments after retry_after_ms), ' +
+      'or "completed" (terminal state). ' +
       "gates_passed contains gate names (not IDs).",
     inputSchema: {
       type: "object" as const,
@@ -541,6 +543,16 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       activeInvocation.mode,
       activeInvocation.agentRole ?? undefined,
     );
+
+    if (result.gateTimedOut) {
+      return jsonResult({
+        next_action: "check_back",
+        message:
+          "Your report was received. The gate is still evaluating — this is not an error. Call flow.report again with the same arguments after a short wait.",
+        retry_after_ms: 30000,
+      });
+    }
+
     return jsonResult({
       new_state: null,
       gated: true,
