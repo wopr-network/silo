@@ -30,7 +30,7 @@ function writeSeedFile(seed: unknown): string {
 }
 
 const validSeed = {
-  flows: [{ name: "pr-review", initialState: "open" }],
+  flows: [{ name: "pr-review", initialState: "open", discipline: "engineering" }],
   states: [
     { name: "open", flowName: "pr-review", mode: "passive", promptTemplate: "Review this PR" },
     { name: "reviewing", flowName: "pr-review" },
@@ -93,7 +93,7 @@ describe("loadSeed", () => {
   it("loads seed without gates", async () => {
     const { sqlite, flowRepo, gateRepo } = setupDb();
     const seed = {
-      flows: [{ name: "simple", initialState: "start" }],
+      flows: [{ name: "simple", initialState: "start", discipline: "engineering" }],
       states: [{ name: "start", flowName: "simple" }],
       transitions: [{ flowName: "simple", fromState: "start", toState: "start", trigger: "loop" }],
     };
@@ -108,7 +108,7 @@ describe("loadSeed", () => {
   it("throws a descriptive error when a transition references an unknown gate", async () => {
     const { sqlite, flowRepo, gateRepo } = setupDb();
     const seed = {
-      flows: [{ name: "broken", initialState: "start" }],
+      flows: [{ name: "broken", initialState: "start", discipline: "engineering" }],
       states: [{ name: "start", flowName: "broken" }, { name: "end", flowName: "broken" }],
       gates: [],
       transitions: [

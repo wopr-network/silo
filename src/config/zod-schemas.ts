@@ -14,7 +14,7 @@ export const FlowDefinitionSchema = z.object({
   affinityWindowMs: z.number().int().min(0).optional().default(300000),
   version: z.number().int().min(1).optional().default(1),
   createdBy: z.string().optional(),
-  discipline: z.string().min(1).optional(),
+  discipline: z.string().min(1),
 });
 
 export const OnEnterSchema = z.object({
@@ -31,11 +31,11 @@ export const OnEnterSchema = z.object({
 export const StateDefinitionSchema = z.object({
   name: z.string().min(1),
   flowName: z.string().min(1),
-  agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional().default("passive"),
   promptTemplate: z
     .string()
+    .min(1)
     .refine((val) => validateTemplate(val), {
       message: "promptTemplate contains disallowed Handlebars expressions",
     })

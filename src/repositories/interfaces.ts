@@ -39,7 +39,6 @@ export interface Invocation {
   id: string;
   entityId: string;
   stage: string;
-  agentRole: string | null;
   mode: Mode;
   prompt: string;
   context: Record<string, unknown> | null;
@@ -90,7 +89,6 @@ export interface State {
   id: string;
   flowId: string;
   name: string;
-  agentRole: string | null;
   modelTier: string | null;
   mode: Mode;
   promptTemplate: string | null;
@@ -172,7 +170,6 @@ export interface CreateFlowInput {
 /** Input for adding a state to a flow */
 export interface CreateStateInput {
   name: string;
-  agentRole?: string;
   modelTier?: string;
   mode?: Mode;
   promptTemplate?: string;
@@ -304,7 +301,6 @@ export interface IInvocationRepository {
     stage: string,
     prompt: string,
     mode: Mode,
-    agentRole?: string,
     ttlMs?: number,
     context?: Record<string, unknown>,
   ): Promise<Invocation>;
@@ -326,9 +322,6 @@ export interface IInvocationRepository {
 
   /** Find all invocations for a given entity. */
   findByEntity(entityId: string): Promise<Invocation[]>;
-
-  /** Find unclaimed invocations for a given flow and agent role. */
-  findUnclaimed(flowId: string, role: string): Promise<Invocation[]>;
 
   /** Find unclaimed invocations where the entity has unexpired affinity for the given worker and role. */
   findUnclaimedWithAffinity(flowId: string, role: string, workerId: string): Promise<Invocation[]>;

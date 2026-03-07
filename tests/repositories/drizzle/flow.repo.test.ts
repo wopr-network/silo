@@ -105,12 +105,11 @@ describe("DrizzleFlowRepository", () => {
   describe("addState", () => {
     it("adds a state to a flow", async () => {
       const flow = await repo.create({ name: "sf", initialState: "open" });
-      const state = await repo.addState(flow.id, { name: "open", mode: "active", agentRole: "coder" });
+      const state = await repo.addState(flow.id, { name: "open", mode: "active" });
       expect(state.id).toBeDefined();
       expect(state.flowId).toBe(flow.id);
       expect(state.name).toBe("open");
       expect(state.mode).toBe("active");
-      expect(state.agentRole).toBe("coder");
 
       const hydrated = await repo.get(flow.id);
       expect(hydrated!.states).toHaveLength(1);

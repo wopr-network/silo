@@ -11,7 +11,6 @@ function toInvocation(row: typeof invocations.$inferSelect): Invocation {
     id: row.id,
     entityId: row.entityId,
     stage: row.stage,
-    agentRole: row.agentRole,
     mode: row.mode as Mode,
     prompt: row.prompt,
     context: row.context as Record<string, unknown> | null,
@@ -35,7 +34,6 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
     stage: string,
     prompt: string,
     mode: Mode,
-    agentRole?: string,
     ttlMs?: number,
     context?: Record<string, unknown>,
   ): Promise<Invocation> {
@@ -48,7 +46,6 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
         stage,
         prompt,
         mode,
-        agentRole: agentRole ?? null,
         ttlMs: ttlMs ?? 1800000,
         context: context ?? null,
         createdAt: Date.now(),
@@ -142,24 +139,6 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
     return rows.map(toInvocation);
   }
 
-  async findUnclaimed(flowId: string, role: string): Promise<Invocation[]> {
-    const rows = this.db
-      .select({ inv: invocations })
-      .from(invocations)
-      .innerJoin(entities, eq(invocations.entityId, entities.id))
-      .where(
-        and(
-          eq(entities.flowId, flowId),
-          eq(invocations.agentRole, role),
-          isNull(invocations.claimedBy),
-          isNull(invocations.completedAt),
-          isNull(invocations.failedAt),
-        ),
-      )
-      .all();
-    return rows.map((r) => toInvocation(r.inv));
-  }
-
   async findUnclaimedWithAffinity(flowId: string, role: string, workerId: string): Promise<Invocation[]> {
     const now = Date.now();
     const rows = this.db
@@ -169,7 +148,6 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .where(
         and(
           eq(entities.flowId, flowId),
-          eq(invocations.agentRole, role),
           isNull(invocations.claimedBy),
           isNull(invocations.completedAt),
           isNull(invocations.failedAt),
@@ -190,7 +168,6 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .where(
         and(
           eq(entities.flowId, flowId),
-          isNotNull(invocations.agentRole),
           isNull(invocations.claimedBy),
           isNull(invocations.completedAt),
           isNull(invocations.failedAt),

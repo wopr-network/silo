@@ -1,0 +1,134 @@
+{
+  "flows": [
+    {
+      "name": "wopr-incident",
+      "description": "WOPR incident response pipeline: triage -> investigate -> mitigate -> resolve -> postmortem.",
+      "discipline": "devops",
+      "initialState": "open",
+      "maxConcurrent": 4,
+      "maxConcurrentPerRepo": 2,
+      "createdBy": "seed:wopr-incident"
+    }
+  ],
+  "states": [
+    {
+      "name": "open",
+      "flowName": "wopr-incident",
+      "mode": "passive"
+    },
+    {
+      "name": "triaging",
+      "flowName": "wopr-incident",
+      "modelTier": "execution",
+      "mode": "active",
+      "promptTemplate": "Your name is \"triager-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIncident: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Assess severity\nRead the incident description and determine:\n- Severity: P1 (critical/outage), P2 (degraded), P3 (minor)\n- Affected systems\n- Estimated impact\n\n## Issue Description\n{{entity.refs.linear.description}}\n\n## Step 2: Check current system status\n```bash\ngh run list --repo {{entity.refs.github.repo}} --branch main --limit 3 --json status,conclusion,name\n```\n\n## Completion\nPost triage summary to Linear issue {{entity.refs.linear.id}} then:\n- If P1/P2: send \"Triaged: {{entity.refs.linear.key}} severity=<P1|P2>\"\n- If P3: send \"Triaged: {{entity.refs.linear.key}} severity=P3\""
+    },
+    {
+      "name": "investigating",
+      "flowName": "wopr-incident",
+      "modelTier": "reasoning",
+      "mode": "active",
+      "promptTemplate": "Your name is \"investigator-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIncident: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\nSeverity: {{entity.artifacts.severity}}\n\n## Step 1: Gather evidence\n```bash\n# Check recent deployments\ngh run list --repo {{entity.refs.github.repo}} --limit 10 --json name,status,conclusion,createdAt\n\n# Check recent merged PRs\ngh pr list --repo {{entity.refs.github.repo}} --state merged --limit 10 --json number,title,mergedAt\n```\n\n## Step 2: Identify root cause\nAnalyze the evidence and identify the most likely root cause.\n\n## Completion\nPost investigation findings to Linear issue {{entity.refs.linear.id}} then:\n- If root cause found: send \"Root cause: {{entity.refs.linear.key}} — <summary>\"\n- If still investigating: send \"Escalate: {{entity.refs.linear.key}} — needs human expertise\""
+    },
+    {
+      "name": "mitigating",
+      "flowName": "wopr-incident",
+      "modelTier": "execution",
+      "mode": "active",
+      "promptTemplate": "Your name is \"mitigator-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIncident: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\nRoot Cause: {{entity.artifacts.rootCause}}\n\n## Step 1: Apply mitigation\nBased on the root cause, apply the fastest safe mitigation:\n- Rollback: `gh workflow run rollback.yml --repo {{entity.refs.github.repo}}`\n- Feature flag: update config to disable affected feature\n- Scale: adjust resource allocation\n\n## Step 2: Verify mitigation\nConfirm the mitigation reduced or eliminated the impact.\n\n## Completion\n- If mitigated: send \"Mitigated: {{entity.refs.linear.key}}\"\n- If mitigation failed: send \"Mitigation failed: {{entity.refs.linear.key}} — <reason>\""
+    },
+    {
+      "name": "resolving",
+      "flowName": "wopr-incident",
+      "modelTier": "execution",
+      "mode": "active",
+      "promptTemplate": "Your name is \"resolver-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIncident: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Implement permanent fix\nCreate a PR with the permanent fix for the root cause.\n\n```bash\ncd {{entity.artifacts.worktreePath}}\n# Implement fix\ngit add <files>\ngit commit -m \"fix: resolve incident {{entity.refs.linear.key}}\"\ngit push -u origin {{entity.artifacts.branch}}\ngh pr create --repo {{entity.refs.github.repo}} \\\n  --title \"fix: resolve incident {{entity.refs.linear.key}}\" \\\n  --body \"Resolves incident {{entity.refs.linear.key}}\"\n```\n\n## Completion\n- If PR created: send \"Resolved: {{entity.refs.linear.key}} — <pr-url>\"\n- If blocked: send \"Escalate: {{entity.refs.linear.key}} — cannot create fix PR\""
+    },
+    {
+      "name": "postmortem",
+      "flowName": "wopr-incident",
+      "modelTier": "execution",
+      "mode": "active",
+      "promptTemplate": "Your name is \"postmortem-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nIncident: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\n\n## Step 1: Write postmortem\nPost a postmortem to Linear issue {{entity.refs.linear.id}} covering:\n1. Timeline of events\n2. Root cause\n3. Mitigation applied\n4. Permanent fix\n5. Action items to prevent recurrence\n\n## Completion\nSend to team-lead: \"Postmortem complete: {{entity.refs.linear.key}}\""
+    },
+    {
+      "name": "escalated",
+      "flowName": "wopr-incident",
+      "mode": "passive",
+      "constraints": {
+        "description": "Incident requires human intervention. Automated pipeline halted."
+      }
+    },
+    {
+      "name": "done",
+      "flowName": "wopr-incident",
+      "mode": "passive"
+    }
+  ],
+  "gates": [],
+  "transitions": [
+    {
+      "flowName": "wopr-incident",
+      "fromState": "open",
+      "toState": "triaging",
+      "trigger": "start",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "triaging",
+      "toState": "investigating",
+      "trigger": "triaged",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "investigating",
+      "toState": "mitigating",
+      "trigger": "root_cause",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "investigating",
+      "toState": "escalated",
+      "trigger": "escalate",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "mitigating",
+      "toState": "resolving",
+      "trigger": "mitigated",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "mitigating",
+      "toState": "escalated",
+      "trigger": "mitigation_failed",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "resolving",
+      "toState": "postmortem",
+      "trigger": "resolved",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "resolving",
+      "toState": "escalated",
+      "trigger": "escalate",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-incident",
+      "fromState": "postmortem",
+      "toState": "done",
+      "trigger": "postmortem_complete",
+      "priority": 0
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "flows": [
+    {
+      "name": "wopr-release",
+      "description": "WOPR release pipeline: prepare -> validate -> deploy -> verify -> done.",
+      "discipline": "devops",
+      "initialState": "pending",
+      "maxConcurrent": 2,
+      "maxConcurrentPerRepo": 1,
+      "createdBy": "seed:wopr-release"
+    }
+  ],
+  "states": [
+    {
+      "name": "pending",
+      "flowName": "wopr-release",
+      "mode": "passive"
+    },
+    {
+      "name": "preparing",
+      "flowName": "wopr-release",
+      "modelTier": "monitoring",
+      "mode": "active",
+      "promptTemplate": "Your name is \"release-prep-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nRelease: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Verify branch is ready\n```bash\ngh pr list --repo {{entity.refs.github.repo}} --state merged --limit 10\ngh run list --repo {{entity.refs.github.repo}} --limit 5\n```\n\n## Step 2: Check all CI checks pass on main\n```bash\ngh run list --repo {{entity.refs.github.repo}} --branch main --limit 1 --json status,conclusion --jq '.[0]'\n```\n\n## Completion\n- If ready: send \"Ready: {{entity.refs.linear.key}}\"\n- If not ready: send \"Not ready: {{entity.refs.linear.key}} — <reason>\""
+    },
+    {
+      "name": "deploying",
+      "flowName": "wopr-release",
+      "modelTier": "execution",
+      "mode": "active",
+      "promptTemplate": "Your name is \"deployer-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nRelease: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Trigger deployment\n```bash\ngh workflow run deploy.yml --repo {{entity.refs.github.repo}} --ref main\n```\n\n## Step 2: Wait for deployment to complete\n```bash\ngh run list --repo {{entity.refs.github.repo}} --workflow deploy.yml --limit 1 --json status,conclusion,url\n```\nPoll every 30 seconds until status is completed.\n\n## Completion\n- If succeeded: send \"Deployed: {{entity.refs.linear.key}}\"\n- If failed: send \"Deploy failed: {{entity.refs.linear.key}} — <error>\""
+    },
+    {
+      "name": "verifying",
+      "flowName": "wopr-release",
+      "modelTier": "monitoring",
+      "mode": "active",
+      "promptTemplate": "Your name is \"verifier-{{entity.refs.linear.id}}\". You are on the {{flow.name}} team.\n\n## Assignment\nRelease: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}\nRepo: {{entity.refs.github.repo}}\n\n## Step 1: Run smoke tests\n```bash\ngh run list --repo {{entity.refs.github.repo}} --workflow smoke-test.yml --limit 1 --json status,conclusion\n```\n\n## Step 2: Check deployment health\nVerify the deployment endpoint is responding correctly.\n\n## Completion\n- If healthy: send \"Verified: {{entity.refs.linear.key}}\"\n- If unhealthy: send \"Verify failed: {{entity.refs.linear.key}} — <reason>\""
+    },
+    {
+      "name": "stuck",
+      "flowName": "wopr-release",
+      "mode": "passive",
+      "constraints": {
+        "description": "Release pipeline blocked. Requires human intervention."
+      }
+    },
+    {
+      "name": "done",
+      "flowName": "wopr-release",
+      "mode": "passive"
+    }
+  ],
+  "gates": [],
+  "transitions": [
+    {
+      "flowName": "wopr-release",
+      "fromState": "pending",
+      "toState": "preparing",
+      "trigger": "start",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "preparing",
+      "toState": "deploying",
+      "trigger": "ready",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "preparing",
+      "toState": "stuck",
+      "trigger": "not_ready",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "deploying",
+      "toState": "verifying",
+      "trigger": "deployed",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "deploying",
+      "toState": "stuck",
+      "trigger": "deploy_failed",
+      "priority": 1
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "verifying",
+      "toState": "done",
+      "trigger": "verified",
+      "priority": 0
+    },
+    {
+      "flowName": "wopr-release",
+      "fromState": "verifying",
+      "toState": "stuck",
+      "trigger": "verify_failed",
+      "priority": 1
+    }
+  ]
+}

@@ -8,7 +8,6 @@ function makeInvocation(overrides: Partial<Invocation> = {}): Invocation {
     id: "inv-1",
     entityId: "entity-1",
     stage: "review",
-    agentRole: null,
     mode: "active",
     prompt: "Do something",
     context: { systemPrompt: "You are a reviewer", userContent: "Please review" },
@@ -122,8 +121,8 @@ describe("context preservation on re-queue", () => {
 
     expect(createMock).toHaveBeenCalled();
     const callArgs = createMock.mock.calls[0];
-    // 7th argument is context (index 6)
-    expect(callArgs[6]).toEqual({ systemPrompt: "sys", userContent: "user" });
+    // 6th argument is context (index 5)
+    expect(callArgs[5]).toEqual({ systemPrompt: "sys", userContent: "user" });
   });
 
   it("passes original invocation context when re-queuing after processSignal error", async () => {
@@ -151,7 +150,7 @@ describe("context preservation on re-queue", () => {
     expect(createMock).toHaveBeenCalled();
     const callArgs = createMock.mock.calls[0];
     // context should include original fields plus retryCount incremented from 0 to 1
-    expect(callArgs[6]).toMatchObject({ systemPrompt: "sys", userContent: "user", retryCount: 1 });
+    expect(callArgs[5]).toMatchObject({ systemPrompt: "sys", userContent: "user", retryCount: 1 });
   });
 });
 
@@ -217,6 +216,6 @@ describe("maxRetries guard on processSignal error", () => {
     expect(createMock).toHaveBeenCalled();
     const callArgs = createMock.mock.calls[0];
     // context should have retryCount incremented to 2
-    expect(callArgs[6]).toMatchObject({ retryCount: 2 });
+    expect(callArgs[5]).toMatchObject({ retryCount: 2 });
   });
 });

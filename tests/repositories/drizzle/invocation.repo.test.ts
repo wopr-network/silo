@@ -34,13 +34,12 @@ describe("DrizzleInvocationRepository", () => {
   describe("create + get", () => {
     it("should create an invocation and retrieve it by id", async () => {
       await seedEntity();
-      const inv = await repo.create("ent-1", "review", "Please review", "active", "reviewer", 60000);
+      const inv = await repo.create("ent-1", "review", "Please review", "active", 60000);
       expect(inv.id).toBeDefined();
       expect(inv.entityId).toBe("ent-1");
       expect(inv.stage).toBe("review");
       expect(inv.prompt).toBe("Please review");
       expect(inv.mode).toBe("active");
-      expect(inv.agentRole).toBe("reviewer");
       expect(inv.ttlMs).toBe(60000);
       expect(inv.claimedBy).toBeNull();
       expect(inv.completedAt).toBeNull();
@@ -59,7 +58,6 @@ describe("DrizzleInvocationRepository", () => {
       await seedEntity();
       const inv = await repo.create("ent-1", "build", "Build it", "passive");
       expect(inv.ttlMs).toBe(1800000);
-      expect(inv.agentRole).toBeNull();
     });
   });
 
@@ -168,42 +166,10 @@ describe("DrizzleInvocationRepository", () => {
     });
   });
 
-  describe("findUnclaimed", () => {
-    it("should find unclaimed invocations matching flow and role", async () => {
-      await seedEntity("flow-1", "ent-1");
-      await seedEntity("flow-2", "ent-2");
-      await repo.create("ent-1", "review", "Review 1", "active", "reviewer");
-      await repo.create("ent-2", "review", "Review 2", "active", "reviewer");
-      const results = await repo.findUnclaimed("flow-1", "reviewer");
-      expect(results).toHaveLength(1);
-      expect(results[0].entityId).toBe("ent-1");
-    });
-
-    it("should exclude claimed invocations", async () => {
-      await seedEntity();
-      const inv = await repo.create("ent-1", "review", "Review", "active", "reviewer");
-      await repo.claim(inv.id, "agent-1");
-      const results = await repo.findUnclaimed("flow-1", "reviewer");
-      expect(results).toHaveLength(0);
-    });
-
-    it("should exclude completed and failed invocations", async () => {
-      await seedEntity();
-      const inv1 = await repo.create("ent-1", "r1", "R1", "active", "reviewer");
-      const inv2 = await repo.create("ent-1", "r2", "R2", "active", "reviewer");
-      await repo.claim(inv1.id, "a");
-      await repo.complete(inv1.id, "done");
-      await repo.claim(inv2.id, "a");
-      await repo.fail(inv2.id, "err");
-      const results = await repo.findUnclaimed("flow-1", "reviewer");
-      expect(results).toHaveLength(0);
-    });
-  });
-
   describe("reapExpired", () => {
     it("should reap invocations where claimedAt + ttlMs < now", async () => {
       await seedEntity();
-      const inv = await repo.create("ent-1", "review", "Review", "active", "reviewer", 1000);
+      const inv = await repo.create("ent-1", "review", "Review", "active", 1000);
       await repo.claim(inv.id, "agent-1");
 
       db.update(invocations)
@@ -222,7 +188,7 @@ describe("DrizzleInvocationRepository", () => {
 
     it("should not reap invocations within TTL", async () => {
       await seedEntity();
-      const inv = await repo.create("ent-1", "review", "Review", "active", "reviewer", 999999);
+      const inv = await repo.create("ent-1", "review", "Review", "active", 999999);
       await repo.claim(inv.id, "agent-1");
       const expired = await repo.reapExpired();
       expect(expired).toHaveLength(0);
@@ -230,7 +196,7 @@ describe("DrizzleInvocationRepository", () => {
 
     it("should not reap completed or failed invocations", async () => {
       await seedEntity();
-      const inv = await repo.create("ent-1", "review", "Review", "active", "reviewer", 1000);
+      const inv = await repo.create("ent-1", "review", "Review", "active", 1000);
       await repo.claim(inv.id, "agent-1");
       await repo.complete(inv.id, "done");
 
@@ -245,7 +211,7 @@ describe("DrizzleInvocationRepository", () => {
 
     it("should not reap unclaimed invocations", async () => {
       await seedEntity();
-      await repo.create("ent-1", "review", "Review", "active", "reviewer", 1000);
+      await repo.create("ent-1", "review", "Review", "active", 1000);
       const expired = await repo.reapExpired();
       expect(expired).toHaveLength(0);
     });

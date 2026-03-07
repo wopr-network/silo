@@ -105,7 +105,6 @@ function makeFlow(
     id: `s${i}`,
     flowId: "f1",
     name: s.name,
-    agentRole: null,
     modelTier: null,
     mode: "passive" as const,
     promptTemplate: null,

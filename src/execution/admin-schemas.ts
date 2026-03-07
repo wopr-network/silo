@@ -8,7 +8,6 @@ const safeTemplate = z.string().refine(validateTemplate, {
 
 const AdminStateInlineSchema = z.object({
   name: z.string().min(1),
-  agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
   promptTemplate: safeTemplate.optional(),
@@ -41,7 +40,6 @@ export const AdminFlowUpdateSchema = z.object({
 export const AdminStateCreateSchema = z.object({
   flow_name: z.string().min(1),
   name: z.string().min(1),
-  agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
   promptTemplate: safeTemplate.optional(),
@@ -51,7 +49,6 @@ export const AdminStateCreateSchema = z.object({
 export const AdminStateUpdateSchema = z.object({
   flow_name: z.string().min(1),
   state_name: z.string().min(1),
-  agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
   promptTemplate: safeTemplate.optional(),

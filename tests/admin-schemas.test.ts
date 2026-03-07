@@ -33,7 +33,6 @@ describe("admin-schemas", () => {
     const result = AdminStateCreateSchema.safeParse({
       flow_name: "ci-pipeline",
       name: "review",
-      agentRole: "reviewer",
       mode: "passive",
     });
     expect(result.success).toBe(true);

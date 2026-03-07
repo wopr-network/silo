@@ -16,6 +16,7 @@ describe("FlowDefinitionSchema", () => {
       description: "PR review pipeline",
       initialState: "open",
       maxConcurrent: 5,
+      discipline: "engineering",
     });
     expect(result.success).toBe(true);
   });
@@ -24,6 +25,7 @@ describe("FlowDefinitionSchema", () => {
     const result = FlowDefinitionSchema.parse({
       name: "pr-review",
       initialState: "open",
+      discipline: "engineering",
     });
     expect(result.maxConcurrent).toBe(0);
     expect(result.maxConcurrentPerRepo).toBe(0);
@@ -34,6 +36,7 @@ describe("FlowDefinitionSchema", () => {
     const result = FlowDefinitionSchema.safeParse({
       name: "",
       initialState: "open",
+      discipline: "engineering",
     });
     expect(result.success).toBe(false);
   });
@@ -41,6 +44,7 @@ describe("FlowDefinitionSchema", () => {
   it("rejects missing initialState", () => {
     const result = FlowDefinitionSchema.safeParse({
       name: "pr-review",
+      discipline: "engineering",
     });
     expect(result.success).toBe(false);
   });
@@ -49,6 +53,7 @@ describe("FlowDefinitionSchema", () => {
     const result = FlowDefinitionSchema.safeParse({
       name: "pr-review",
       initialState: "open",
+      discipline: "engineering",
       maxConcurrent: -1,
     });
     expect(result.success).toBe(false);
@@ -62,7 +67,6 @@ describe("StateDefinitionSchema", () => {
     const result = StateDefinitionSchema.safeParse({
       name: "open",
       flowName: "pr-review",
-      agentRole: "reviewer",
       modelTier: "sonnet",
       mode: "active",
     });
@@ -228,7 +232,7 @@ describe("TransitionRuleSchema", () => {
 
 describe("SeedFileSchema", () => {
   const validSeed = {
-    flows: [{ name: "pr-review", initialState: "open" }],
+    flows: [{ name: "pr-review", initialState: "open", discipline: "engineering" }],
     states: [
       { name: "open", flowName: "pr-review" },
       { name: "reviewing", flowName: "pr-review" },
@@ -269,7 +273,7 @@ describe("SeedFileSchema", () => {
   it("rejects flow whose initialState is not a defined state", () => {
     const seed = {
       ...validSeed,
-      flows: [{ name: "pr-review", initialState: "nonexistent" }],
+      flows: [{ name: "pr-review", initialState: "nonexistent", discipline: "engineering" }],
     };
     const result = SeedFileSchema.safeParse(seed);
     expect(result.success).toBe(false);
@@ -363,7 +367,7 @@ describe("SeedFileSchema", () => {
     // so the transition's fromState/toState checks ran against invalid data instead
     // of being skipped (or erroring on the flow reference alone).
     const seed = {
-      flows: [{ name: "pr-review", initialState: "open" }],
+      flows: [{ name: "pr-review", initialState: "open", discipline: "engineering" }],
       states: [
         { name: "open", flowName: "pr-review" },
         { name: "orphan", flowName: "bad-flow" }, // references unknown flow
@@ -390,8 +394,8 @@ describe("SeedFileSchema", () => {
   it("rejects duplicate flow names", () => {
     const seed = {
       flows: [
-        { name: "pr-review", initialState: "open" },
-        { name: "pr-review", initialState: "open" }, // duplicate
+        { name: "pr-review", initialState: "open", discipline: "engineering" },
+        { name: "pr-review", initialState: "open", discipline: "engineering" }, // duplicate
       ],
       states: [{ name: "open", flowName: "pr-review" }],
       transitions: [
@@ -408,7 +412,7 @@ describe("SeedFileSchema", () => {
 
   it("rejects duplicate gate names", () => {
     const seed = {
-      flows: [{ name: "pr-review", initialState: "open" }],
+      flows: [{ name: "pr-review", initialState: "open", discipline: "engineering" }],
       states: [{ name: "open", flowName: "pr-review" }],
       gates: [
         { name: "lint-pass", type: "command" as const, command: "gates/blocking-graph.ts" },
@@ -430,8 +434,8 @@ describe("SeedFileSchema", () => {
   it("rejects transition fromState/toState when flow has zero states", () => {
     const seed = {
       flows: [
-        { name: "pr-review", initialState: "open" },
-        { name: "empty-flow", initialState: "start" }, // flow with no states
+        { name: "pr-review", initialState: "open", discipline: "engineering" },
+        { name: "empty-flow", initialState: "start", discipline: "devops" }, // flow with no states
       ],
       states: [
         { name: "open", flowName: "pr-review" },
@@ -466,8 +470,8 @@ describe("SeedFileSchema", () => {
   it("rejects duplicate state names within a flow", () => {
     const seed = {
       flows: [
-        { name: "pr-review", initialState: "open" },
-        { name: "other-flow", initialState: "start" },
+        { name: "pr-review", initialState: "open", discipline: "engineering" },
+        { name: "other-flow", initialState: "start", discipline: "engineering" },
       ],
       states: [
         { name: "open", flowName: "pr-review" },
@@ -490,7 +494,7 @@ describe("SeedFileSchema", () => {
 
   it("defaults gates to empty array", () => {
     const seed = {
-      flows: [{ name: "simple", initialState: "start" }],
+      flows: [{ name: "simple", initialState: "start", discipline: "engineering" }],
       states: [{ name: "start", flowName: "simple" }],
       transitions: [
         { flowName: "simple", fromState: "start", toState: "start", trigger: "loop" },
@@ -505,7 +509,7 @@ describe("SeedFileSchema", () => {
 
   it("rejects direct self-spawn cycle (A spawns A)", () => {
     const seed = {
-      flows: [{ name: "flow-a", initialState: "open" }],
+      flows: [{ name: "flow-a", initialState: "open", discipline: "engineering" }],
       states: [
         { name: "open", flowName: "flow-a" },
         { name: "done", flowName: "flow-a" },
@@ -525,8 +529,8 @@ describe("SeedFileSchema", () => {
   it("rejects two-flow circular spawn chain (A spawns B, B spawns A)", () => {
     const seed = {
       flows: [
-        { name: "flow-a", initialState: "start" },
-        { name: "flow-b", initialState: "start" },
+        { name: "flow-a", initialState: "start", discipline: "engineering" },
+        { name: "flow-b", initialState: "start", discipline: "engineering" },
       ],
       states: [
         { name: "start", flowName: "flow-a" },
@@ -550,9 +554,9 @@ describe("SeedFileSchema", () => {
   it("rejects three-flow circular spawn chain (A→B→C→A)", () => {
     const seed = {
       flows: [
-        { name: "flow-a", initialState: "s" },
-        { name: "flow-b", initialState: "s" },
-        { name: "flow-c", initialState: "s" },
+        { name: "flow-a", initialState: "s", discipline: "engineering" },
+        { name: "flow-b", initialState: "s", discipline: "engineering" },
+        { name: "flow-c", initialState: "s", discipline: "engineering" },
       ],
       states: [
         { name: "s", flowName: "flow-a" },
@@ -584,9 +588,9 @@ describe("SeedFileSchema", () => {
   it("accepts acyclic spawn chains (A spawns B, B spawns C, no cycle)", () => {
     const seed = {
       flows: [
-        { name: "flow-a", initialState: "s" },
-        { name: "flow-b", initialState: "s" },
-        { name: "flow-c", initialState: "s" },
+        { name: "flow-a", initialState: "s", discipline: "engineering" },
+        { name: "flow-b", initialState: "s", discipline: "engineering" },
+        { name: "flow-c", initialState: "s", discipline: "engineering" },
       ],
       states: [
         { name: "s", flowName: "flow-a" },

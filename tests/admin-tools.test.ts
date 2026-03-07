@@ -73,13 +73,11 @@ describe("admin MCP tools", () => {
     const result = await callToolHandler(deps, "admin.state.create", {
       flow_name: "test-flow",
       name: "review",
-      agentRole: "reviewer",
       mode: "passive",
     });
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.name).toBe("review");
-    expect(parsed.agentRole).toBe("reviewer");
   });
 
   it("admin.state.create errors on nonexistent flow", async () => {
@@ -242,8 +240,8 @@ describe("admin MCP tools", () => {
       name: "pipeline",
       initialState: "open",
       states: [
-        { name: "open", agentRole: "planner", mode: "passive", promptTemplate: "Plan the work" },
-        { name: "in-progress", agentRole: "coder", mode: "passive", promptTemplate: "Implement the plan" },
+        { name: "open", mode: "passive", promptTemplate: "Plan the work" },
+        { name: "in-progress", mode: "passive", promptTemplate: "Implement the plan" },
         { name: "done" },
       ],
     });

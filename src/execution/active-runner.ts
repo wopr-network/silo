@@ -130,7 +130,6 @@ export class ActiveRunner {
         invocation.stage,
         invocation.prompt,
         invocation.mode,
-        invocation.agentRole ?? undefined,
         undefined,
         { ...(invocation.context ?? {}), retryCount: retryCount + 1 },
       );
@@ -150,7 +149,6 @@ export class ActiveRunner {
         invocation.stage,
         invocation.prompt,
         invocation.mode,
-        invocation.agentRole ?? undefined,
         undefined,
         invocation.context ?? undefined,
       );

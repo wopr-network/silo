@@ -214,7 +214,6 @@ const TOOL_DEFINITIONS = [
       properties: {
         flow_name: { type: "string", description: "Flow name" },
         name: { type: "string", description: "State name" },
-        agentRole: { type: "string" },
         modelTier: { type: "string" },
         mode: { type: "string", description: "passive or active" },
         promptTemplate: { type: "string" },
@@ -231,7 +230,6 @@ const TOOL_DEFINITIONS = [
       properties: {
         flow_name: { type: "string", description: "Flow name" },
         state_name: { type: "string", description: "State name to update" },
-        agentRole: { type: "string" },
         modelTier: { type: "string" },
         mode: { type: "string" },
         promptTemplate: { type: "string" },
@@ -483,7 +481,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     // Use hasAnyInFlowAndState (SELECT 1 LIMIT 1) to avoid loading full entity rows across all states.
     let hasEntities = false;
     for (const flow of candidateFlows) {
-      const stateNames = flow.states.filter((s) => s.agentRole !== null).map((s) => s.name);
+      const stateNames = flow.states.filter((s) => s.promptTemplate !== null).map((s) => s.name);
       if (await deps.entities.hasAnyInFlowAndState(flow.id, stateNames)) {
         hasEntities = true;
         break;
@@ -646,24 +644,23 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       activeInvocation.stage,
       activeInvocation.prompt,
       activeInvocation.mode,
-      activeInvocation.agentRole ?? undefined,
+      undefined,
+      activeInvocation.context ?? undefined,
     );
     return errorResult(message);
   }
 
   // Set affinity on completion for passive-mode invocations, after processSignal succeeds
-  if (workerId && activeInvocation.mode === "passive" && activeInvocation.agentRole) {
+  if (workerId && activeInvocation.mode === "passive") {
     try {
       const entity = await deps.entities.get(entityId);
       if (entity) {
         const flow = await deps.flows.get(entity.flowId);
         const windowMs = flow?.affinityWindowMs ?? 300000;
-        await deps.entities.setAffinity(
-          entityId,
-          workerId,
-          activeInvocation.agentRole,
-          new Date(Date.now() + windowMs),
-        );
+        const affinityRole = flow?.discipline;
+        if (affinityRole) {
+          await deps.entities.setAffinity(entityId, workerId, affinityRole, new Date(Date.now() + windowMs));
+        }
       }
     } catch (err) {
       console.error(`Failed to set affinity for entity ${entityId} worker ${workerId}:`, err);
@@ -678,7 +675,8 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       activeInvocation.stage,
       activeInvocation.prompt,
       activeInvocation.mode,
-      activeInvocation.agentRole ?? undefined,
+      undefined,
+      activeInvocation.context ?? undefined,
     );
 
     if (result.gateTimedOut) {

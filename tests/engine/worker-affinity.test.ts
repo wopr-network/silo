@@ -37,7 +37,6 @@ function makeInvocation(overrides: Partial<Invocation> = {}): Invocation {
     id: "inv-1",
     entityId: "ent-1",
     stage: "coding",
-    agentRole: "engineering",
     mode: "passive",
     prompt: "Do work",
     context: null,
@@ -74,7 +73,6 @@ function makeFlow(overrides: Partial<Flow> = {}): Flow {
         id: "s-1",
         flowId: "flow-1",
         name: "coding",
-        agentRole: "engineering",
         modelTier: null,
         mode: "passive",
         promptTemplate: "Code it",
@@ -84,7 +82,6 @@ function makeFlow(overrides: Partial<Flow> = {}): Flow {
         id: "s-2",
         flowId: "flow-1",
         name: "done",
-        agentRole: null,
         modelTier: null,
         mode: "passive",
         promptTemplate: null,
@@ -280,14 +277,13 @@ describe("worker affinity — claim priority", () => {
       affinityRole: "engineering",
       affinityExpiresAt: new Date(Date.now() + 300000),
     });
-    const inv = makeInvocation({ agentRole: "devops", stage: "deploy" });
+    const inv = makeInvocation({ stage: "deploy" });
     const flow = makeFlow({
       states: [
         {
           id: "s-1",
           flowId: "flow-1",
           name: "deploy",
-          agentRole: "devops",
           modelTier: null,
           mode: "passive",
           promptTemplate: "Deploy it",
@@ -297,7 +293,6 @@ describe("worker affinity — claim priority", () => {
           id: "s-2",
           flowId: "flow-1",
           name: "done",
-          agentRole: null,
           modelTier: null,
           mode: "passive",
           promptTemplate: null,
