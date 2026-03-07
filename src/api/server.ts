@@ -96,6 +96,15 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
     return { status: 200, body: status };
   });
 
+  // --- Flow claim (cross-flow: no flow filter) ---
+  router.add("POST", "/api/claim", async (req) => {
+    const authErr = requireWorkerToken(deps, req);
+    if (authErr) return authErr;
+    const args = { role: req.body?.role as string };
+    const result = await callToolHandler(deps.mcpDeps, "flow.claim", args);
+    return mcpResultToApi(result);
+  });
+
   // --- Flow claim ---
   router.add("POST", "/api/flows/:flow/claim", async (req) => {
     const authErr = requireWorkerToken(deps, req);
