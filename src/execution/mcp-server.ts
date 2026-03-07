@@ -49,6 +49,8 @@ export interface McpServerDeps {
 export interface McpServerOpts {
   /** DEFCON_ADMIN_TOKEN — if set, admin.* tools require this token */
   adminToken?: string;
+  /** DEFCON_WORKER_TOKEN — if set, flow.* tools require this token */
+  workerToken?: string;
   /** Token provided by the caller (from HTTP Authorization header, or undefined for stdio) */
   callerToken?: string;
   /** When true, skip token validation (stdio is local-process-only and inherently trusted) */
@@ -392,6 +394,17 @@ export async function callToolHandler(
         const callerToken = opts?.callerToken;
         if (!callerToken || !constantTimeEqual(configuredToken, callerToken)) {
           return errorResult("Unauthorized: admin tools require authentication. Check server configuration.");
+        }
+      }
+    }
+
+    // Auth gate: flow.* tools require a valid worker token when one is configured
+    if (name.startsWith("flow.")) {
+      const configuredToken = opts?.workerToken?.trim() || undefined; // treat "" or whitespace-only as unset
+      if (configuredToken && !opts?.stdioTrusted) {
+        const callerToken = opts?.callerToken;
+        if (!callerToken || !constantTimeEqual(configuredToken, callerToken)) {
+          return errorResult("Unauthorized: worker tools require authentication. Check server configuration.");
         }
       }
     }

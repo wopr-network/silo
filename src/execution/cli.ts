@@ -57,6 +57,28 @@ export function validateAdminToken(opts: {
   }
 }
 
+/**
+ * Validates that DEFCON_WORKER_TOKEN is set when network transports are active.
+ * Throws if a network transport (HTTP or SSE) is started without a token.
+ * Stdio-only mode is exempt (local, single-user).
+ */
+export function validateWorkerToken(opts: {
+  workerToken: string | undefined;
+  startHttp: boolean;
+  transport: string;
+}): void {
+  const transport = opts.transport.toLowerCase().trim();
+  const token = opts.workerToken?.trim();
+  const networkActive = opts.startHttp || transport === "sse";
+  if (networkActive && !token) {
+    throw new Error(
+      "DEFCON_WORKER_TOKEN must be set when using HTTP or SSE transport. " +
+        "Worker tools (flow.*) are accessible over the network and require authentication. " +
+        "Set DEFCON_WORKER_TOKEN in your environment or use stdio transport for local-only access.",
+    );
+  }
+}
+
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 const REAPER_INTERVAL_DEFAULT = "30000"; // 30s
 const CLAIM_TTL_DEFAULT = "300000"; // 5min
@@ -210,6 +232,7 @@ program
     }
 
     const adminToken = process.env.DEFCON_ADMIN_TOKEN || undefined;
+    const workerToken = process.env.DEFCON_WORKER_TOKEN || undefined;
 
     const startHttp = !opts.mcpOnly;
     const startMcp = !opts.httpOnly;
@@ -223,11 +246,20 @@ program
       process.exit(1);
     }
 
+    try {
+      validateWorkerToken({ workerToken, startHttp, transport: opts.transport });
+    } catch (err: unknown) {
+      console.error((err as Error).message);
+      await stopReaper();
+      sqlite.close();
+      process.exit(1);
+    }
+
     let restHttpServer: ReturnType<typeof createHttpServer> | undefined;
     if (startHttp) {
       const httpPort = parseInt(opts.httpPort as string, 10);
       const httpHost = opts.httpHost as string;
-      restHttpServer = createHttpServer({ engine, mcpDeps: deps, adminToken });
+      restHttpServer = createHttpServer({ engine, mcpDeps: deps, adminToken, workerToken });
       restHttpServer.listen(httpPort, httpHost, () => {
         const addr = restHttpServer?.address();
         const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;
@@ -285,6 +317,7 @@ program
           });
           const mcpOpts: McpServerOpts = {
             adminToken,
+            workerToken,
             callerToken,
           };
           const server = createMcpServer(deps, mcpOpts);
@@ -332,7 +365,7 @@ program
       };
       process.on("SIGINT", cleanup);
       process.on("SIGTERM", cleanup);
-      const mcpOpts: McpServerOpts = { adminToken, stdioTrusted: true };
+      const mcpOpts: McpServerOpts = { adminToken, workerToken, stdioTrusted: true };
       await startStdioServer(deps, mcpOpts);
     } else {
       // HTTP-only mode — keep process alive
