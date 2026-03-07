@@ -257,7 +257,7 @@ But Temporal's model is: write your workflow as deterministic code, and we'll re
 
 DEFCON's model is different:
 
-- **Flows are data, not code.** They live in SQLite. Agents can mutate them at runtime. A flow definition is a database row, not a source file.
+- **Flows are data, not code.** They live in SQLite. Agents can mutate them at runtime. A flow definition is persisted in the database, not a source file.
 - **Gates are the point, not durability.** Temporal makes workflows survive crashes. DEFCON makes workflows survive *AI agents* — which is a different kind of unreliability entirely.
 - **The whole thing is ~5000 lines.** One file for state. Zero ops. No cluster. No managed service. `better-sqlite3` and a state machine.
 - **It's built for agents shipping software.** Prompts are first-class. Invocations are tracked. The claim/report protocol is designed for things that think, not things that compute.
@@ -275,7 +275,7 @@ DEFCON is the escalation ladder. But a ladder needs someone to climb it and some
 
 **[NORAD](https://github.com/wopr-network/norad)** is the operations center. It watches the world for events, claims work from DEFCON, dispatches WOPR, and feeds signals back. It manages the floor — how many workers, what they're working on, routing results between the thing that does the work and the thing that decides if the work is good enough.
 
-```
+```text
 NORAD watches → event arrives → claims from DEFCON → dispatches WOPR
 WOPR works → emits signal → NORAD reports to DEFCON → gate checks → escalate or hold
 ```
