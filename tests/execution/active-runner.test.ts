@@ -154,7 +154,7 @@ describe("ActiveRunner", () => {
 
     await runner.run({ once: true });
 
-    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", "API timeout");
+    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining("API timeout"));
     expect(engine.processSignal).not.toHaveBeenCalled();
   });
 
@@ -200,7 +200,7 @@ describe("ActiveRunner", () => {
 
     expect(engine.processSignal).toHaveBeenCalledWith("ent-1", "done", { files: ["main.ts"] }, "inv-1");
     expect(invocationRepo.complete).not.toHaveBeenCalled();
-    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", "transition not found");
+    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining("transition not found"));
   });
 
   it("logs and continues when complete() throws after successful processSignal", async () => {
@@ -383,6 +383,47 @@ describe("ActiveRunner", () => {
     const invokeCall = (aiAdapter.invoke as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(invokeCall[0]).toContain("<external-data>");
     expect(invokeCall[1].systemPrompt).toContain("Custom security instructions from template");
+  });
+
+  it("redacts sensitive data in AI adapter error message before storing to DB", async () => {
+    const inv = mockInvocation();
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    (aiAdapter.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Request failed: token=sk-ant-abc123xyz secret"),
+    );
+
+    await runner.run({ once: true });
+
+    const failCall = invocationRepo.fail.mock.calls[0];
+    expect(failCall[1]).not.toContain("sk-ant-abc123xyz");
+    expect(failCall[1]).toContain("[REDACTED]");
+  });
+
+  it("redacts sensitive data in processSignal error message before storing to DB", async () => {
+    const inv = mockInvocation();
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    engine.processSignal.mockRejectedValue(new Error("signal failed: Bearer sk-ant-api03-xyz token"));
+
+    await runner.run({ once: true });
+
+    const failCall = invocationRepo.fail.mock.calls[0];
+    expect(failCall[1]).not.toContain("sk-ant-api03-xyz");
+    expect(failCall[1]).toContain("[REDACTED]");
+  });
+
+  it("preserves stack trace in error messages passed to fail()", async () => {
+    const inv = mockInvocation();
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    (aiAdapter.invoke as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("timeout"));
+
+    await runner.run({ once: true });
+
+    const failCall = invocationRepo.fail.mock.calls[0];
+    // Stack traces include "Error:" and the function name from the test
+    expect(failCall[1]).toContain("Error:");
   });
 
   it("passes systemPrompt to AI adapter on every invoke", async () => {

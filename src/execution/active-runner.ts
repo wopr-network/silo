@@ -130,7 +130,7 @@ export class ActiveRunner {
       const response = await this.aiAdapter.invoke(userPrompt, { model, systemPrompt });
       content = response.content;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = redactString(err instanceof Error ? (err.stack ?? err.message) : String(err));
       await this.invocationRepo.fail(invocation.id, message);
       return;
     }
@@ -152,10 +152,10 @@ export class ActiveRunner {
     try {
       await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts, invocation.id);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = redactString(err instanceof Error ? (err.stack ?? err.message) : String(err));
       console.error(
         `[active-runner] processSignal failed for entity ${invocation.entityId}:`,
-        redactString(String(err), 500),
+        redactString(err instanceof Error ? (err.stack ?? err.message) : String(err), 500),
       );
       await this.invocationRepo.fail(invocation.id, message);
       return;
@@ -171,7 +171,7 @@ export class ActiveRunner {
       // processSignal already succeeded and entity state has changed — log and continue.
       console.error(
         `[active-runner] complete() failed for invocation ${invocation.id} (signal already processed):`,
-        redactString(String(err), 500),
+        redactString(err instanceof Error ? (err.stack ?? err.message) : String(err), 500),
       );
     }
   }

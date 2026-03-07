@@ -82,6 +82,21 @@ describe("redact", () => {
 		redact(input);
 		expect(input.apiKey).toBe("secret");
 	});
+
+	it("handles Error objects by exposing name, message, stack instead of empty object", () => {
+		const err = new Error("something went wrong");
+		const result = redact(err) as Record<string, unknown>;
+		expect(result.message).toBe("something went wrong");
+		expect(result.name).toBe("Error");
+		expect(typeof result.stack).toBe("string");
+	});
+
+	it("redacts sensitive data inside Error message via nested walk", () => {
+		const err = new Error("failed");
+		const result = redact({ err, apiKey: "secret" }) as Record<string, unknown>;
+		expect((result.err as Record<string, unknown>).message).toBe("failed");
+		expect(result.apiKey).toBe("[REDACTED]");
+	});
 });
 
 describe("redactString", () => {

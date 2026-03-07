@@ -28,6 +28,9 @@ function walk(value: unknown, seen: WeakSet<object>): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value !== "object") return value;
   if (value instanceof Date) return value;
+  if (value instanceof Error) {
+    return walk({ name: value.name, message: value.message, stack: value.stack }, seen);
+  }
 
   const obj = value as Record<string, unknown>;
   if (seen.has(obj)) return "[Circular]";
