@@ -179,29 +179,33 @@ describe("resolveSessionId", () => {
     const result = resolveSessionId({ "x-session-id": ["first-id", "second-id"] }, params);
     expect(result).toBe("first-id");
   });
+});
 
+describe("verifySessionToken", () => {
+  it("returns true when stored token matches incoming token", () => {
+    expect(verifySessionToken(hashToken("secret-token"), "secret-token")).toBe(true);
+  });
+
+  it("returns false when incoming token does not match stored token", () => {
+    expect(verifySessionToken(hashToken("secret-token"), "wrong-token")).toBe(false);
+  });
+
+  it("returns false when incoming token is absent but stored token exists", () => {
+    expect(verifySessionToken(hashToken("secret-token"), undefined)).toBe(false);
+  });
+
+  it("returns true when no token was stored at handshake (unauthenticated session)", () => {
+    expect(verifySessionToken(undefined, undefined)).toBe(true);
+    expect(verifySessionToken(undefined, "any-token")).toBe(true);
+  });
+});
+
+describe("CLI validation", () => {
   it("serve rejects non-numeric --reaper-interval", () => {
     const dbPath = join(tmpdir(), `cli-serve-nan-${Date.now()}.db`);
     const output = runExpectFail(["serve", "--reaper-interval", "abc"], { AGENTIC_DB_PATH: dbPath });
     expect(output).toMatch(/reaper-interval/i);
     if (existsSync(dbPath)) rmSync(dbPath);
-  });
-
-  it("verifySessionToken returns true when stored token matches incoming token", () => {
-    expect(verifySessionToken(hashToken("secret-token"), "secret-token")).toBe(true);
-  });
-
-  it("verifySessionToken returns false when incoming token does not match stored token", () => {
-    expect(verifySessionToken(hashToken("secret-token"), "wrong-token")).toBe(false);
-  });
-
-  it("verifySessionToken returns false when incoming token is absent but stored token exists", () => {
-    expect(verifySessionToken(hashToken("secret-token"), undefined)).toBe(false);
-  });
-
-  it("verifySessionToken returns true when no token was stored at handshake (unauthenticated session)", () => {
-    expect(verifySessionToken(undefined, undefined)).toBe(true);
-    expect(verifySessionToken(undefined, "any-token")).toBe(true);
   });
 
   it("serve rejects --reaper-interval below 1000", () => {
