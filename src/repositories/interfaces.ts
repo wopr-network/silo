@@ -209,6 +209,9 @@ export interface IEntityRepository {
   /** Atomically claim one unclaimed entity in the given flow+state for the specified agent. Returns null if none available. Uses compare-and-swap (UPDATE WHERE claimedBy IS NULL). */
   claim(flowId: string, state: string, agentId: string): Promise<Entity | null>;
 
+  /** Atomically claim a specific entity by ID for the specified agent. Returns null if already claimed or not found. Uses compare-and-swap (UPDATE WHERE claimedBy IS NULL AND id = entityId). */
+  claimById(entityId: string, agentId: string): Promise<Entity | null>;
+
   /** Release a claimed entity, clearing claimedBy and claimedAt. */
   release(entityId: string, agentId: string): Promise<void>;
 

@@ -144,6 +144,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.initialState !== undefined) updateValues.initialState = changes.initialState;
     if (changes.maxConcurrent !== undefined) updateValues.maxConcurrent = changes.maxConcurrent;
     if (changes.maxConcurrentPerRepo !== undefined) updateValues.maxConcurrentPerRepo = changes.maxConcurrentPerRepo;
+    if (changes.affinityWindowMs !== undefined) updateValues.affinityWindowMs = changes.affinityWindowMs;
     if (changes.version !== undefined) updateValues.version = changes.version;
     if (changes.createdBy !== undefined) updateValues.createdBy = changes.createdBy;
 
@@ -255,6 +256,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       initialState: flow.initialState,
       maxConcurrent: flow.maxConcurrent,
       maxConcurrentPerRepo: flow.maxConcurrentPerRepo,
+      affinityWindowMs: flow.affinityWindowMs,
       version: flow.version,
       createdBy: flow.createdBy,
       createdAt: flow.createdAt,
@@ -309,6 +311,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       initialState: string;
       maxConcurrent: number;
       maxConcurrentPerRepo: number;
+      affinityWindowMs: number;
       version: number;
       createdBy: string | null;
       states: State[];
@@ -360,6 +363,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
           initialState: snap.initialState,
           maxConcurrent: snap.maxConcurrent,
           maxConcurrentPerRepo: snap.maxConcurrentPerRepo,
+          affinityWindowMs: snap.affinityWindowMs,
           version: snap.version,
           createdBy: snap.createdBy,
           updatedAt: Date.now(),

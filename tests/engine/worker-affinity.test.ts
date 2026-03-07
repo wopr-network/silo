@@ -117,6 +117,7 @@ function makeEntityRepo(overrides: Partial<IEntityRepository> = {}): IEntityRepo
     transition: vi.fn(),
     updateArtifacts: vi.fn(),
     claim: vi.fn().mockResolvedValue(null),
+    claimById: vi.fn().mockResolvedValue(null),
     release: vi.fn(),
     reapExpired: vi.fn().mockResolvedValue([]),
     setAffinity: vi.fn().mockResolvedValue(undefined),
@@ -229,7 +230,7 @@ describe("worker affinity — claim priority", () => {
     });
 
     const entityRepo = makeEntityRepo({
-      claim: vi.fn().mockResolvedValue(affinityEntity),
+      claimById: vi.fn().mockResolvedValue(affinityEntity),
       get: vi.fn().mockResolvedValue(affinityEntity),
     });
 

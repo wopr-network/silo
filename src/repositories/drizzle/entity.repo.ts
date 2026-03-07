@@ -126,6 +126,30 @@ export class DrizzleEntityRepository implements IEntityRepository {
     });
   }
 
+  async claimById(entityId: string, agentId: string): Promise<Entity | null> {
+    return this.db.transaction((tx) => {
+      const rows = tx
+        .select()
+        .from(entities)
+        .where(and(eq(entities.id, entityId), isNull(entities.claimedBy)))
+        .limit(1)
+        .all();
+      if (rows.length === 0) return null;
+      const row = rows[0];
+      const now = Date.now();
+      tx.update(entities)
+        .set({ claimedBy: agentId, claimedAt: now, updatedAt: now })
+        .where(eq(entities.id, row.id))
+        .run();
+      return this.toEntity({
+        ...row,
+        claimedBy: agentId,
+        claimedAt: now,
+        updatedAt: now,
+      } as typeof entities.$inferSelect);
+    });
+  }
+
   async release(entityId: string, agentId: string): Promise<void> {
     await this.db
       .update(entities)

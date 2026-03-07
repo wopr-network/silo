@@ -296,7 +296,7 @@ export class Engine {
       if (workerId) {
         const affinityUnclaimed = await this.invocationRepo.findUnclaimedWithAffinity(flow.id, role, workerId);
         for (const pending of affinityUnclaimed) {
-          const claimed = await this.entityRepo.claim(flow.id, pending.stage, `agent:${role}`);
+          const claimed = await this.entityRepo.claimById(pending.entityId, `agent:${role}`);
           if (claimed) {
             const claimedInvocation = await this.invocationRepo.claim(pending.id, `agent:${role}`);
             if (!claimedInvocation) {
