@@ -171,6 +171,15 @@ const TOOL_DEFINITIONS = [
       required: ["name"],
     },
   },
+  {
+    name: "query.flows",
+    description: "List all available flow definitions.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
   // ─── Admin Tools ───
   {
     name: "admin.flow.create",
@@ -416,8 +425,8 @@ export async function callToolHandler(
       }
     }
 
-    // Auth gate: flow.* tools require a valid worker token when one is configured
-    if (name.startsWith("flow.")) {
+    // Auth gate: flow.* tools and query.flows require a valid worker token when one is configured
+    if (name.startsWith("flow.") || name === "query.flows") {
       const configuredToken = opts?.workerToken?.trim() || undefined; // treat "" or whitespace-only as unset
       if (configuredToken && !opts?.stdioTrusted) {
         const callerToken = opts?.callerToken;
@@ -444,6 +453,8 @@ export async function callToolHandler(
         return await handleQueryInvocations(deps, safeArgs);
       case "query.flow":
         return await handleQueryFlow(deps, safeArgs);
+      case "query.flows":
+        return await handleQueryFlows(deps);
       case "admin.flow.create":
         return await handleAdminFlowCreate(deps, safeArgs);
       case "admin.flow.update":
@@ -845,6 +856,30 @@ async function handleQueryFlow(deps: McpServerDeps, args: Record<string, unknown
   if (!flow) return errorResult(`Flow not found: ${name}`);
 
   return jsonResult(flow);
+}
+
+async function handleQueryFlows(deps: McpServerDeps) {
+  const flows = await deps.flows.list();
+  return jsonResult(
+    flows.map((f) => ({
+      id: f.id,
+      name: f.name,
+      description: f.description,
+      initialState: f.initialState,
+      discipline: f.discipline,
+      version: f.version,
+      states: f.states.map(({ id, flowId, name, modelTier, mode, constraints, onEnter }) => ({
+        id,
+        flowId,
+        name,
+        modelTier,
+        mode,
+        constraints,
+        onEnter,
+      })),
+      transitions: f.transitions,
+    })),
+  );
 }
 
 async function handleAdminEntityCreate(deps: McpServerDeps, args: Record<string, unknown>) {
