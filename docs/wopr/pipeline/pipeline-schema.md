@@ -6,7 +6,7 @@
 
 ## WOPR's State Machine
 
-WOPR's pipeline state lives in DEFCON's SQLite database, not in session memory. The state machine is defined by four tables:
+WOPR's pipeline state lives in DEFCON's SQLite database, not in session memory. The state machine is defined by six tables:
 
 | Table | Purpose |
 |-------|---------|
@@ -48,11 +48,11 @@ States are defined in `seeds/wopr-changeset.json`. Each state has:
 
 ```json
 {
-  "name": "architecting",
+  "name": "coding",
   "flowName": "wopr-changeset",
-  "modelTier": "opus",
+  "modelTier": "sonnet",
   "mode": "active",
-  "promptTemplate": "Your name is \"architect-{{entity.refs.linear.id}}\"...",
+  "promptTemplate": "Your name is \"coder-{{entity.refs.linear.id}}\"...",
   "onEnter": {
     "command": "scripts/create-worktree.sh {{entity.refs.github.repo}} {{entity.refs.linear.key}}",
     "artifacts": ["worktreePath", "branch"],

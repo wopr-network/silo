@@ -6,7 +6,7 @@
 
 ## Gates Before Merging
 
-When the reviewer signals `clean`, the entity transitions to `merging` — but only after the `merge-queue` gate passes. This gate is defined in `seeds/wopr-changeset.json`:
+When the entity is in `merging` and the worker signals `merged`, the entity transitions to `done` — but only after the `merge-queue` gate passes. This gate is defined in `seeds/wopr-changeset.json`:
 
 ```json
 {

@@ -107,7 +107,7 @@ npx defcon run --flow your-flow-name
 
 **What you get**: Workers declare a discipline (`engineering`, `devops`, etc.), not a task. One worker handles a full entity lifecycle — spec, code, review, fix, merge — via sequential `flow.report` calls. No re-claim between stages.
 
-### Month 2+: Advanced
+### Month 3+: Advanced
 
 Once the basics are solid, add:
 
