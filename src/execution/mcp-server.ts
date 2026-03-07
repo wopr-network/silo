@@ -481,7 +481,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     // Use hasAnyInFlowAndState (SELECT 1 LIMIT 1) to avoid loading full entity rows across all states.
     let hasEntities = false;
     for (const flow of candidateFlows) {
-      const stateNames = flow.states.filter((s) => s.agentRole !== null).map((s) => s.name);
+      const stateNames = flow.states.filter((s) => s.promptTemplate !== null).map((s) => s.name);
       if (await deps.entities.hasAnyInFlowAndState(flow.id, stateNames)) {
         hasEntities = true;
         break;
