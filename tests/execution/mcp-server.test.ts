@@ -629,20 +629,97 @@ describe("MCP tool handlers", () => {
     expect(clearCall).toBeDefined();
   });
 
-  // Finding 6: limit param is clamped
+  // Finding 6: limit param is validated by Zod
   it("query.entities clamps limit to valid range", async () => {
-    let capturedLimit = 0;
     const allEntities = Array.from({ length: 300 }, (_, i) => mockEntity({ id: `ent-${i}` }));
     deps.entities.findByFlowAndState = async () => allEntities;
-    // Requesting limit=999 should be clamped to 250
+    // Requesting limit=999 should now be rejected by Zod validation
     const result = await callTool("query.entities", {
       flow: "test-flow",
       state: "draft",
       limit: 999,
     });
-    const content = result.content as Array<{ type: string; text: string }>;
-    const data = JSON.parse(content[0].text);
-    expect(data.length).toBe(100);
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  // Zod validation tests
+  it("flow.claim rejects empty role", async () => {
+    const result = await callTool("flow.claim", { role: "" });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("flow.claim rejects missing role", async () => {
+    const result = await callTool("flow.claim", {});
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("flow.get_prompt rejects missing entity_id", async () => {
+    const result = await callTool("flow.get_prompt", {});
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("flow.report rejects missing signal", async () => {
+    const result = await callTool("flow.report", { entity_id: "ent-1" });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("flow.report rejects empty entity_id", async () => {
+    const result = await callTool("flow.report", { entity_id: "", signal: "done" });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("flow.fail rejects missing error", async () => {
+    const result = await callTool("flow.fail", { entity_id: "ent-1" });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("query.entity rejects missing id", async () => {
+    const result = await callTool("query.entity", {});
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("query.entities rejects missing flow", async () => {
+    const result = await callTool("query.entities", { state: "draft" });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("query.entities rejects invalid limit", async () => {
+    const result = await callTool("query.entities", { flow: "test-flow", state: "draft", limit: 999 });
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("query.invocations rejects missing entity_id", async () => {
+    const result = await callTool("query.invocations", {});
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
+  });
+
+  it("query.flow rejects missing name", async () => {
+    const result = await callTool("query.flow", {});
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("Validation error");
   });
 });
 

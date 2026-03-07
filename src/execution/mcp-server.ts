@@ -26,6 +26,16 @@ import {
   AdminTransitionCreateSchema,
   AdminTransitionUpdateSchema,
 } from "./admin-schemas.js";
+import {
+  FlowClaimSchema,
+  FlowFailSchema,
+  FlowGetPromptSchema,
+  FlowReportSchema,
+  QueryEntitiesSchema,
+  QueryEntitySchema,
+  QueryFlowSchema,
+  QueryInvocationsSchema,
+} from "./tool-schemas.js";
 
 export interface McpServerDeps {
   entities: IEntityRepository;
@@ -431,10 +441,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 // ─── Tool Handlers ───
 
 async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown>) {
-  const role = args.role as string | undefined;
-  if (!role) return errorResult("Missing required parameter: role");
-
-  const flowName = args.flow as string | undefined;
+  const v = validateInput(FlowClaimSchema, args);
+  if (!v.ok) return v.result;
+  const { role, flow: flowName } = v.data;
 
   let candidates: import("../repositories/interfaces.js").Invocation[] = [];
 
@@ -477,8 +486,9 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
 }
 
 async function handleFlowGetPrompt(deps: McpServerDeps, args: Record<string, unknown>) {
-  const entityId = args.entity_id as string | undefined;
-  if (!entityId) return errorResult("Missing required parameter: entity_id");
+  const v = validateInput(FlowGetPromptSchema, args);
+  if (!v.ok) return v.result;
+  const { entity_id: entityId } = v.data;
 
   const entity = await deps.entities.get(entityId);
   if (!entity) return errorResult(`Entity not found: ${entityId}`);
@@ -500,12 +510,9 @@ async function handleFlowGetPrompt(deps: McpServerDeps, args: Record<string, unk
 }
 
 async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknown>) {
-  const entityId = args.entity_id as string | undefined;
-  const signal = args.signal as string | undefined;
-  const artifacts = args.artifacts as Record<string, unknown> | undefined;
-
-  if (!entityId) return errorResult("Missing required parameter: entity_id");
-  if (!signal) return errorResult("Missing required parameter: signal");
+  const v = validateInput(FlowReportSchema, args);
+  if (!v.ok) return v.result;
+  const { entity_id: entityId, signal, artifacts } = v.data;
 
   const invocationList = await deps.invocations.findByEntity(entityId);
   const activeInvocation = invocationList.find(
@@ -584,11 +591,9 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
 }
 
 async function handleFlowFail(deps: McpServerDeps, args: Record<string, unknown>) {
-  const entityId = args.entity_id as string | undefined;
-  const error = args.error as string | undefined;
-
-  if (!entityId) return errorResult("Missing required parameter: entity_id");
-  if (!error) return errorResult("Missing required parameter: error");
+  const v = validateInput(FlowFailSchema, args);
+  if (!v.ok) return v.result;
+  const { entity_id: entityId, error } = v.data;
 
   const invocationList = await deps.invocations.findByEntity(entityId);
   const activeInvocation = invocationList.find(
@@ -605,8 +610,9 @@ async function handleFlowFail(deps: McpServerDeps, args: Record<string, unknown>
 }
 
 async function handleQueryEntity(deps: McpServerDeps, args: Record<string, unknown>) {
-  const id = args.id as string | undefined;
-  if (!id) return errorResult("Missing required parameter: id");
+  const v = validateInput(QueryEntitySchema, args);
+  if (!v.ok) return v.result;
+  const { id } = v.data;
 
   const entity = await deps.entities.get(id);
   if (!entity) return errorResult(`Entity not found: ${id}`);
@@ -616,31 +622,31 @@ async function handleQueryEntity(deps: McpServerDeps, args: Record<string, unkno
 }
 
 async function handleQueryEntities(deps: McpServerDeps, args: Record<string, unknown>) {
-  const flowName = args.flow as string | undefined;
-  const state = args.state as string | undefined;
-  const limit = Math.max(1, Math.min(parseInt(String(args.limit ?? 50), 10) || 50, 100));
-
-  if (!flowName) return errorResult("Missing required parameter: flow");
-  if (!state) return errorResult("Missing required parameter: state");
+  const v = validateInput(QueryEntitiesSchema, args);
+  if (!v.ok) return v.result;
+  const { flow: flowName, state, limit } = v.data;
+  const effectiveLimit = limit ?? 50;
 
   const flow = await deps.flows.getByName(flowName);
   if (!flow) return errorResult(`Flow not found: ${flowName}`);
 
   const results = await deps.entities.findByFlowAndState(flow.id, state);
-  return jsonResult(results.slice(0, limit));
+  return jsonResult(results.slice(0, effectiveLimit));
 }
 
 async function handleQueryInvocations(deps: McpServerDeps, args: Record<string, unknown>) {
-  const entityId = args.entity_id as string | undefined;
-  if (!entityId) return errorResult("Missing required parameter: entity_id");
+  const v = validateInput(QueryInvocationsSchema, args);
+  if (!v.ok) return v.result;
+  const { entity_id: entityId } = v.data;
 
   const results = await deps.invocations.findByEntity(entityId);
   return jsonResult(results);
 }
 
 async function handleQueryFlow(deps: McpServerDeps, args: Record<string, unknown>) {
-  const name = args.name as string | undefined;
-  if (!name) return errorResult("Missing required parameter: name");
+  const v = validateInput(QueryFlowSchema, args);
+  if (!v.ok) return v.result;
+  const { name } = v.data;
 
   const flow = await deps.flows.getByName(name);
   if (!flow) return errorResult(`Flow not found: ${name}`);
