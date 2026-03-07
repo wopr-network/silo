@@ -22,7 +22,7 @@ This is not a limitation. It's the point. An agent that knows "if I say X, we sk
 Any process that can make two calls is a valid worker:
 
 - An autonomous agent loop polling for work
-- A Claude Code session where a human reviews each step
+- A human-in-the-loop agent session where a human reviews each step
 - A shell script
 - A curl command
 

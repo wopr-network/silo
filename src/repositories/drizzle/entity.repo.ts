@@ -128,27 +128,25 @@ export class DrizzleEntityRepository implements IEntityRepository {
       .run();
   }
 
-  appendSpawnedChild(
+  async appendSpawnedChild(
     parentId: string,
     entry: { childId: string; childFlow: string; spawnedAt: string },
   ): Promise<void> {
-    return Promise.resolve(
-      this.db.transaction((tx) => {
-        const rows = tx.select().from(entities).where(eq(entities.id, parentId)).limit(1).all();
-        if (rows.length === 0) throw new Error(`Entity ${parentId} not found`);
-        const row = rows[0];
-        const artifacts = (row.artifacts as Record<string, unknown>) ?? {};
-        const existing = (Array.isArray(artifacts.spawnedChildren) ? artifacts.spawnedChildren : []) as Array<{
-          childId: string;
-          childFlow: string;
-          spawnedAt: string;
-        }>;
-        tx.update(entities)
-          .set({ artifacts: { ...artifacts, spawnedChildren: [...existing, entry] }, updatedAt: Date.now() })
-          .where(eq(entities.id, parentId))
-          .run();
-      }),
-    );
+    this.db.transaction((tx) => {
+      const rows = tx.select().from(entities).where(eq(entities.id, parentId)).limit(1).all();
+      if (rows.length === 0) throw new Error(`Entity ${parentId} not found`);
+      const row = rows[0];
+      const artifacts = (row.artifacts as Record<string, unknown>) ?? {};
+      const existing = (Array.isArray(artifacts.spawnedChildren) ? artifacts.spawnedChildren : []) as Array<{
+        childId: string;
+        childFlow: string;
+        spawnedAt: string;
+      }>;
+      tx.update(entities)
+        .set({ artifacts: { ...artifacts, spawnedChildren: [...existing, entry] }, updatedAt: Date.now() })
+        .where(eq(entities.id, parentId))
+        .run();
+    });
   }
 
   async reapExpired(ttlMs: number): Promise<string[]> {
