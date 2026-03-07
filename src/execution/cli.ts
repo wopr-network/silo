@@ -190,24 +190,19 @@ program
     const startHttp = !opts.mcpOnly;
     const startMcp = !opts.httpOnly;
 
+    let restHttpServer: ReturnType<typeof createHttpServer> | undefined;
     if (startHttp) {
       const httpPort = parseInt(opts.httpPort as string, 10);
       const httpHost = opts.httpHost as string;
-      const httpServer = createHttpServer({ engine, mcpDeps: deps, adminToken });
-      httpServer.listen(httpPort, httpHost, () => {
-        const addr = httpServer.address();
+      restHttpServer = createHttpServer({ engine, mcpDeps: deps, adminToken });
+      restHttpServer.listen(httpPort, httpHost, () => {
+        const addr = restHttpServer?.address();
         const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;
         console.error(`HTTP REST API listening on ${httpHost}:${boundPort}`);
       });
       if (!adminToken) {
         console.warn("WARNING: DEFCON_ADMIN_TOKEN not set — admin routes are unauthenticated");
       }
-
-      const httpShutdown = () => {
-        httpServer.close();
-      };
-      process.on("SIGINT", httpShutdown);
-      process.on("SIGTERM", httpShutdown);
     }
 
     if (opts.transport === "sse" && startMcp) {
@@ -290,6 +285,7 @@ program
       }
 
       const shutdown = () => {
+        restHttpServer?.close();
         stopReaper().then(() => {
           httpServer.close();
           sqlite.close();
@@ -314,6 +310,7 @@ program
     } else {
       // HTTP-only mode — keep process alive
       const cleanup = () => {
+        restHttpServer?.close();
         stopReaper().then(() => {
           sqlite.close();
           process.exit(0);
