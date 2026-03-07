@@ -76,7 +76,7 @@ const TOOL_DEFINITIONS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        workerId: { type: "string", description: "Unique worker identifier for affinity tracking" },
+        worker_id: { type: "string", description: "Unique worker identifier for affinity tracking" },
         role: { type: "string", description: "Discipline role (e.g. engineering, devops, qa, security)" },
         flow: { type: "string", description: "Optional flow name to restrict claim to a single flow" },
       },
@@ -531,7 +531,8 @@ const AFFINITY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown>) {
   const v = validateInput(FlowClaimSchema, args);
   if (!v.ok) return v.result;
-  const { workerId, role, flow: flowName } = v.data;
+  const log = deps.logger ?? consoleLogger;
+  const { worker_id: workerId, role, flow: flowName } = v.data;
 
   // 1. Find candidate flows filtered by discipline
   let candidateFlows: import("../repositories/interfaces.js").Flow[] = [];
@@ -631,7 +632,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     try {
       claimed = await deps.invocations.claim(invocation.id, workerId ?? `agent:${role}`);
     } catch (err) {
-      (deps.logger ?? consoleLogger).error(`Failed to claim invocation ${invocation.id}:`, err);
+      log.error(`Failed to claim invocation ${invocation.id}:`, err);
       continue;
     }
     if (claimed) {
@@ -693,6 +694,7 @@ async function handleFlowGetPrompt(deps: McpServerDeps, args: Record<string, unk
 async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknown>) {
   const v = validateInput(FlowReportSchema, args);
   if (!v.ok) return v.result;
+  const log = deps.logger ?? consoleLogger;
   const { entity_id: entityId, signal, artifacts, worker_id: workerId } = v.data;
 
   const invocationList = await deps.invocations.findByEntity(entityId);
@@ -744,7 +746,7 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
         }
       }
     } catch (err) {
-      (deps.logger ?? consoleLogger).error(`Failed to set affinity for entity ${entityId} worker ${workerId}:`, err);
+      log.error(`Failed to set affinity for entity ${entityId} worker ${workerId}:`, err);
     }
   }
 

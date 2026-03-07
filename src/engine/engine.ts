@@ -1,3 +1,5 @@
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import type {
   Artifacts,
   EnrichedEntity,
@@ -55,6 +57,7 @@ export interface EngineDeps {
   transitionLogRepo: ITransitionLogRepository;
   adapters: Map<string, unknown>;
   eventEmitter: IEventBusAdapter;
+  logger?: Logger;
 }
 
 export class Engine {
@@ -65,6 +68,7 @@ export class Engine {
   private transitionLogRepo: ITransitionLogRepository;
   readonly adapters: Map<string, unknown>;
   private eventEmitter: IEventBusAdapter;
+  private readonly logger: Logger;
 
   constructor(deps: EngineDeps) {
     this.entityRepo = deps.entityRepo;
@@ -74,6 +78,7 @@ export class Engine {
     this.transitionLogRepo = deps.transitionLogRepo;
     this.adapters = deps.adapters;
     this.eventEmitter = deps.eventEmitter;
+    this.logger = deps.logger ?? consoleLogger;
   }
 
   async processSignal(
@@ -91,7 +96,7 @@ export class Engine {
     if (!flow) throw new Error(`Flow "${entity.flowId}" not found`);
 
     // 3. Find transition
-    const transition = findTransition(flow, entity.state, signal, { entity }, true);
+    const transition = findTransition(flow, entity.state, signal, { entity }, true, this.logger);
     if (!transition)
       throw new Error(`No transition from "${entity.state}" on signal "${signal}" in flow "${flow.name}"`);
 
@@ -145,7 +150,7 @@ export class Engine {
               gate: { name: gate.name, output: gateResult.output },
             });
           } catch (err) {
-            console.error("[engine] Failed to render timeoutPrompt template:", err);
+            this.logger.error("[engine] Failed to render timeoutPrompt template:", err);
             resolvedTimeoutPrompt = DEFAULT_TIMEOUT_PROMPT;
           }
         }
@@ -255,7 +260,7 @@ export class Engine {
           this.gateRepo.resultsFor(updated.id),
         ]);
         const enriched: EnrichedEntity = { ...updated, invocations, gateResults };
-        const build = await buildInvocation(newStateDef, enriched, this.adapters, flow);
+        const build = await buildInvocation(newStateDef, enriched, this.adapters, flow, this.logger);
         const invocation = await this.invocationRepo.create(
           entityId,
           transition.toState,
@@ -289,7 +294,7 @@ export class Engine {
     });
 
     // 9. Spawn child flows
-    const spawned = await executeSpawn(transition, updated, this.flowRepo, this.entityRepo);
+    const spawned = await executeSpawn(transition, updated, this.flowRepo, this.entityRepo, this.logger);
     if (spawned) {
       result.spawned = [spawned.id];
       await this.eventEmitter.emit({
@@ -364,7 +369,7 @@ export class Engine {
         this.gateRepo.resultsFor(entity.id),
       ]);
       const enriched: EnrichedEntity = { ...entity, invocations, gateResults };
-      const build = await buildInvocation(initialState, enriched, this.adapters, flow);
+      const build = await buildInvocation(initialState, enriched, this.adapters, flow, this.logger);
       await this.invocationRepo.create(
         entity.id,
         flow.initialState,
@@ -455,7 +460,7 @@ export class Engine {
       try {
         await this.entityRepo.release(claimed.id, `agent:${role}`);
       } catch (err) {
-        console.error(`release() failed for entity ${claimed.id}:`, err);
+        this.logger.error(`release() failed for entity ${claimed.id}:`, err);
       }
       return null;
     }
@@ -474,7 +479,7 @@ export class Engine {
     try {
       await this.entityRepo.setAffinity(entityId, workerId, role, new Date(Date.now() + affinityWindow));
     } catch (err) {
-      console.warn(`setAffinity failed for entity ${entityId} worker ${workerId} — continuing:`, err);
+      this.logger.warn(`setAffinity failed for entity ${entityId} worker ${workerId} — continuing:`, err);
     }
   }
 
@@ -488,7 +493,7 @@ export class Engine {
       this.gateRepo.resultsFor(entity.id),
     ]);
     const enriched: EnrichedEntity = { ...entity, invocations, gateResults };
-    return buildInvocation(state, enriched, this.adapters, flow);
+    return buildInvocation(state, enriched, this.adapters, flow, this.logger);
   }
 
   private async emitAndReturn(
@@ -563,7 +568,7 @@ export class Engine {
       tickInFlight = true;
       currentTickPromise = tick()
         .catch((err) => {
-          console.error("[reaper] error:", err);
+          this.logger.error("[reaper] error:", err);
         })
         .finally(() => {
           tickInFlight = false;
