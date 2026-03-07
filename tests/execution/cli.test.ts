@@ -168,6 +168,7 @@ describe("CLI", () => {
       }
     } finally {
       if (existsSync(dbPath)) rmSync(dbPath);
+      if (existsSync(seedPath)) rmSync(seedPath);
     }
   }, 15000);
 
