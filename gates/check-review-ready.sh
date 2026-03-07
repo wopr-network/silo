@@ -24,8 +24,7 @@ ALL_AUTHORS=$(printf '%s\n%s\n%s' "$COMMENTS" "$PR_COMMENTS" "$REVIEWS" | sort -
 BOTS_FOUND=0
 BOTS_MISSING=()
 for BOT in "qodo-merge[bot]" "coderabbitai[bot]" "sourcery-ai[bot]"; do
-  BOT_BASE="${BOT%%\[bot\]}"
-  if echo "$ALL_AUTHORS" | grep -qF "$BOT" || echo "$ALL_AUTHORS" | grep -qF "$BOT_BASE"; then
+  if echo "$ALL_AUTHORS" | grep -qF "$BOT"; then
     BOTS_FOUND=$((BOTS_FOUND + 1))
   else
     BOTS_MISSING+=("$BOT")

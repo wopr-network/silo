@@ -13,7 +13,7 @@ PAYLOAD=$(jq -n --arg id "$LINEAR_ID" '{
 }')
 
 RESPONSE=$(curl -s -f -X POST "https://api.linear.app/graphql" \
-  -H "Authorization: ${LINEAR_API_KEY}" \
+  -H "Authorization: Bearer ${LINEAR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1) || {
   echo "Failed to query Linear API: $RESPONSE"
@@ -29,7 +29,7 @@ UNMERGED=()
 while IFS= read -r blocker; do
   IDENTIFIER=$(echo "$blocker" | jq -r '.identifier')
   # Find GitHub PR URL in attachments
-  PR_URL=$(echo "$blocker" | jq -r '.attachments.nodes[] | select(.url | test("github.com/.*/pull/")) | .url' | head -1)
+  PR_URL=$(echo "$blocker" | jq -r '.attachments.nodes // [] | .[] | select(.url | test("github.com/.*/pull/")) | .url' | head -1)
   if [ -z "$PR_URL" ]; then
     UNMERGED+=("${IDENTIFIER} (no PR)")
     continue
@@ -45,7 +45,7 @@ while IFS= read -r blocker; do
   if [ "$STATE" != "MERGED" ]; then
     UNMERGED+=("${IDENTIFIER}")
   fi
-done < <(echo "$RESPONSE" | jq -c '.data.issue.relations.nodes[] | select(.type == "blocks") | .relatedIssue')
+done < <(echo "$RESPONSE" | jq -c '.data.issue.relations.nodes[] | select(.type == "isBlockedBy") | .relatedIssue')
 
 if [ ${#UNMERGED[@]} -gt 0 ]; then
   echo "Blocked by unmerged: ${UNMERGED[*]}"

@@ -8,7 +8,7 @@ LINEAR_API_KEY="${LINEAR_API_KEY:?LINEAR_API_KEY env var is required}"
 
 PAYLOAD=$(jq -n --arg id "$LINEAR_ID" '{"query": "query { issue(id: \($id)) { comments { nodes { body } } } }"}')
 RESPONSE=$(curl -s -f -X POST "https://api.linear.app/graphql" \
-  -H "Authorization: ${LINEAR_API_KEY}" \
+  -H "Authorization: Bearer ${LINEAR_API_KEY}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" 2>&1) || {
   echo "Failed to query Linear API: $RESPONSE"
