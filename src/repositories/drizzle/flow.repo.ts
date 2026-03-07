@@ -190,6 +190,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.mode !== undefined) updateValues.mode = changes.mode;
     if (changes.promptTemplate !== undefined) updateValues.promptTemplate = changes.promptTemplate;
     if (changes.constraints !== undefined) updateValues.constraints = changes.constraints;
+    if (changes.onEnter !== undefined) updateValues.onEnter = changes.onEnter;
 
     if (Object.keys(updateValues).length > 0) {
       this.db.update(stateDefinitions).set(updateValues).where(eq(stateDefinitions.id, stateId)).run();
@@ -339,6 +340,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
             mode: s.mode ?? "passive",
             promptTemplate: s.promptTemplate,
             constraints: s.constraints as Record<string, unknown> | null,
+            onEnter: (s.onEnter ?? null) as OnEnterConfig | null,
           })
           .run();
       }

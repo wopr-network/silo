@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec } from "node:child_process";
 import type { Entity, IEntityRepository, OnEnterConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -40,7 +40,7 @@ export async function executeOnEnter(
 
   // Execute command
   const timeoutMs = onEnter.timeout_ms ?? 30000;
-  const { exitCode, stdout, timedOut } = await runOnEnterCommand(renderedCommand, timeoutMs);
+  const { exitCode, stdout, stderr, timedOut } = await runOnEnterCommand(renderedCommand, timeoutMs);
 
   if (timedOut) {
     const error = `onEnter command timed out after ${timeoutMs}ms`;
@@ -48,6 +48,7 @@ export async function executeOnEnter(
       onEnter_error: {
         command: renderedCommand,
         error,
+        stderr,
         failedAt: new Date().toISOString(),
       },
     });
@@ -55,7 +56,7 @@ export async function executeOnEnter(
   }
 
   if (exitCode !== 0) {
-    const error = `onEnter command exited with code ${exitCode}: ${stdout}`;
+    const error = `onEnter command exited with code ${exitCode}: ${stderr || stdout}`;
     await entityRepo.updateArtifacts(entity.id, {
       onEnter_error: {
         command: renderedCommand,
@@ -110,17 +111,15 @@ export async function executeOnEnter(
 function runOnEnterCommand(
   command: string,
   timeoutMs: number,
-): Promise<{ exitCode: number; stdout: string; timedOut: boolean }> {
-  const parts = command.split(/\s+/);
-  const file = parts[0];
-  const args = parts.slice(1);
-
+): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
+    const child = exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+      const timedOut = error !== null && child.killed === true;
       resolve({
         exitCode: error ? 1 : 0,
-        stdout: (stdout + stderr).trim(),
-        timedOut: error !== null && "killed" in error && error.killed === true,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        timedOut,
       });
     });
   });

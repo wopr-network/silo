@@ -26,6 +26,7 @@ export interface ProcessSignalResult {
   gateName?: string;
   failurePrompt?: string;
   timeoutPrompt?: string;
+  onEnterFailed?: boolean;
   invocationId?: string;
   spawned?: string[];
   terminal: boolean;
@@ -198,9 +199,9 @@ export class Engine {
         return {
           newState: transition.toState,
           gatesPassed,
-          gated: true,
+          gated: false,
+          onEnterFailed: true,
           gateOutput: onEnterResult.error,
-          gateName: `onEnter:${transition.toState}`,
           terminal: false,
         };
       } else {
