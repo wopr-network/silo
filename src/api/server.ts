@@ -101,9 +101,7 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
     if (authErr) return authErr;
     const args = { role: req.body?.role as string, flow: req.params.flow };
     const result = await callToolHandler(deps.mcpDeps, "flow.claim", args);
-    const apiRes = mcpResultToApi(result);
-    if (apiRes.status === 204) return { status: 204, body: null };
-    return apiRes;
+    return mcpResultToApi(result);
   });
 
   // --- Entity report ---
