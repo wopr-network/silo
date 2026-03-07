@@ -16,5 +16,19 @@ export async function executeSpawn(
   const flow = await flowRepo.getByName(transition.spawnFlow);
   if (!flow) throw new Error(`Spawn flow "${transition.spawnFlow}" not found`);
 
-  return entityRepo.create(flow.id, flow.initialState, parentEntity.refs ?? undefined);
+  const childEntity = await entityRepo.create(flow.id, flow.initialState, parentEntity.refs ?? undefined);
+
+  const existing = (parentEntity.artifacts?.spawnedChildren ?? []) as Array<{
+    childId: string;
+    childFlow: string;
+    spawnedAt: string;
+  }>;
+  await entityRepo.updateArtifacts(parentEntity.id, {
+    spawnedChildren: [
+      ...existing,
+      { childId: childEntity.id, childFlow: transition.spawnFlow, spawnedAt: new Date().toISOString() },
+    ],
+  });
+
+  return childEntity;
 }
