@@ -65,7 +65,40 @@
       "mode": "passive"
     }
   ],
-  "gates": [],
+  "gates": [
+    {
+      "name": "spec-posted",
+      "type": "command",
+      "command": "gates/spec-posted.sh {{entity.refs.linear.id}}",
+      "timeoutMs": 60000,
+      "failurePrompt": "The architect spec comment was not found on Linear issue {{entity.refs.linear.key}}. Check that the architect posted a comment containing '## Implementation Spec' on the issue before signalling spec_ready.",
+      "timeoutPrompt": "Timed out checking for architect spec on {{entity.refs.linear.key}}. The Linear API may be slow or unreachable. Retry the spec_ready signal."
+    },
+    {
+      "name": "ci-green",
+      "type": "command",
+      "command": "gates/ci-green.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}}",
+      "timeoutMs": 1200000,
+      "failurePrompt": "CI checks failed on PR #{{entity.artifacts.prNumber}} in {{entity.refs.github.repo}}. Run `gh pr checks {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}}` to see which checks failed. Fix the failures in the worktree, push, and re-signal pr_created.",
+      "timeoutPrompt": "CI checks did not complete within 20 minutes for PR #{{entity.artifacts.prNumber}}. This usually means a check is stuck. Run `gh pr checks {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}}` to identify the hung check. Consider re-triggering CI with an empty commit: `git commit --allow-empty -m 'ci: trigger re-run' && git push`."
+    },
+    {
+      "name": "review-bots-ready",
+      "type": "command",
+      "command": "gates/review-bots-ready.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}}",
+      "timeoutMs": 600000,
+      "failurePrompt": "Review bots (Qodo, CodeFactor) have not posted on PR #{{entity.artifacts.prNumber}} in {{entity.refs.github.repo}}. Check that the PR is not a draft and that the bots are enabled for this repo. Re-signal clean once bots have posted.",
+      "timeoutPrompt": "Timed out waiting for review bots on PR #{{entity.artifacts.prNumber}} after 10 minutes. The bots may be down or the repo may not have them configured. Proceed to manual review if bots are non-essential for this repo."
+    },
+    {
+      "name": "merge-queue",
+      "type": "command",
+      "command": "gates/merge-queue.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}}",
+      "timeoutMs": 1800000,
+      "failurePrompt": "PR #{{entity.artifacts.prNumber}} failed in the merge queue for {{entity.refs.github.repo}}. Run `gh pr view {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}} --json mergeStateStatus` to check status. If DIRTY, rebase on main and force-push. If CI failed in queue, check the failing checks and fix.",
+      "timeoutPrompt": "PR #{{entity.artifacts.prNumber}} has been in the merge queue for over 30 minutes in {{entity.refs.github.repo}}. Poll status with `gh pr view {{entity.artifacts.prNumber}} --repo {{entity.refs.github.repo}} --json state,mergeStateStatus` — the wopr-pr-watch.sh script may have exited on UNSTABLE without reporting."
+    }
+  ],
   "transitions": [
     {
       "flowName": "wopr-changeset",
@@ -79,6 +112,7 @@
       "fromState": "architecting",
       "toState": "coding",
       "trigger": "spec_ready",
+      "gateName": "spec-posted",
       "priority": 0
     },
     {
@@ -86,6 +120,7 @@
       "fromState": "coding",
       "toState": "reviewing",
       "trigger": "pr_created",
+      "gateName": "ci-green",
       "priority": 0
     },
     {
@@ -93,6 +128,7 @@
       "fromState": "reviewing",
       "toState": "merging",
       "trigger": "clean",
+      "gateName": "review-bots-ready",
       "priority": 0
     },
     {
@@ -121,6 +157,7 @@
       "fromState": "merging",
       "toState": "done",
       "trigger": "merged",
+      "gateName": "merge-queue",
       "priority": 0
     },
     {

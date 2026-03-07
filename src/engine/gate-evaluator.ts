@@ -28,15 +28,25 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
     if (!gate.command) {
       return { passed: false, timedOut: false, output: "Gate command is not configured" };
     }
+    // Render Handlebars templates in the command string before validation/execution
+    let renderedCommand: string;
+    try {
+      const hbs = (await import("./handlebars.js")).getHandlebars();
+      renderedCommand = hbs.compile(gate.command)({ entity });
+    } catch (err) {
+      const msg = `Template error: ${err instanceof Error ? err.message : String(err)}`;
+      await gateRepo.record(entity.id, gate.id, false, msg);
+      return { passed: false, timedOut: false, output: msg };
+    }
     // Defense-in-depth: validate command path even though schema should have caught it
-    const validation = validateGateCommand(gate.command);
+    const validation = validateGateCommand(renderedCommand);
     if (!validation.valid) {
       const msg = `Gate command not allowed: ${validation.error}`;
       await gateRepo.record(entity.id, gate.id, false, msg);
       return { passed: false, timedOut: false, output: msg };
     }
-    const [, ...args] = gate.command.split(/\s+/);
-    const resolvedPath = validation.resolvedPath ?? gate.command.split(/\s+/)[0];
+    const [, ...args] = renderedCommand.split(/\s+/);
+    const resolvedPath = validation.resolvedPath ?? renderedCommand.split(/\s+/)[0];
     const result = await runCommand(resolvedPath, args, gate.timeoutMs);
     passed = result.exitCode === 0;
     output = result.output;
@@ -64,7 +74,7 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
       let url: string;
       try {
         const hbs = (await import("./handlebars.js")).getHandlebars();
-        url = hbs.compile(gate.apiConfig.url as string)(entity);
+        url = hbs.compile(gate.apiConfig.url as string)({ entity, ...entity });
       } catch (err) {
         passed = false;
         output = `Template error: ${err instanceof Error ? err.message : String(err)}`;

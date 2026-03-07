@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { Entity, IEntityRepository, OnEnterConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -113,7 +113,7 @@ function runOnEnterCommand(
   timeoutMs: number,
 ): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const child = exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+    const child = execFile("/bin/sh", ["-c", command], { timeout: timeoutMs }, (error, stdout, stderr) => {
       const timedOut = error !== null && child.killed === true;
       resolve({
         exitCode: error ? ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1) : 0,
