@@ -2,62 +2,55 @@
   "flows": [
     {
       "name": "multi-gate-pipeline",
-      "description": "4-state flow with gates on every transition",
-      "initialState": "todo",
+      "description": "4-state flow with gates on two consecutive transitions",
+      "initialState": "draft",
       "maxConcurrent": 0,
       "maxConcurrentPerRepo": 0,
       "discipline": "engineering"
     }
   ],
   "states": [
-    { "name": "todo", "flowName": "multi-gate-pipeline", "mode": "passive" },
-    { "name": "coding", "flowName": "multi-gate-pipeline", "mode": "passive" },
-    { "name": "reviewing", "flowName": "multi-gate-pipeline", "mode": "passive" },
-    { "name": "done", "flowName": "multi-gate-pipeline", "mode": "passive" }
+    { "name": "draft", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "review", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "staging", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "released", "flowName": "multi-gate-pipeline", "mode": "passive" }
   ],
   "gates": [
     {
-      "name": "ready-check",
-      "type": "function",
-      "functionRef": "tests/engine/fixtures/passing-gate.ts:check",
+      "name": "lint-check",
+      "type": "command",
+      "command": "gates/test-pass.sh",
       "timeoutMs": 5000
     },
     {
-      "name": "code-quality",
-      "type": "function",
-      "functionRef": "tests/engine/fixtures/throwing-gate.ts:check",
-      "timeoutMs": 5000
-    },
-    {
-      "name": "review-approval",
-      "type": "function",
-      "functionRef": "tests/engine/fixtures/passing-gate.ts:check",
+      "name": "deploy-check",
+      "type": "command",
+      "command": "gates/test-pass.sh",
       "timeoutMs": 5000
     }
   ],
   "transitions": [
     {
       "flowName": "multi-gate-pipeline",
-      "fromState": "todo",
-      "toState": "coding",
-      "trigger": "start",
-      "gateName": "ready-check",
-      "priority": 0
-    },
-    {
-      "flowName": "multi-gate-pipeline",
-      "fromState": "coding",
-      "toState": "reviewing",
+      "fromState": "draft",
+      "toState": "review",
       "trigger": "submit",
-      "gateName": "code-quality",
+      "gateName": "lint-check",
       "priority": 0
     },
     {
       "flowName": "multi-gate-pipeline",
-      "fromState": "reviewing",
-      "toState": "done",
+      "fromState": "review",
+      "toState": "staging",
       "trigger": "approve",
-      "gateName": "review-approval",
+      "gateName": "deploy-check",
+      "priority": 0
+    },
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "staging",
+      "toState": "released",
+      "trigger": "ship",
       "priority": 0
     }
   ]

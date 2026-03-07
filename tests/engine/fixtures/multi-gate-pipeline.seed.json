@@ -1,0 +1,64 @@
+{
+  "flows": [
+    {
+      "name": "multi-gate-pipeline",
+      "description": "4-state flow with gates on every transition",
+      "initialState": "todo",
+      "maxConcurrent": 0,
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering"
+    }
+  ],
+  "states": [
+    { "name": "todo", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "coding", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "reviewing", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "done", "flowName": "multi-gate-pipeline", "mode": "passive" }
+  ],
+  "gates": [
+    {
+      "name": "ready-check",
+      "type": "command",
+      "command": "gates/test-pass.sh",
+      "timeoutMs": 5000
+    },
+    {
+      "name": "code-quality",
+      "type": "command",
+      "command": "gates/test-fail.sh",
+      "timeoutMs": 5000
+    },
+    {
+      "name": "review-approval",
+      "type": "command",
+      "command": "gates/test-pass.sh",
+      "timeoutMs": 5000
+    }
+  ],
+  "transitions": [
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "todo",
+      "toState": "coding",
+      "trigger": "start",
+      "gateName": "ready-check",
+      "priority": 0
+    },
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "coding",
+      "toState": "reviewing",
+      "trigger": "submit",
+      "gateName": "code-quality",
+      "priority": 0
+    },
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "reviewing",
+      "toState": "done",
+      "trigger": "approve",
+      "gateName": "review-approval",
+      "priority": 0
+    }
+  ]
+}

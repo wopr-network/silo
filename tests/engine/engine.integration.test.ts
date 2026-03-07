@@ -151,7 +151,7 @@ describe("Engine integration (in-memory SQLite)", () => {
   });
 
   it("multi-gate lifecycle: seed → create → gate fail → retry → advance through all gates to terminal", async () => {
-    const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
+    const seedPath = resolve(__dirname, "fixtures/multi-gate-pipeline.seed.json");
     const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
     expect(seedResult.flows).toBe(1);
     expect(seedResult.gates).toBe(3);
@@ -198,11 +198,11 @@ describe("Engine integration (in-memory SQLite)", () => {
     );
     expect(gateFailedEvents).toHaveLength(1);
 
-    // Step 4: Fix the gate — update code-quality to use passing-gate.ts
+    // Step 4: Fix the gate — update code-quality to use the passing command
     const gates = await ctx.gateRepo.listAll();
     const codeQualityGate = gates.find((g) => g.name === "code-quality")!;
     await ctx.gateRepo.update(codeQualityGate.id, {
-      functionRef: "tests/engine/fixtures/passing-gate.ts:check",
+      command: "gates/test-pass.sh",
     });
 
     // Step 5: Retry "submit" — code-quality gate now passes → transitions to "reviewing"
