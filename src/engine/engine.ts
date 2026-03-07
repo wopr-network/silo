@@ -237,7 +237,7 @@ export class Engine {
           this.gateRepo.resultsFor(updated.id),
         ]);
         const enriched: EnrichedEntity = { ...updated, invocations, gateResults };
-        const build = await buildInvocation(newStateDef, enriched, this.adapters);
+        const build = await buildInvocation(newStateDef, enriched, this.adapters, flow);
         const invocation = await this.invocationRepo.create(
           entityId,
           transition.toState,
@@ -346,7 +346,7 @@ export class Engine {
         this.gateRepo.resultsFor(entity.id),
       ]);
       const enriched: EnrichedEntity = { ...entity, invocations, gateResults };
-      const build = await buildInvocation(initialState, enriched, this.adapters);
+      const build = await buildInvocation(initialState, enriched, this.adapters, flow);
       await this.invocationRepo.create(
         entity.id,
         flow.initialState,
@@ -406,7 +406,7 @@ export class Engine {
                 this.gateRepo.resultsFor(claimed.id),
               ]);
               const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
-              build = await buildInvocation(state, enriched, this.adapters);
+              build = await buildInvocation(state, enriched, this.adapters, flow);
             } else {
               build = { prompt: pending.prompt, context: null };
             }
@@ -461,7 +461,7 @@ export class Engine {
               this.gateRepo.resultsFor(claimed.id),
             ]);
             const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
-            build = await buildInvocation(state, enriched, this.adapters);
+            build = await buildInvocation(state, enriched, this.adapters, flow);
           } else {
             build = { prompt: pending.prompt, context: null };
           }
@@ -501,7 +501,7 @@ export class Engine {
             this.gateRepo.resultsFor(claimed.id),
           ]);
           const enriched: EnrichedEntity = { ...claimed, invocations, gateResults };
-          const build = await buildInvocation(state, enriched, this.adapters);
+          const build = await buildInvocation(state, enriched, this.adapters, flow);
           const invocation = await this.invocationRepo.create(
             claimed.id,
             state.name,

@@ -1,4 +1,4 @@
-import type { EnrichedEntity, Mode, State } from "../repositories/interfaces.js";
+import type { EnrichedEntity, Flow, Mode, State } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
 export interface InvocationBuild {
@@ -30,6 +30,7 @@ export async function buildInvocation(
   state: State,
   entity: EnrichedEntity,
   adapters?: Map<string, unknown>,
+  flow?: Flow,
 ): Promise<InvocationBuild> {
   const resolvedRefs = Object.create(null) as Record<string, unknown>;
   const refEntries = Object.entries(entity.refs ?? {});
@@ -46,7 +47,7 @@ export async function buildInvocation(
     }),
   );
 
-  const context: Record<string, unknown> = { entity, state, refs: resolvedRefs };
+  const context: Record<string, unknown> = { entity, state, refs: resolvedRefs, flow: flow ?? null };
 
   let prompt = "";
   let systemPrompt = "";

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { buildInvocation } from "../../src/engine/invocation-builder.js";
-import type { EnrichedEntity, Entity, State } from "../../src/repositories/interfaces.js";
+import type { EnrichedEntity, Entity, Flow, State } from "../../src/repositories/interfaces.js";
 
 function makeState(overrides: Partial<State> = {}): State {
   return {
@@ -172,4 +172,32 @@ describe("buildInvocation", () => {
     expect(result.prompt).toBe("No refs");
     expect(result.context.refs).toEqual({});
   });
+
+  it("renders {{flow.name}} when flow is passed", async () => {
+    const state = makeState({ promptTemplate: "You are on the {{flow.name}} team." });
+    const entity = makeEntity();
+    const flow: Flow = {
+      id: "flow-1",
+      name: "wopr-incident",
+      description: null,
+      entitySchema: null,
+      initialState: "coding",
+      maxConcurrent: 1,
+      maxConcurrentPerRepo: 1,
+      affinityWindowMs: 300000,
+      version: 1,
+      createdBy: null,
+      discipline: null,
+      createdAt: null,
+      updatedAt: null,
+      states: [],
+      transitions: [],
+    };
+
+    const result = await buildInvocation(state, entity, undefined, flow);
+
+    expect(result.prompt).toBe("You are on the wopr-incident team.");
+    expect(result.context).toHaveProperty("flow");
+  });
+
 });
