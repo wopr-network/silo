@@ -30,3 +30,8 @@ Key concepts that must appear in both method/ and wopr/ docs:
 - Use ASCII diagrams, not images. The audience includes AI agents that can't see images.
 - When referencing a method/ principle from wopr/, use relative links: `[event bus pattern](../../method/pipeline/triggers/event-bus.md)`.
 - When referencing a wopr/ implementation from method/, use: `See [WOPR implementation](../../wopr/...)`.
+
+## Gotchas
+
+- **Naming**: REST API and `FlowClaimSchema` use `worker_id` (snake_case), never `workerId` (camelCase) — all docs and code must match.
+- **CORS**: `isLoopbackOrigin()` regex must use `https?://` prefix (not just `http://`) to cover both HTTP and SSE/HTTPS transports.
