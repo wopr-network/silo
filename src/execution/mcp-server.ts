@@ -458,7 +458,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     const flow = await deps.flows.getByName(flowName);
     if (!flow) return errorResult(`Flow not found: ${flowName}`);
     // Discipline must match — null discipline flows are claimable by any role
-    if (flow.discipline !== null && flow.discipline !== role) return jsonResult(null);
+    if (flow.discipline !== null && flow.discipline !== role) return noWorkResult(300_000, role);
     candidateFlows = [flow];
   } else {
     const allFlows = await deps.flows.list();
@@ -477,18 +477,14 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
 
   if (allCandidates.length === 0) {
     // Determine if entities exist but are all claimed (short retry) vs empty backlog (long retry)
-    let hasEntities = false;
-    for (const flow of candidateFlows) {
-      for (const state of flow.states) {
-        if (state.agentRole === null) continue;
-        const entities = await deps.entities.findByFlowAndState(flow.id, state.name);
-        if (entities.length > 0) {
-          hasEntities = true;
-          break;
-        }
-      }
-      if (hasEntities) break;
-    }
+    // Only check states whose agentRole matches the requested role to avoid cross-discipline false positives
+    const stateChecks = candidateFlows.flatMap((flow) =>
+      flow.states
+        .filter((state) => state.agentRole === role)
+        .map((state) => deps.entities.findByFlowAndState(flow.id, state.name)),
+    );
+    const entityResults = await Promise.all(stateChecks);
+    const hasEntities = entityResults.some((entities) => entities.length > 0);
     return noWorkResult(hasEntities ? 30_000 : 300_000, role);
   }
 

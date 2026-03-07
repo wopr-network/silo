@@ -1074,13 +1074,32 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     expect(data.retry_after_ms).toBe(300000);
   });
 
-  it("flow param validates discipline match and returns null on mismatch", async () => {
+  it("flow param validates discipline match and returns check_back on mismatch", async () => {
     const devopsFlow = mockFlow({ id: "flow-ops", name: "deploy", discipline: "devops" });
     deps.flows.getByName = async (name) => (name === "deploy" ? devopsFlow : null);
 
     const result = await callClaim({ workerId: "wkr_eng", role: "engineering", flow: "deploy" });
     const data = parseResult(result as { content: Array<{ text: string }> });
-    expect(data).toBeNull();
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(300000);
     expect((result as { isError?: boolean }).isError).toBeUndefined();
+  });
+
+  it("returns check_back with 30s retry when entities exist but are all claimed", async () => {
+    // Use role "coder" to match the default mockFlow state agentRole
+    const flow1 = mockFlow({ id: "flow-1", name: "coder-flow", discipline: null });
+    deps.flows.list = async () => [flow1];
+    deps.flows.listAll = async () => [flow1];
+    deps.invocations.findUnclaimedByFlow = async () => [];
+    // Entities exist in the "draft" state whose agentRole is "coder"
+    deps.entities.findByFlowAndState = async (_flowId, stateName) => {
+      if (stateName === "draft") return [mockEntity({ id: "ent-claimed", claimedBy: "wkr_other" })];
+      return [];
+    };
+
+    const result = await callClaim({ workerId: "wkr_test", role: "coder" });
+    const data = parseResult(result as { content: Array<{ text: string }> });
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(30000);
   });
 });
