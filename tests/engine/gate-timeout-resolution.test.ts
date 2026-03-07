@@ -20,6 +20,10 @@ describe("resolveGateTimeout", () => {
     expect(resolveGateTimeout(undefined, 120000)).toBe(120000);
   });
 
+  it("falls through to flow-level when gate timeout is null", () => {
+    expect(resolveGateTimeout(null, 120000)).toBe(120000);
+  });
+
   it("falls through to flow-level when gate timeout is 0", () => {
     expect(resolveGateTimeout(0, 120000)).toBe(120000);
   });
@@ -43,5 +47,15 @@ describe("resolveGateTimeout", () => {
   it("respects DEFCON_DEFAULT_GATE_TIMEOUT_MS env var", () => {
     process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "600000";
     expect(resolveGateTimeout(undefined, undefined)).toBe(600000);
+  });
+
+  it("falls back to 300000 when DEFCON_DEFAULT_GATE_TIMEOUT_MS is not a valid number", () => {
+    process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "not-a-number";
+    expect(resolveGateTimeout(undefined, undefined)).toBe(300000);
+  });
+
+  it("falls back to 300000 when DEFCON_DEFAULT_GATE_TIMEOUT_MS is 0", () => {
+    process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "0";
+    expect(resolveGateTimeout(undefined, undefined)).toBe(300000);
   });
 });

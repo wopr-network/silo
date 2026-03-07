@@ -15,7 +15,7 @@ function toGate(row: typeof gateDefinitions.$inferSelect): Gate {
     command: row.command,
     functionRef: row.functionRef,
     apiConfig: row.apiConfig as Record<string, unknown> | null,
-    timeoutMs: row.timeoutMs ?? 30000,
+    timeoutMs: row.timeoutMs ?? null,
     failurePrompt: row.failurePrompt ?? null,
     timeoutPrompt: row.timeoutPrompt ?? null,
   };

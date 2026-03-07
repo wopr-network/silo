@@ -25,11 +25,26 @@ export async function exportSeed(flowRepo: IFlowRepository, gateRepo: IGateRepos
     const gate = gateById.get(gateId);
     if (!gate) continue;
     if (gate.type === "command" && gate.command) {
-      gateEntries.push({ name: gate.name, type: "command", command: gate.command, timeoutMs: gate.timeoutMs });
+      gateEntries.push({
+        name: gate.name,
+        type: "command",
+        command: gate.command,
+        timeoutMs: gate.timeoutMs ?? undefined,
+      });
     } else if (gate.type === "function" && gate.functionRef) {
-      gateEntries.push({ name: gate.name, type: "function", functionRef: gate.functionRef, timeoutMs: gate.timeoutMs });
+      gateEntries.push({
+        name: gate.name,
+        type: "function",
+        functionRef: gate.functionRef,
+        timeoutMs: gate.timeoutMs ?? undefined,
+      });
     } else if (gate.type === "api" && gate.apiConfig) {
-      gateEntries.push({ name: gate.name, type: "api", apiConfig: gate.apiConfig, timeoutMs: gate.timeoutMs });
+      gateEntries.push({
+        name: gate.name,
+        type: "api",
+        apiConfig: gate.apiConfig,
+        timeoutMs: gate.timeoutMs ?? undefined,
+      });
     }
   }
 

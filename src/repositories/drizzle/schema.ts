@@ -48,7 +48,7 @@ export const gateDefinitions = sqliteTable("gate_definitions", {
   command: text("command"),
   functionRef: text("function_ref"),
   apiConfig: text("api_config", { mode: "json" }),
-  timeoutMs: integer("timeout_ms").default(30000),
+  timeoutMs: integer("timeout_ms"),
   failurePrompt: text("failure_prompt"),
   timeoutPrompt: text("timeout_prompt"),
 });

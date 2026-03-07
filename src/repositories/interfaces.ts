@@ -119,7 +119,7 @@ export interface Gate {
   command: string | null;
   functionRef: string | null;
   apiConfig: Record<string, unknown> | null;
-  timeoutMs: number;
+  timeoutMs: number | null;
   failurePrompt: string | null;
   timeoutPrompt: string | null;
 }

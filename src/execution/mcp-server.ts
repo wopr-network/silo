@@ -58,6 +58,13 @@ export interface McpServerOpts {
   stdioTrusted?: boolean;
 }
 
+function getSystemDefaultGateTimeoutMs(): number {
+  const parsed = parseInt(process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS ?? "", 10);
+  return !Number.isNaN(parsed) && parsed > 0 ? parsed : 300000;
+}
+
+const SYSTEM_DEFAULT_GATE_TIMEOUT_MS = getSystemDefaultGateTimeoutMs();
+
 const TOOL_DEFINITIONS = [
   {
     name: "flow.claim",
@@ -189,7 +196,7 @@ const TOOL_DEFINITIONS = [
         affinityWindowMs: { type: "number", description: "Worker affinity window duration in ms (default 300000)" },
         gateTimeoutMs: {
           type: "number",
-          description: "Default gate timeout in ms for all gates in this flow (default 300000)",
+          description: `Default gate timeout in ms for all gates in this flow (default ${SYSTEM_DEFAULT_GATE_TIMEOUT_MS})`,
         },
         createdBy: { type: "string", description: "Creator identifier" },
         states: {
