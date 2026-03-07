@@ -1,4 +1,6 @@
 import type { Engine, ProcessSignalResult } from "../engine/engine.js";
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import type {
   IEntityRepository,
   IFlowRepository,
@@ -28,6 +30,7 @@ export interface ActiveRunnerDeps {
   entityRepo: IEntityRepository;
   flowRepo: IFlowRepository;
   modelTierMap?: Record<string, string>;
+  logger?: Logger;
 }
 
 export interface ActiveRunnerRunOptions {
@@ -44,6 +47,7 @@ export class ActiveRunner {
   private entityRepo: IEntityRepository;
   private flowRepo: IFlowRepository;
   private modelTierMap: Record<string, string>;
+  private logger: Logger;
 
   constructor(deps: ActiveRunnerDeps) {
     this.engine = deps.engine;
@@ -52,6 +56,7 @@ export class ActiveRunner {
     this.entityRepo = deps.entityRepo;
     this.flowRepo = deps.flowRepo;
     this.modelTierMap = deps.modelTierMap ?? DEFAULT_MODEL_TIER_MAP;
+    this.logger = deps.logger ?? consoleLogger;
   }
 
   async run(options: ActiveRunnerRunOptions = {}): Promise<void> {
@@ -107,7 +112,7 @@ export class ActiveRunner {
     try {
       await this.invocationRepo.complete(invocation.id, parsed.signal, parsed.artifacts);
     } catch (err) {
-      console.error(`[active-runner] complete() failed for invocation ${invocation.id} before processSignal:`, err);
+      this.logger.error(`[active-runner] complete() failed for invocation ${invocation.id} before processSignal:`, err);
       return;
     }
 
@@ -117,12 +122,12 @@ export class ActiveRunner {
     try {
       result = await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts, invocation.id);
     } catch (err) {
-      console.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
+      this.logger.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
       // processSignal failed after we already completed the invocation. Track retry count
       // via context to prevent infinite re-queue loops on persistent errors.
       const retryCount = (invocation.context?.retryCount as number | undefined) ?? 0;
       if (retryCount >= MAX_PROCESS_SIGNAL_RETRIES) {
-        console.error(
+        this.logger.error(
           `[active-runner] entity ${invocation.entityId} exceeded max processSignal retries (${MAX_PROCESS_SIGNAL_RETRIES}), marking as stuck`,
         );
         await this.entityRepo.updateArtifacts(invocation.entityId, { stuck: true, stuckAt: new Date().toISOString() });
@@ -144,7 +149,7 @@ export class ActiveRunner {
     // on the next poll cycle after the backoff wait.
     if (result.gated && result.gateTimedOut) {
       const retryAfterMs = 30000;
-      console.info(
+      this.logger.info(
         `[active-runner] gate timed out for entity ${invocation.entityId}, re-queuing after ${retryAfterMs}ms`,
       );
       await this.invocationRepo.create(
@@ -181,7 +186,7 @@ export class ActiveRunner {
       try {
         artifacts = JSON.parse(artifactsMatch[1].trim());
       } catch {
-        console.warn(
+        this.logger.warn(
           "[active-runner] Failed to parse ARTIFACTS JSON, using empty object. Raw content:",
           artifactsMatch[1].trim(),
         );

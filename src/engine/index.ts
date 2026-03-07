@@ -1,5 +1,7 @@
 // Engine module — state machine, invocation builder, gate evaluator, flow spawner, event emitter
 
+export type { Logger } from "../logger.js";
+export { consoleLogger, noopLogger } from "../logger.js";
 export type { ClaimWorkResult, EngineDeps, EngineStatus, ProcessSignalResult } from "./engine.js";
 export { Engine } from "./engine.js";
 export { EventEmitter } from "./event-emitter.js";

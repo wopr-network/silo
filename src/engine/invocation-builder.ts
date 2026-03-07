@@ -1,3 +1,5 @@
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import type { EnrichedEntity, Flow, Mode, State } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -31,6 +33,7 @@ export async function buildInvocation(
   entity: EnrichedEntity,
   adapters?: Map<string, unknown>,
   flow?: Flow,
+  logger: Logger = consoleLogger,
 ): Promise<InvocationBuild> {
   const resolvedRefs = Object.create(null) as Record<string, unknown>;
   const refEntries = Object.entries(entity.refs ?? {});
@@ -41,7 +44,7 @@ export async function buildInvocation(
         try {
           resolvedRefs[key] = await (adapter as { get(id: string): Promise<unknown> }).get(ref.id);
         } catch (err) {
-          console.warn(`[invocation-builder] Failed to resolve ref "${key}" via adapter "${ref.adapter}":`, err);
+          logger.warn(`[invocation-builder] Failed to resolve ref "${key}" via adapter "${ref.adapter}":`, err);
         }
       }
     }),

@@ -3,6 +3,8 @@ import http from "node:http";
 import type { Engine } from "../engine/engine.js";
 import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import { type ApiResponse, type ParsedRequest, Router } from "./router.js";
 
 function extractBearerToken(header: string | undefined): string | undefined {
@@ -18,6 +20,7 @@ export interface HttpServerDeps {
   adminToken?: string;
   workerToken?: string;
   corsOrigin?: string; // explicit CORS origin, or undefined for loopback default
+  logger?: Logger;
 }
 
 function requireWorkerToken(deps: HttpServerDeps, req: ParsedRequest): ApiResponse | null {
@@ -292,7 +295,7 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
         res.end(JSON.stringify(apiRes.body));
       }
     } catch (err) {
-      console.error("Request error:", err);
+      (deps.logger ?? consoleLogger).error("Request error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Internal server error" }));
     }

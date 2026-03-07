@@ -1,3 +1,5 @@
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import type { Flow, Transition } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -19,6 +21,7 @@ export function findTransition(
   signal: string,
   context: Record<string, unknown>,
   skipGateCheck = false,
+  logger: Logger = consoleLogger,
 ): Transition | null {
   const candidates = flow.transitions
     .filter((t) => t.fromState === currentState && t.trigger === signal)
@@ -35,7 +38,7 @@ export function findTransition(
         return candidate;
       }
     } catch (err) {
-      console.warn(
+      logger.warn(
         `Condition evaluation failed for transition '${candidate.fromState}' -> '${candidate.toState}' (trigger: '${candidate.trigger}'), skipping: ${err instanceof Error ? err.message : String(err)}`,
       );
     }

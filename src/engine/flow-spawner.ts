@@ -1,3 +1,5 @@
+import type { Logger } from "../logger.js";
+import { consoleLogger } from "../logger.js";
 import type { Entity, IEntityRepository, IFlowRepository, Transition } from "../repositories/interfaces.js";
 
 /**
@@ -10,6 +12,7 @@ export async function executeSpawn(
   parentEntity: Entity,
   flowRepo: IFlowRepository,
   entityRepo: IEntityRepository,
+  logger: Logger = consoleLogger,
 ): Promise<Entity | null> {
   if (!transition.spawnFlow) return null;
 
@@ -27,7 +30,7 @@ export async function executeSpawn(
   } catch (err) {
     // Log orphan so it can be manually cleaned up.
     // The child entity is real and functional; only parent artifact bookkeeping failed.
-    console.error(
+    logger.error(
       `[flow-spawner] ORPHAN child entity ${childEntity.id} (flow: ${transition.spawnFlow}) — ` +
         `failed to register on parent ${parentEntity.id}: ${String(err)}`,
     );
