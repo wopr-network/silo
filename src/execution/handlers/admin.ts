@@ -137,13 +137,9 @@ export async function handleAdminTransitionUpdate(deps: McpServerDeps, args: Rec
   await deps.flows.snapshot(flow.id);
   const updateChanges: Record<string, unknown> = { ...changes };
   if (gateName !== undefined) {
-    if (gateName) {
-      const gate = await deps.gates.getByName(gateName);
-      if (!gate) return errorResult(`Gate not found: ${gateName}`);
-      updateChanges.gateId = gate.id;
-    } else {
-      updateChanges.gateId = null;
-    }
+    const gate = await deps.gates.getByName(gateName);
+    if (!gate) return errorResult(`Gate not found: ${gateName}`);
+    updateChanges.gateId = gate.id;
   }
   const updated = await deps.flows.updateTransition(
     transition_id,
@@ -191,6 +187,13 @@ export async function handleAdminFlowRestore(deps: McpServerDeps, args: Record<s
   if (!v.ok) return v.result;
   const flow = await deps.flows.getByName(v.data.flow_name);
   if (!flow) return errorResult(`Flow not found: ${v.data.flow_name}`);
+  const allStateNames = flow.states.map((s) => s.name);
+  const hasActive = await deps.entities.hasAnyInFlowAndState(flow.id, allStateNames);
+  if (hasActive) {
+    return errorResult(
+      `Cannot restore flow '${v.data.flow_name}': active entities exist. Complete or fail them first.`,
+    );
+  }
   await deps.flows.snapshot(flow.id);
   await deps.flows.restore(flow.id, v.data.version);
   emitDefinitionChanged(deps.eventRepo, flow.id, "admin.flow.restore", { version: v.data.version });
