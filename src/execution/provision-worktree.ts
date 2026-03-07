@@ -74,6 +74,12 @@ export function provisionWorktree(opts: {
       if (currentBranch !== branch) {
         throw new Error(`Worktree at ${worktreePath} is on branch ${currentBranch}, expected ${branch}`);
       }
+      const remoteUrl = run("git", ["remote", "get-url", "origin"], worktreePath);
+      if (!remoteUrl.includes(opts.repo)) {
+        throw new Error(
+          `Worktree at ${worktreePath} has unexpected remote: ${remoteUrl} (expected to contain ${opts.repo})`,
+        );
+      }
       return { worktreePath, branch, repo: opts.repo };
     } catch (err) {
       if (err instanceof Error && err.message.startsWith("Worktree at")) {
