@@ -10,6 +10,7 @@ import { CompositeEventBusAdapter } from "../adapters/composite.js";
 import { LinearAdapter } from "../adapters/linear.js";
 import { StdoutAdapter } from "../adapters/stdout.js";
 import { exportSeed } from "../config/exporter.js";
+import { resolveConfigSecrets } from "../config/resolve-secrets.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { Engine } from "../engine/engine.js";
 import { DrizzleEntityRepository } from "../repositories/drizzle/entity.repo.js";
@@ -268,7 +269,15 @@ program
     // Resolve AI adapter from integration config or env
     const configs = await integrationConfigRepo.listAll();
     const aiConfig = configs.find((c) => c.capability === "ai-provider");
-    const apiKey = (aiConfig?.config as { apiKey?: string } | null)?.apiKey ?? process.env.ANTHROPIC_API_KEY;
+    let resolvedAiConfig: Record<string, unknown> | null;
+    try {
+      resolvedAiConfig = resolveConfigSecrets((aiConfig?.config as Record<string, unknown>) ?? null);
+    } catch (err) {
+      sqlite.close();
+      console.error("Failed to resolve config secrets:", err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    const apiKey = (resolvedAiConfig as { apiKey?: string } | null)?.apiKey ?? process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
       console.error("No Anthropic API key found. Set ANTHROPIC_API_KEY or configure via integration_config.");
@@ -425,7 +434,15 @@ program
     // Get Linear config
     const configs = await integrationConfigRepo.listAll();
     const linearConfig = configs.find((c) => c.adapter === "linear");
-    const apiKey = (linearConfig?.config as { apiKey?: string } | null)?.apiKey ?? process.env.LINEAR_API_KEY;
+    let resolvedLinearConfig: Record<string, unknown> | null;
+    try {
+      resolvedLinearConfig = resolveConfigSecrets((linearConfig?.config as Record<string, unknown>) ?? null);
+    } catch (err) {
+      sqlite.close();
+      console.error("Failed to resolve config secrets:", err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    const apiKey = (resolvedLinearConfig as { apiKey?: string } | null)?.apiKey ?? process.env.LINEAR_API_KEY;
 
     if (!apiKey) {
       console.error("No Linear API key found. Set LINEAR_API_KEY or configure via integration_config.");
@@ -433,7 +450,7 @@ program
       process.exit(1);
     }
 
-    const teamId = (linearConfig?.config as { teamId?: string } | null)?.teamId;
+    const teamId = (resolvedLinearConfig as { teamId?: string } | null)?.teamId;
     const adapter = new LinearAdapter({ apiKey, teamId });
 
     // Parse filter
