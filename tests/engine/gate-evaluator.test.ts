@@ -9,6 +9,7 @@ vi.mock("../../src/engine/gate-command-validator.js", () => ({
     const binaryMap: Record<string, string> = {
       "echo ok": "/usr/bin/echo",
       "echo ent-1": "/usr/bin/echo",
+      "echo linear-123": "/usr/bin/echo",
       "exit 1": "/bin/sh",
       "sleep 10": "/usr/bin/sleep",
     };
@@ -233,7 +234,7 @@ describe("evaluateGate", () => {
   it("returns passed=true for api gate with matching status", async () => {
     const gate = makeGate({
       type: "api",
-      apiConfig: { url: "https://example.com/check/{{id}}", method: "GET", expectStatus: 200 },
+      apiConfig: { url: "https://example.com/check/{{entity.id}}", method: "GET", expectStatus: 200 },
     });
     const entity = makeEntity({ id: "ent-42" });
     const gateRepo: Pick<IGateRepository, "record"> = {
@@ -335,7 +336,7 @@ describe("evaluateGate", () => {
   });
 
   it("renders Handlebars templates in command gate before execution", async () => {
-    const gate = makeGate({ type: "command", command: "echo {{id}}" });
+    const gate = makeGate({ type: "command", command: "echo {{entity.id}}" });
     const entity = makeEntity({ id: "ent-1" });
     const gateRepo: Pick<IGateRepository, "record"> = {
       record: vi.fn().mockResolvedValue({
@@ -446,6 +447,23 @@ describe("evaluateGate", () => {
     expect(result.passed).toBe(false);
     expect(result.output).toMatch(/gate exploded/);
     expect(gateRepo.record).toHaveBeenCalledWith("ent-1", "gate-1", false, expect.stringMatching(/gate exploded/));
+  });
+
+  it("renders Handlebars templates in command using { entity } context", async () => {
+    const gate = makeGate({
+      type: "command",
+      command: "echo {{entity.refs.linear.id}}",
+    });
+    const entity = makeEntity({
+      refs: { linear: { id: "linear-123" } } as unknown as Entity["refs"],
+    });
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({}),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    // The rendered command should be "echo linear-123", which exits 0
+    expect(result.passed).toBe(true);
   });
 
   it("returns passed=false for absolute path outside project root (traversal via absolute path)", async () => {

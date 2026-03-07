@@ -32,7 +32,7 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
     let renderedCommand: string;
     try {
       const hbs = (await import("./handlebars.js")).getHandlebars();
-      renderedCommand = hbs.compile(gate.command)(entity);
+      renderedCommand = hbs.compile(gate.command)({ entity });
     } catch (err) {
       const msg = `Template error: ${err instanceof Error ? err.message : String(err)}`;
       await gateRepo.record(entity.id, gate.id, false, msg);
@@ -74,7 +74,7 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
       let url: string;
       try {
         const hbs = (await import("./handlebars.js")).getHandlebars();
-        url = hbs.compile(gate.apiConfig.url as string)(entity);
+        url = hbs.compile(gate.apiConfig.url as string)({ entity });
       } catch (err) {
         passed = false;
         output = `Template error: ${err instanceof Error ? err.message : String(err)}`;
