@@ -150,6 +150,113 @@ describe("Engine integration (in-memory SQLite)", () => {
     expect(gateResults).toContainEqual(expect.objectContaining({ passed: true }));
   });
 
+  it("multi-gate lifecycle: seed → create → gate fail → retry → advance through all gates to terminal", async () => {
+    const seedPath = resolve(__dirname, "fixtures/multi-gate-pipeline.seed.json");
+    const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    expect(seedResult.flows).toBe(1);
+    expect(seedResult.gates).toBe(3);
+
+    // Step 1: Create entity — starts in "todo"
+    const entity = await ctx.engine.createEntity("multi-gate-pipeline");
+    expect(entity.state).toBe("todo");
+
+    // Step 2: Signal "start" — ready-check gate passes → transitions to "coding"
+    const r1 = await ctx.engine.processSignal(entity.id, "start");
+    expect(r1.gated).toBe(false);
+    expect(r1.newState).toBe("coding");
+    expect(r1.terminal).toBe(false);
+    expect(r1.gatesPassed).toContain("ready-check");
+
+    // Verify entity state updated
+    const afterR1 = await ctx.entityRepo.get(entity.id);
+    expect(afterR1!.state).toBe("coding");
+
+    // Verify gate.passed event emitted
+    const gatePassedEvents1 = ctx.events.filter(
+      (e) => e.type === "gate.passed" && e.entityId === entity.id,
+    );
+    expect(gatePassedEvents1).toHaveLength(1);
+
+    // Step 3: Signal "submit" — code-quality gate FAILS (throwing-gate.ts throws)
+    const r2 = await ctx.engine.processSignal(entity.id, "submit");
+    expect(r2.gated).toBe(true);
+    expect(r2.newState).toBeUndefined();
+    expect(r2.gateName).toBe("code-quality");
+
+    // Verify entity still in "coding"
+    const afterR2 = await ctx.entityRepo.get(entity.id);
+    expect(afterR2!.state).toBe("coding");
+
+    // Verify gate_failures artifact recorded
+    const failures = afterR2!.artifacts?.gate_failures as Array<Record<string, unknown>>;
+    expect(failures).toHaveLength(1);
+    expect(failures[0].gateName).toBe("code-quality");
+
+    // Verify gate.failed event emitted
+    const gateFailedEvents = ctx.events.filter(
+      (e) => e.type === "gate.failed" && e.entityId === entity.id,
+    );
+    expect(gateFailedEvents).toHaveLength(1);
+
+    // Step 4: Fix the gate — update code-quality to use the passing command
+    const gates = await ctx.gateRepo.listAll();
+    const codeQualityGate = gates.find((g) => g.name === "code-quality")!;
+    await ctx.gateRepo.update(codeQualityGate.id, {
+      command: "gates/test-pass.sh",
+    });
+
+    // Step 5: Retry "submit" — code-quality gate now passes → transitions to "reviewing"
+    const r3 = await ctx.engine.processSignal(entity.id, "submit");
+    expect(r3.gated).toBe(false);
+    expect(r3.newState).toBe("reviewing");
+    expect(r3.terminal).toBe(false);
+    expect(r3.gatesPassed).toContain("code-quality");
+
+    // Verify entity state updated
+    const afterR3 = await ctx.entityRepo.get(entity.id);
+    expect(afterR3!.state).toBe("reviewing");
+
+    // Verify gate_failures cleared after successful transition
+    const clearedFailures = afterR3!.artifacts?.gate_failures as Array<unknown>;
+    expect(clearedFailures).toEqual([]);
+
+    // Step 6: Signal "approve" — review-approval gate passes → transitions to "done" (terminal)
+    const r4 = await ctx.engine.processSignal(entity.id, "approve");
+    expect(r4.gated).toBe(false);
+    expect(r4.newState).toBe("done");
+    expect(r4.terminal).toBe(true);
+    expect(r4.gatesPassed).toContain("review-approval");
+
+    // Verify final entity state
+    const finalEntity = await ctx.entityRepo.get(entity.id);
+    expect(finalEntity!.state).toBe("done");
+
+    // Step 7: Assert complete transition log
+    const history = await ctx.transitionLogRepo.historyFor(entity.id);
+    expect(history).toHaveLength(3);
+    expect(history.map((h) => h.fromState)).toEqual(["todo", "coding", "reviewing"]);
+    expect(history.map((h) => h.toState)).toEqual(["coding", "reviewing", "done"]);
+    expect(history.map((h) => h.trigger)).toEqual(["start", "submit", "approve"]);
+
+    // Step 8: Assert event summary
+    const transitionEvents = ctx.events.filter(
+      (e) => e.type === "entity.transitioned" && e.entityId === entity.id,
+    );
+    expect(transitionEvents).toHaveLength(3);
+
+    const allGatePassedEvents = ctx.events.filter(
+      (e) => e.type === "gate.passed" && e.entityId === entity.id,
+    );
+    expect(allGatePassedEvents).toHaveLength(3); // ready-check, code-quality (retry), review-approval
+
+    // Gate results recorded in DB
+    const gateResults = await ctx.gateRepo.resultsFor(entity.id);
+    // 1 fail (code-quality initial) + 3 passes (ready-check, code-quality retry, review-approval)
+    expect(gateResults).toHaveLength(4);
+    expect(gateResults.filter((r) => !r.passed)).toHaveLength(1);
+    expect(gateResults.filter((r) => r.passed)).toHaveLength(3);
+  });
+
   it("multi-entity concurrency: 10 entities reach correct states independently", async () => {
     const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
     await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);

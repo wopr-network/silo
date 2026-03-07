@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { ITransitionLogRepository, TransitionLog } from "../interfaces.js";
 import type * as schema from "./schema.js";
@@ -32,7 +32,7 @@ export class DrizzleTransitionLogRepository implements ITransitionLogRepository 
       .select()
       .from(entityHistory)
       .where(eq(entityHistory.entityId, entityId))
-      .orderBy(asc(entityHistory.timestamp))
+      .orderBy(asc(entityHistory.timestamp), sql`rowid`)
       .all();
     return rows.map((r) => ({
       id: r.id,
