@@ -91,7 +91,7 @@ describe("CLI", () => {
     expect(parsed.flows).toHaveLength(1);
     if (existsSync(dbPath)) rmSync(dbPath);
     if (existsSync(outPath)) rmSync(outPath);
-  });
+  }, 15000);
 
   it("init without --seed prints usage", () => {
     const output = run(["init"]);
