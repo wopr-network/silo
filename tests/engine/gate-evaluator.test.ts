@@ -2,6 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import { evaluateGate } from "../../src/engine/gate-evaluator.js";
 import type { Gate, Entity, IGateRepository } from "../../src/repositories/interfaces.js";
 
+// Mock ssrf-guard so gate-evaluator tests don't perform real DNS resolution.
+// Returns allowed=true with no resolvedIps so the original URL is used for fetch.
+vi.mock("../../src/engine/ssrf-guard.js", () => ({
+  checkSsrf: vi.fn().mockResolvedValue({ allowed: true }),
+}));
+
 vi.mock("../../src/engine/gate-command-validator.js", () => ({
   validateGateCommand: (cmd: string) => {
     // Return a realistic resolvedPath so execFile receives the binary path, not the full command string.
