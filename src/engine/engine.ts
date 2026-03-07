@@ -348,7 +348,7 @@ export class Engine {
 
       // Prefer claiming an existing unclaimed invocation created by processSignal
       // to avoid creating a duplicate. Fall back to creating a new one if none exist.
-      const unclaimed = await this.invocationRepo.findUnclaimed(flow.id, role);
+      const unclaimed = await this.invocationRepo.findUnclaimedByFlow(flow.id);
 
       for (const pending of unclaimed) {
         const claimed = await this.entityRepo.claim(flow.id, pending.stage, `agent:${role}`);

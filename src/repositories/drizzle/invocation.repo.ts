@@ -182,6 +182,7 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .where(
         and(
           eq(entities.flowId, flowId),
+          isNotNull(invocations.agentRole),
           isNull(invocations.claimedBy),
           isNull(invocations.completedAt),
           isNull(invocations.failedAt),

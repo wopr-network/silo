@@ -18,6 +18,7 @@ const AdminStateInlineSchema = z.object({
 export const AdminFlowCreateSchema = z.object({
   name: z.string().min(1),
   initialState: z.string().min(1),
+  discipline: z.string().min(1),
   description: z.string().optional(),
   entitySchema: z.record(z.string(), z.unknown()).optional(),
   maxConcurrent: z.number().int().min(0).optional(),
