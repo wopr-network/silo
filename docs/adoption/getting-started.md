@@ -79,6 +79,34 @@ Separate your agent workflow into stages:
 
 **What you get**: A predictable pipeline: spec → code → review → merge. Each stage has a clear input and output.
 
+### Month 2: DEFCON Engine
+
+Once you have a working manual pipeline, encode it as a DEFCON flow:
+
+```bash
+# 1. Install DEFCON
+npm install -g defcon
+
+# 2. Define your flow in a seed file (see seeds/wopr-changeset.json for a full example)
+#    Key concepts:
+#    - discipline: "engineering" (or devops, qa, security)
+#    - states with promptTemplates (the agent definition lives here, not in external files)
+#    - gates that verify each stage completed correctly
+#    - onEnter hooks for state setup (e.g., creating a worktree before coding begins)
+
+# 3. Load the flow
+npx defcon init --seed seeds/your-flow.json
+
+# 4. Serve MCP so workers can claim work
+npx defcon serve
+# OR run autonomously
+npx defcon run --flow your-flow-name
+```
+
+**Why DEFCON**: Manual pipeline state tracking in session memory breaks across context resets. DEFCON persists entity state in SQLite. Workers call `flow.claim` to pick up work and `flow.report` to advance entities through gates. The state machine is durable.
+
+**What you get**: Workers declare a discipline (`engineering`, `devops`, etc.), not a task. One worker handles a full entity lifecycle — spec, code, review, fix, merge — via sequential `flow.report` calls. No re-claim between stages.
+
 ### Month 2+: Advanced
 
 Once the basics are solid, add:

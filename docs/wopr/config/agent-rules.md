@@ -10,7 +10,7 @@
 
 Applies to ALL agents across ALL wopr-network repos.
 
-**Source**: Baked into skill definitions (`/wopr:auto`, `/wopr:groom`, etc.) and agent prompts.
+**Source**: Baked into flow seed prompt templates and DEFCON configuration.
 
 Rules:
 - Conventional commits with `Co-Authored-By: Claude <model> <noreply@anthropic.com>`
@@ -44,34 +44,32 @@ Each repo has a `CLAUDE.md` at root with repo-specific rules.
 
 Agents read CLAUDE.md first when entering a repo.
 
-### Layer 3: Agent Role Rules (Definition Files)
+### Layer 3: State Prompt Templates
 
-Agent definitions at `~/.claude/agents/wopr/`:
+Agent role rules are embedded in the `promptTemplate` of each state in the seed file. There are no separate `~/.claude/agents/wopr/*.md` files.
 
-| File | Key Rules |
-|------|-----------|
-| `wopr-architect.md` | READ ONLY. No code, no branches, no PRs. Only output: spec as Linear comment. |
-| `wopr-coder.md` | Implement FROM spec. TDD. Targeted tests only. Work in assigned worktree. |
-| `wopr-reviewer.md` | Check CI first. Wait for all bots. Read all 3 comment feeds. Never CLEAN with open Qodo suggestions. |
-| `wopr-fixer.md` | Rebase first. Fix findings only. Minimal changes. Don't refactor. |
-| `wopr-devops.md` | Read RUNBOOK.md first. Record every operation. Never skip health checks. |
+| State | Key Rules in Template |
+|-------|----------------------|
+| `architecting` | READ ONLY. No code, no branches, no PRs. Only output: spec as Linear comment. |
+| `coding` | Implement FROM spec. TDD. Targeted tests only (`npx vitest run <file>`). Work in `entity.artifacts.worktreePath`. |
+| `reviewing` | Check CI first. Wait for all bots. Read all 3 comment feeds. Never CLEAN with open Qodo suggestions. |
+| `fixing` | Rebase first. Fix findings only. Minimal changes. Don't refactor. |
+| `merging` | Watch PR. Report MERGED/BLOCKED/CLOSED/TIMEOUT. |
 
-### Layer 4: Assignment Rules (Per-Invocation)
+### Layer 4: Entity Context
 
-Passed in the `prompt` parameter of each `Task()` call:
+Per-invocation context comes from `entity.refs` and `entity.artifacts` — populated by DEFCON at render time. This replaces the old pattern of the pipeline lead constructing a `Task({ prompt: "..." })` string with issue keys and worktree paths.
 
-```
-Your name is "coder-81". You are on the wopr-auto team.
+| Data | Template variable | Set by |
+|------|------------------|--------|
+| Issue key, title, description | `entity.refs.linear.*` | DEFCON on entity creation |
+| GitHub repo | `entity.refs.github.repo` | DEFCON on entity creation |
+| Worktree path, branch | `entity.artifacts.worktreePath`, `.branch` | `onEnter` hook on `coding` state |
+| PR URL, number | `entity.artifacts.prUrl`, `.prNumber` | Worker via `flow.report` artifacts |
+| Review findings | `entity.artifacts.reviewFindings` | Worker via `flow.report` artifacts |
+| Gate failures | `entity.artifacts.gate_failures` | DEFCON on gate failure |
 
-## Assignment
-Issue: WOP-81 — Session management
-Linear ID: abc-123
-Repo: wopr-network/wopr
-Worktree: /home/tsavo/worktrees/wopr-wopr-coder-81
-Branch: agent/coder-81/wop-81
-```
-
-## Standing Orders (MEMORY.md)
+### Layer 5: Standing Orders (MEMORY.md)
 
 Some rules apply across sessions and are stored in `~/.claude/projects/*/memory/MEMORY.md`:
 
@@ -85,15 +83,19 @@ Some rules apply across sessions and are stored in `~/.claude/projects/*/memory/
 - Stale Qodo comments: If line: null, it's outdated. Reply to resolve, don't block on it.
 ```
 
+---
+
 ## Rule File Locations
 
-| Layer | File | Scope |
-|-------|------|-------|
-| Org | Skill definitions | All repos |
+| Layer | Source | Scope |
+|-------|--------|-------|
+| Org | Baked into flow seed prompts | All flows |
 | Project | `/home/tsavo/<repo>/CLAUDE.md` | One repo |
-| Role | `~/.claude/agents/wopr/<agent>.md` | One agent type |
-| Assignment | `Task({ prompt: "..." })` | One invocation |
+| Role | `states[].promptTemplate` in seed file | One state |
+| Assignment | `entity.refs` + `entity.artifacts` | One invocation |
 | Standing | `~/.claude/projects/*/memory/MEMORY.md` | Cross-session |
+
+---
 
 ## Rule Evolution in WOPR
 
@@ -101,10 +103,10 @@ Real examples of the feedback loop:
 
 1. **@ts-ignore** — agents kept using it → caught in review 3x → added `noTsIgnore` to biome.json → now a CI gate
 
-2. **pnpm test OOM** — agents ran full test suite in worktrees → OOM killed → added to CLAUDE.md as gotcha → added to MEMORY.md as standing order
+2. **pnpm test OOM** — agents ran full test suite in worktrees → OOM killed → added to CLAUDE.md as gotcha → added to MEMORY.md as standing order → now enforced in seed prompt templates
 
-3. **Missing inline comments** — reviewer used `gh pr view` (no inline comments) → missed Qodo findings → added standing order: "ALWAYS call `gh api repos/.../pulls/<N>/comments`"
+3. **Missing inline comments** — reviewer used `gh pr view` (no inline comments) → missed Qodo findings → added standing order: "ALWAYS call `gh api repos/.../pulls/<N>/comments`" → now in reviewing state promptTemplate
 
-4. **Stale Qodo line:null** — reviewer treated outdated Qodo comments as blocking → couldn't declare CLEAN → added standing order: "If line: null, reply to resolve, don't block"
+4. **Stale Qodo line:null** — reviewer treated outdated Qodo comments as blocking → couldn't declare CLEAN → added standing order: "If line: null, reply to resolve, don't block" → now in reviewing state promptTemplate
 
 5. **Merge queue mutations** — `gh pr merge` doesn't work with merge queue → discovered GraphQL `enqueuePullRequest` → added to MEMORY.md standing orders

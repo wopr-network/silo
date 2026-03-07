@@ -4,47 +4,63 @@
 
 ---
 
-## Worktree Setup
+## Worktree Setup via onEnter
 
-Before the coder spawns, the pipeline lead creates an isolated worktree:
+Before the `coding` state becomes claimable, DEFCON runs the `onEnter` hook configured on the state:
 
-```bash
-cd /home/tsavo/<repo>
-git fetch origin && git pull origin main
-git worktree add /home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM> \
-  -b agent/coder-<ISSUE_NUM>/<issue-key-lowercase> origin/main
-cd /home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM>
-pnpm install --frozen-lockfile
+```json
+{
+  "name": "coding",
+  "onEnter": {
+    "command": "scripts/create-worktree.sh {{entity.refs.github.repo}} {{entity.refs.linear.key}}",
+    "artifacts": ["worktreePath", "branch"],
+    "timeout_ms": 60000
+  }
+}
 ```
 
-**Critical**: Do NOT index the worktree (`node_modules` makes it take 20+ minutes). The main clone at `/home/tsavo/<repo>` is already indexed — agents query that for codebase context.
+The `create-worktree.sh` script:
+1. Fetches and pulls the main clone at `/home/tsavo/<repo>`
+2. Creates an isolated worktree at `/home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM>`
+3. Creates branch `agent/coder-<ISSUE_NUM>/<issue-key-lowercase>` from `origin/main`
+4. Runs `pnpm install --frozen-lockfile`
+5. Returns `{ "worktreePath": "...", "branch": "..." }` as JSON
 
-## The Coder Agent
+DEFCON merges the output into `entity.artifacts`. The coder receives `{{entity.artifacts.worktreePath}}` and `{{entity.artifacts.branch}}` already populated in its prompt.
 
+The pipeline lead does not run `git worktree add` manually.
+
+See [onenter-hooks.md](../onenter-hooks.md) for full onEnter documentation.
+
+---
+
+## The Coding State
+
+The `coding` state is configured in `seeds/wopr-changeset.json`:
+
+```json
+{
+  "name": "coding",
+  "flowName": "wopr-changeset",
+  "modelTier": "sonnet",
+  "mode": "active",
+  "promptTemplate": "Your name is \"coder-{{entity.refs.linear.id}}\"..."
+}
 ```
-Task({
-  subagent_type: "wopr-coder",
-  name: "coder-81",
-  model: "sonnet",
-  team_name: "wopr-auto",
-  run_in_background: true,
-  prompt: "Your name is coder-81. You are on the wopr-auto team.
-    Issue: WOP-81 — Session management
-    Repo: wopr-network/wopr
-    Worktree: /home/tsavo/worktrees/wopr-wopr-coder-81
-    Branch: agent/coder-81/wop-81
-    ..."
-})
-```
 
-The agent definition lives at `~/.claude/agents/wopr/wopr-coder.md`.
+- **Active mode**: DEFCON spawns a Sonnet agent with the rendered coding prompt.
+- **Passive mode**: The engineering worker that called `flow.claim` receives the coding prompt after `flow.report({ signal: "spec_ready" })` advances the entity.
+
+There is no `~/.claude/agents/wopr/wopr-coder.md` file. The prompt template in the seed IS the agent definition.
+
+---
 
 ## The Spec-First Process
 
 The coder reads the architect's spec from Linear:
 
 ```
-mcp__linear-server__list_comments({ issueId: "<ISSUE_ID>" })
+mcp__linear-server__list_comments({ issueId: "{{entity.refs.linear.id}}" })
 ```
 
 Then follows the spec step by step:
@@ -53,32 +69,38 @@ Then follows the spec step by step:
 3. Run the targeted test: `npx vitest run <test-file>`
 4. **Never** `pnpm test` in worktrees (OOMs — standing order in MEMORY.md)
 
+---
+
 ## PR Creation
 
 ```bash
-cd /home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM>
+cd {{entity.artifacts.worktreePath}}
 git add <specific-files>
 git commit -m "feat(<area>): <description>
 
-Closes WOP-81
+Closes {{entity.refs.linear.key}}
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
-git push -u origin agent/coder-81/wop-81
+git push -u origin {{entity.artifacts.branch}}
 
 gh pr create \
-  --repo wopr-network/<repo> \
-  --title "feat(<area>): <description> (WOP-81)" \
+  --repo {{entity.refs.github.repo}} \
+  --title "feat: {{entity.refs.linear.title}} ({{entity.refs.linear.key}})" \
   --body "## Summary
 - <changes>
 
-Closes WOP-81
+Closes {{entity.refs.linear.key}}
 
 ## Test Plan
 - <what was tested>"
 ```
 
+---
+
 ## Completion Signal
+
+The coder sends to team-lead:
 
 ```
 SendMessage({
@@ -89,24 +111,23 @@ SendMessage({
 })
 ```
 
-## UI Stories: Designer Agent
+Then calls `flow.report` with artifacts:
 
-For UI stories, the designer agent (opus) replaces the coder (sonnet):
-
+```json
+{
+  "workerId": "wkr_abc123",
+  "entityId": "feat-392",
+  "signal": "pr_created",
+  "artifacts": {
+    "prUrl": "https://github.com/wopr-network/wopr/pull/42",
+    "prNumber": "42"
+  }
+}
 ```
-Task({
-  subagent_type: "wopr-ui-designer",
-  name: "designer-462",
-  model: "opus",
-  ...
-})
-```
 
-The designer reads BOTH specs from Linear (technical + design) and implements with:
-- Dark-mode-first design (WOPR brand)
-- No generic shadcn defaults
-- Polished typography, animations, responsive strategy
-- The design spec's color palette and aesthetic direction
+DEFCON evaluates `ci-green` then `review-bots-ready` gates before advancing to `reviewing`.
+
+---
 
 ## Known Gotchas
 

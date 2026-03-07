@@ -4,6 +4,25 @@
 
 ---
 
+## Gates Before Merging
+
+When the reviewer signals `clean`, the entity transitions to `merging` — but only after the `merge-queue` gate passes. This gate is defined in `seeds/wopr-changeset.json`:
+
+```json
+{
+  "name": "merge-queue",
+  "type": "command",
+  "command": "gates/merge-queue.sh {{entity.artifacts.prNumber}} {{entity.refs.github.repo}}",
+  "timeoutMs": 1800000,
+  "failurePrompt": "PR #{{entity.artifacts.prNumber}} failed in the merge queue...",
+  "timeoutPrompt": "PR #{{entity.artifacts.prNumber}} has been in the merge queue for over 30 minutes..."
+}
+```
+
+The gate script enqueues the PR (or auto-merges for repos without a merge queue) and polls until resolved.
+
+---
+
 ## Merge Strategies by Repo
 
 WOPR uses different merge mechanisms depending on the repo:
@@ -44,37 +63,19 @@ gh pr merge 42 --repo wopr-network/wopr-plugin-discord --squash --auto
 
 ### Special Cases
 
-- **wopr-plugin-types**: required check `ci` has `app_id: null` (stale check). Use `--admin` flag:
-  ```bash
-  gh pr merge 42 --repo wopr-network/wopr-plugin-types --squash --admin
-  ```
-
+- **wopr-plugin-types**: required check `ci` has `app_id: null` (stale check). Use `--admin` flag.
 - **wopr-plugin-msteams**: same stale `ci` check issue. Use `--admin`.
-
 - **wopr-plugin-whatsapp**: CodeFactor removed as required check. Use normal `--auto`.
 
-## The Watcher Agent
+---
 
-After queueing a PR for merge, a watcher agent polls until it resolves:
+## The merging State
 
-```
-Task({
-  subagent_type: "general-purpose",
-  name: "watcher-81",
-  model: "haiku",
-  team_name: "wopr-auto",
-  run_in_background: true,
-  prompt: "Run ~/wopr-pr-watch.sh 42 wopr-network/wopr and report the result.
-    If MERGED: send 'Merged: <url> for WOP-81'
-    If BLOCKED: send 'BLOCKED: <url> for WOP-81 — CI failing: <checks>'
-    If CLOSED: send 'CLOSED: <url> for WOP-81'"
-})
-```
+The `merging` state in the seed has `modelTier: "haiku"` and mode `"active"`. The prompt instructs the worker to run `~/wopr-pr-watch.sh` and report the result.
 
-The `wopr-pr-watch.sh` script:
-- Polls `gh pr view` every 30 seconds
-- Max runtime: 15 minutes
-- Exits with single-line result: `MERGED`, `BLOCKED: <checks>`, `CLOSED`, or `TIMEOUT`
+In passive mode, the engineering worker receives the merging prompt via `flow.report` after the reviewer's `clean` signal advances the entity. The worker then polls the PR status and calls `flow.report` with the result.
+
+---
 
 ## Dequeue (When Needed)
 
@@ -94,6 +95,8 @@ gh api graphql -f query="
 
 **Standing order**: use PR node ID for `dequeuePullRequest`, not the MQE entry ID.
 
+---
+
 ## Backpressure Gate
 
 Before filling any pipeline slot, check open PR count:
@@ -102,16 +105,19 @@ Before filling any pipeline slot, check open PR count:
 gh pr list --repo wopr-network/<repo> --state open --json number --jq 'length'
 ```
 
-If ≥ 4 open PRs → pause new work in that repo. Announce to user. Only resume when count drops below 4.
+If ≥ 4 open PRs → pause new work in that repo. The `maxConcurrentPerRepo: 4` setting in the flow definition enforces this automatically in DEFCON. For passive mode, the pipeline lead checks manually.
+
+---
 
 ## After Merge
 
-When the watcher reports "Merged":
-1. GitHub↔Linear integration auto-moves the issue to Done
-2. Refresh the blocking graph — this merge may unblock other issues
-3. Clean up worktrees:
+When the entity reaches `done`:
+1. GitHub↔Linear integration auto-moves the Linear issue to Done
+2. The entity's `status` in DEFCON is set to `done`
+3. DEFCON refreshes the blocking graph — this merge may unblock other entities
+4. Worktree cleanup:
    ```bash
    cd /home/tsavo/<repo> && git worktree prune
-   rm -rf /home/tsavo/worktrees/wopr-<repo>-coder-<N> 2>/dev/null
+   rm -rf {{entity.artifacts.worktreePath}} 2>/dev/null
    ```
-4. Fill the pipeline slot with the next unblocked issue
+5. Available concurrency slot fills with next claimable entity

@@ -4,59 +4,52 @@
 
 ---
 
-## The Fixer Agent
+## The Fixing State
+
+When the reviewer signals `issues`, the entity transitions to `fixing`. DEFCON injects `entity.artifacts.reviewFindings` into the `fixing` state's promptTemplate:
 
 ```
-Task({
-  subagent_type: "wopr-fixer",
-  name: "fixer-81",
-  model: "sonnet",
-  team_name: "wopr-auto",
-  run_in_background: true,
-  prompt: "Your name is fixer-81. You are on the wopr-auto team.
-    PR: https://github.com/wopr-network/wopr/pull/42 (#42)
-    Issue: WOP-81
-    Repo: wopr-network/wopr
-    Worktree: /home/tsavo/worktrees/wopr-wopr-coder-81
-    Branch: agent/coder-81/wop-81
+## Reviewer Findings
+{{entity.artifacts.reviewFindings}}
 
-    ## Step 1: Rebase before touching anything
-    cd /home/tsavo/worktrees/wopr-wopr-coder-81
-    git fetch origin
-    git rebase origin/main
-
-    ## Step 2: Fix the findings
-
-    ## Reviewer Findings
-    - Missing null check in auth.ts:42 (Qodo)
-    - Unused import in handler.ts:3 (agent review)"
-})
+Address each finding. Run targeted tests after each fix: `npx vitest run <test-file>`
 ```
 
-The agent definition lives at `~/.claude/agents/wopr/wopr-fixer.md`.
+The fixer is the same engineering worker that has been handling the entity all along — no new spawn, no new claim. The worker calls `flow.report({ signal: "issues", artifacts: { reviewFindings } })` and receives the fixing prompt as the response.
+
+- **Active mode**: DEFCON spawns a Sonnet agent with the rendered fixing prompt.
+- **Passive mode**: The engineering worker receives the fixing prompt as the `flow.report` response.
+
+There is no `~/.claude/agents/wopr/wopr-fixer.md` file. The prompt template in the seed IS the agent definition.
+
+---
 
 ## Worktree Reuse
 
-The fixer reuses the coder's worktree — no new worktree is created:
+The fixer reuses the worktree created by the `onEnter` hook during the `coding` state:
 
 ```
-/home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM>
+{{entity.artifacts.worktreePath}}
 ```
 
-If the worktree was cleaned up (e.g., after a CLEAN verdict that later got ejected from merge queue), re-create it:
+This path was created before coding began and persists across all states. The fixer does not create a new worktree.
+
+If the worktree was manually cleaned up (uncommon), re-create it:
 
 ```bash
 cd /home/tsavo/<repo> && git fetch origin
-git worktree add /home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM> <branch>
-cd /home/tsavo/worktrees/wopr-<repo>-coder-<ISSUE_NUM> && pnpm install --frozen-lockfile
+git worktree add {{entity.artifacts.worktreePath}} {{entity.artifacts.branch}}
+cd {{entity.artifacts.worktreePath}} && pnpm install --frozen-lockfile
 ```
+
+---
 
 ## Rebase Protocol
 
 The fixer ALWAYS rebases before making changes:
 
 ```bash
-cd /home/tsavo/worktrees/wopr-wopr-coder-81
+cd {{entity.artifacts.worktreePath}}
 git fetch origin
 git rebase origin/main
 ```
@@ -64,7 +57,9 @@ git rebase origin/main
 If rebase conflicts:
 1. Attempt to resolve
 2. `git rebase --continue`
-3. If unresolvable: `"Can't resolve: <PR_URL> — rebase conflict in <filename>: <description>"`
+3. If unresolvable: send `"Can't resolve: {{entity.artifacts.prUrl}} — rebase conflict in <filename>: <description>"`
+
+---
 
 ## Fix Commit Style
 
@@ -77,41 +72,44 @@ git commit -m "fix: address review findings
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
-git push origin agent/coder-81/wop-81
+git push origin {{entity.artifacts.branch}}
 ```
+
+---
 
 ## Completion Signals
 
-Success:
+The fixer calls `flow.report`:
+
+```json
+{
+  "workerId": "wkr_abc123",
+  "entityId": "feat-392",
+  "signal": "fixes_pushed"
+}
 ```
-"Fixes pushed: https://github.com/wopr-network/wopr/pull/42"
+
+Entity returns to `reviewing`. The reviewer sees prior gate failures via `{{entity.artifacts.gate_failures}}` in the prompt template — no need for the pipeline lead to pass findings manually.
+
+Escalation (can't fix):
 ```
-
-Escalation:
-```
-"Can't resolve: https://github.com/wopr-network/wopr/pull/42 — rebase conflict in schema.ts: migration column order"
-```
-
-## CI Trigger
-
-After pushing fixes, CI re-runs automatically (GitHub Actions triggers on push to PR branch). The next reviewer will check CI status before reviewing code.
-
-**Known gotcha**: Push a real commit to trigger CI. Empty pushes or `--allow-empty` may not trigger workflows on all repos.
-
-## CLAUDE.md Learning
-
-After a fix cycle completes (fixer ran at least once AND reviewer says CLEAN), the pipeline lead spawns a one-shot CLAUDE.md updater:
-
-```
-Task({
-  subagent_type: "general-purpose",
-  name: "claude-md-updater-81",
-  model: "haiku",
-  prompt: "Read /home/tsavo/wopr/CLAUDE.md. For each finding,
-    ask: does this represent a generalizable invariant?
-    If YES: add one line under ## Gotchas.
-    At most 3 new lines per PR. Keep CLAUDE.md under 1000 lines."
+SendMessage({
+  type: "message",
+  recipient: "team-lead",
+  content: "Can't resolve: https://github.com/wopr-network/wopr/pull/42 — rebase conflict in schema.ts: migration column order"
 })
 ```
 
-This is how the feedback loop turns review findings into persistent rules.
+---
+
+## CI Trigger
+
+After pushing fixes, CI re-runs automatically (GitHub Actions triggers on push to PR branch). The `ci-green` gate will re-evaluate before the entity can advance to `reviewing` again.
+
+**Known gotcha**: Push a real commit to trigger CI. Empty pushes or `--allow-empty` may not trigger workflows on all repos.
+
+---
+
+## CLAUDE.md Learning
+
+After a fix cycle completes (entity reaches `done` via a path that included at least one `fixing` state), the pipeline lead may spawn a CLAUDE.md updater based on the findings in `entity.artifacts.reviewFindings`. This is the feedback loop: review findings → persistent rules → CI gates.

@@ -15,6 +15,11 @@ This repo documents agentic engineering as a methodology AND provides WOPR as th
 
 Every document in `method/` MUST have a corresponding document in `wopr/`. Every document in `wopr/` MUST reference back to the principle it implements. If you add a method/ doc without a wopr/ counterpart (or vice versa), the structure is broken.
 
+Key concepts that must appear in both method/ and wopr/ docs:
+- **Disciplines**: workers declare a category of work (`engineering`, `devops`, `qa`, `security`), not a task role
+- **onEnter hooks**: state setup commands that run before a state becomes claimable
+- **Three-outcome gate semantics**: pass (continue), fail (waiting), timeout (check_back)
+
 ## Writing Rules
 
 - Documentation lives in `docs/` (method/, wopr/, adoption/ subdirectories). TypeScript project files live at the repo root.

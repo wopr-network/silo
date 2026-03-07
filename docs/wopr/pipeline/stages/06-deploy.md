@@ -6,13 +6,15 @@
 
 ## Invocation
 
-```
-/wopr:devops deploy
-/wopr:devops rollback
-/wopr:devops health
+DevOps operations are handled by a `devops` discipline worker. In passive mode, a worker calls:
+
+```bash
+flow.claim({ workerId: "wkr_abc123", role: "devops" })
 ```
 
-The DevOps skill spawns a `wopr-devops` agent. The agent definition lives at `~/.claude/agents/wopr/wopr-devops.md`.
+In active mode, DEFCON spawns a devops agent from the configured `wopr-release` or `wopr-incident` flow when an entity is created by an external event (GitHub release tag, PagerDuty alert).
+
+DevOps prompt templates are defined in the seed file for the relevant flow. There is no `~/.claude/agents/wopr/wopr-devops.md` file — the prompt template in the seed IS the agent definition.
 
 ## The WOPR Stack
 
@@ -112,7 +114,7 @@ Two-machine topology for local testing:
 
 ## Hard Constraints
 
-From `wopr-devops.md` agent definition:
+Embedded in the devops flow seed's prompt templates:
 
 1. **Read RUNBOOK.md FIRST** — before any operation
 2. **Record EVERY operation** — in the appropriate logbook file

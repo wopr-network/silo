@@ -4,97 +4,67 @@
 
 ---
 
-## WOPR Agent Roster
+## How DEFCON Defines Roles
 
-### Build Phase
+There are no separate agent types in DEFCON. There are no `wopr-architect`, `wopr-coder`, or `wopr-reviewer` agent definitions. Roles are states in the flow, not separate agents.
 
-| Role | Agent Type | Model | Claude Code Tool |
-|------|-----------|-------|-----------------|
-| Architect | `wopr-architect` | Opus | `Task({ subagent_type: "wopr-architect", model: "opus" })` |
-| UI Architect | `wopr-ui-architect` | Opus | `Task({ subagent_type: "wopr-ui-architect", model: "opus" })` |
-| Coder | `wopr-coder` | Sonnet | `Task({ subagent_type: "wopr-coder", model: "sonnet" })` |
-| Designer | `wopr-ui-designer` | Opus | `Task({ subagent_type: "wopr-ui-designer", model: "opus" })` |
-| Reviewer | `wopr-reviewer` | Sonnet | `Task({ subagent_type: "wopr-reviewer", model: "sonnet" })` |
-| Fixer | `wopr-fixer` | Sonnet | `Task({ subagent_type: "wopr-fixer", model: "sonnet" })` |
+An engineering worker is the architect, coder, reviewer, fixer, and merger. These are tasks within one discipline. The worker owns one entity end-to-end via sequential `flow.report` calls. The state changes; the worker does not.
 
-### Operational Phase
+The prompt template on each state IS the agent definition. No external files. No `~/.claude/agents/wopr/` directory.
 
-| Role | Agent Type | Model | Claude Code Tool |
-|------|-----------|-------|-----------------|
-| Watcher | `general-purpose` | Haiku | `Task({ model: "haiku" })` |
-| CLAUDE.md Updater | `general-purpose` | Haiku | `Task({ model: "haiku" })` |
-| DevOps | `wopr-devops` | Sonnet | `Task({ subagent_type: "wopr-devops" })` |
+---
 
-### Grooming Phase
+## State-to-Role Mapping
 
-| Role | Agent Type | Model | Team |
-|------|-----------|-------|------|
-| Codebase Advocate | spawned via Agent tool | Sonnet | `wopr-groom` |
-| Ecosystem Advocate | spawned via Agent tool | Sonnet | `wopr-groom` |
-| Security Advocate | spawned via Agent tool | Sonnet | `wopr-groom` |
-| Skeptic | spawned via Agent tool | Sonnet | `wopr-groom` |
+| State | Model Tier | Mode | Who provides the prompt |
+|-------|-----------|------|------------------------|
+| `backlog` | — | passive | No prompt — waiting for `start` signal |
+| `architecting` | opus | active | `state_definitions[].promptTemplate` in seed |
+| `coding` | sonnet | active | `state_definitions[].promptTemplate` in seed |
+| `reviewing` | sonnet | active | `state_definitions[].promptTemplate` in seed |
+| `fixing` | sonnet | active | `state_definitions[].promptTemplate` in seed |
+| `merging` | haiku | active | `state_definitions[].promptTemplate` in seed |
+| `stuck` | — | passive | No prompt — human intervention required |
+| `done` | — | passive | Terminal state |
 
-### Audit Phase
+`modelTier` is used in **active mode** — when DEFCON spawns agents autonomously. In passive mode, the worker's model is whatever the caller is running.
 
-| Role | Agent Type | Model | Team |
-|------|-----------|-------|------|
-| Correctness Auditor | spawned via Agent tool | Opus | `wopr-audit` |
-| Completeness Auditor | spawned via Agent tool | Opus | `wopr-audit` |
-| Practices Auditor | spawned via Agent tool | Opus | `wopr-audit` |
-| Test Auditor | spawned via Agent tool | Opus | `wopr-audit` |
-| Security Auditor | spawned via Agent tool | Opus | `wopr-audit` |
+---
 
-## Model Routing Rationale
+## Active vs Passive Mode
 
-| Model | Cost | Speed | Used For | Why |
-|-------|------|-------|----------|-----|
-| **Opus** | $$$ | Slow | Architect, UI Architect, Designer, Auditors | Deep analysis, design decisions. A shallow spec wastes all downstream work. |
-| **Sonnet** | $$ | Fast | Coder, Reviewer, Fixer, Advocates, Skeptic | Follows clear instructions. Specs provide the reasoning; sonnet executes. |
-| **Haiku** | $ | Very fast | Watcher, CLAUDE.md Updater | Simple conditional logic. Watch a PR, update a file. |
+**Active mode** (`mode: "active"`): DEFCON spawns a Claude Code session with the rendered prompt. The `modelTier` field determines which model.
 
-## Naming Convention
+**Passive mode** (`mode: "passive"`): DEFCON waits for a worker to call `flow.claim`. The state has no promptTemplate — it's a gate or waiting state.
 
-Agent names encode the issue number:
+---
 
-```
-WOP-81 → architect-81 → coder-81 → reviewer-81 → fixer-81 → watcher-81
-WOP-462 → architect-462 → ui-architect-462 → designer-462 → reviewer-462
-```
+## Model Selection Rationale
 
-This makes it instantly clear which agent owns which issue in the pipeline state table.
+| Model Tier | Cost | Speed | Used For | Why |
+|-----------|------|-------|----------|-----|
+| **opus** | $$$ | Slow | `architecting` | Deep analysis and design decisions. A shallow spec wastes all downstream work. |
+| **sonnet** | $$ | Fast | `coding`, `reviewing`, `fixing` | Follows clear instructions. Specs provide the reasoning; sonnet executes. |
+| **haiku** | $ | Very fast | `merging` | Simple conditional logic: watch a PR, report the result. |
+
+---
 
 ## Team Coordination
 
-WOPR uses Claude Code's Team tool for multi-agent coordination:
+Workers communicate with the pipeline lead via `SendMessage`:
 
-```
-TeamCreate({ team_name: "wopr-auto", description: "WOPR continuous pipeline" })
-```
-
-Agents communicate with the pipeline lead via:
 ```
 SendMessage({ type: "message", recipient: "team-lead", content: "Spec ready: WOP-81" })
 ```
 
-The pipeline lead receives messages and reacts (spawn next agent, shutdown previous, fill slots).
+The pipeline lead is the main Claude Code session or DEFCON's active runner. It receives messages and coordinates entity advancement.
 
-Shutdown:
-```
-SendMessage({ type: "shutdown_request", recipient: "architect-81", content: "Spec posted, shutting down" })
-```
-
-At session end:
-```
-TeamDelete()
-```
+---
 
 ## Pipeline Lead
 
-The pipeline lead is NOT a spawned agent — it's the main Claude Code session. It:
-- Manages the pipeline state table
-- Receives messages from all agents
-- Makes spawn/shutdown decisions
-- Handles backpressure and stuck detection
-- Reports progress to the human
+In passive mode (human-driven): the pipeline lead is the main Claude Code session. It interacts with DEFCON via MCP tools (`flow.claim`, `flow.report`) or REST API. It does not manage an in-memory state table — entity state lives in the database.
 
-The human's role: set priorities, handle escalations, approve destructive operations. The pipeline lead handles everything else.
+In active mode (DEFCON-driven): DEFCON itself is the pipeline lead. It spawns agents based on `modelTier`, routes signals, and advances entities automatically.
+
+The human's role in both modes: set priorities in Linear, handle escalations, approve destructive operations.

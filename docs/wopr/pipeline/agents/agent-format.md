@@ -6,125 +6,99 @@
 
 ## Where Agent Definitions Live
 
-WOPR agent definitions are stored in:
-```
-~/.claude/agents/wopr/
-├── wopr-architect.md
-├── wopr-ui-architect.md
-├── wopr-coder.md
-├── wopr-ui-designer.md
-├── wopr-reviewer.md
-├── wopr-fixer.md
-└── wopr-devops.md
-```
+WOPR agent definitions are prompt templates on state definitions in the seed file. There is no `~/.claude/agents/wopr/` directory. There are no separate agent definition files.
 
-These files are Claude Code agent definitions. They're loaded automatically when the corresponding `subagent_type` is used in a `Task()` call.
+Each state in `seeds/wopr-changeset.json` has a `promptTemplate` field. That template, rendered with Handlebars against the current entity's context, is the agent's complete instructions.
 
-## WOPR Agent Definition Structure
+---
 
-Each agent definition follows this template:
+## Prompt Template Structure
 
-```markdown
-# Agent Name
+Each `promptTemplate` contains:
 
-## Role
-<one-sentence description>
+1. **Identity** — who the agent is (`"Your name is \"architect-{{entity.refs.linear.id}}\""`)
+2. **Role constraints** — what the agent must and must not do
+3. **Assignment context** — issue key, repo, worktree path, PR URL, etc.
+4. **Process** — numbered steps, specific and actionable
+5. **Prior gate failures** — surfaced via `{{#if entity.artifacts.gate_failures}}` block
+6. **Output contract** — exact completion signal to send
 
-## Hard Constraints
-<non-negotiable rules — what the agent must NEVER do>
+---
 
-## Process
-<numbered steps — what the agent does in order>
+## Handlebars Context
 
-## Tools
-<what the agent has access to>
+Templates have access to:
 
-## Output Contract
-<completion signals — exact messages the agent sends when done>
+| Variable | Source | Example |
+|----------|--------|---------|
+| `{{entity.refs.linear.key}}` | Linear issue key | `WOP-392` |
+| `{{entity.refs.linear.id}}` | Linear issue UUID | `abc-123-def` |
+| `{{entity.refs.linear.title}}` | Issue title | `Add session management` |
+| `{{entity.refs.linear.description}}` | Issue body | Full markdown |
+| `{{entity.refs.github.repo}}` | GitHub repo | `wopr-network/wopr` |
+| `{{entity.artifacts.worktreePath}}` | Set by onEnter | `/home/tsavo/worktrees/wopr-wopr-coder-392` |
+| `{{entity.artifacts.branch}}` | Set by onEnter | `agent/coder-392/wop-392` |
+| `{{entity.artifacts.prUrl}}` | Set by worker | `https://github.com/.../pull/42` |
+| `{{entity.artifacts.prNumber}}` | Set by worker | `42` |
+| `{{entity.artifacts.reviewFindings}}` | Set by reviewer | Findings text |
+| `{{flow.name}}` | Flow definition | `wopr-changeset` |
 
-## Known Gotchas
-<hard-won operational knowledge>
+---
 
-## Linear Integration
-<how the agent interacts with Linear>
-```
+## Example: architecting State Template
 
-## Example: wopr-architect.md
-
-```markdown
-# WOPR Architect
-
-## Role
-Read the codebase and issue, post a detailed implementation spec to Linear.
-
-## Hard Constraints
-- READ ONLY: Do NOT create, edit, or write any code files
-- Do NOT create branches, worktrees, or PRs
-- Do NOT run git checkout or git commit
-- ONLY deliverable: implementation spec as a Linear comment
-
-## Process
-1. Read the issue description from the assignment
-2. Study the codebase at the assigned path (Read, Grep, Glob)
-3. Check CLAUDE.md for repo-specific rules and gotchas
-4. Design the solution
-5. Post the spec as a comment on the Linear issue
-6. Report "Spec ready: <ISSUE-KEY>"
-
-## Tools
-- Read, Grep, Glob (codebase at /home/tsavo/<repo>)
-- mcp__linear-server__save_comment (post spec)
-- mcp__linear-server__list_comments (read existing comments)
-
-## Output Contract
-- "Spec ready: <ISSUE-KEY>" — success
-- "Can't spec: <ISSUE-KEY> — <reason>" — issue can't be specced
-
-## Known Gotchas
-- Read CLAUDE.md FIRST — it has repo-specific invariants
-- Specs must be self-contained — the coder has no prior context
-- Include exact file paths, not vague references
-```
-
-## Per-Invocation Assignment
-
-The agent definition file provides the role template. The `prompt` parameter in the `Task()` call provides the per-invocation context:
+From `seeds/wopr-changeset.json`:
 
 ```
-Task({
-  subagent_type: "wopr-architect",
-  name: "architect-81",
-  model: "opus",
-  team_name: "wopr-auto",
-  run_in_background: true,
-  description: "Architect WOP-81",
-  prompt: "Your name is 'architect-81'. You are on the wopr-auto team.
+Your name is "architect-{{entity.refs.linear.id}}". You are on the {{flow.name}} team.
 
-    ## Assignment
-    Issue: WOP-81 — Session management
-    Linear ID: abc-123-def
-    Repo: wopr-network/wopr
-    Codebase (READ ONLY): /home/tsavo/wopr
+## YOUR ROLE — READ ONLY
+You are a spec writer, NOT a coder. Do NOT create, edit, or write any code files.
+Do NOT create branches, worktrees, or PRs. Do NOT run git checkout or git commit.
+Your ONLY deliverable is an implementation spec posted as a Linear comment.
+Read the codebase at the path below for context only. Then post your spec and
+send "Spec ready: {{entity.refs.linear.key}}" to team-lead.
 
-    ## Issue Description
-    **Repo:** wopr-network/wopr
-    Add session management to the auth module..."
-})
+## Assignment
+Issue: {{entity.refs.linear.key}} — {{entity.refs.linear.title}}
+Linear ID: {{entity.refs.linear.id}}
+Repo: {{entity.refs.github.repo}}
+Codebase (READ ONLY): {{entity.artifacts.codebasePath}}
+
+## Issue Description
+{{entity.refs.linear.description}}
+
+## Deliverable
+Post a detailed implementation spec as a Linear comment...
 ```
 
-The agent definition + assignment prompt = everything the agent needs.
+This is the complete agent definition. No external file. No `subagent_type`.
 
-## Skill-Level Definitions
+---
 
-Higher-level workflows are defined as Claude Code skills (not agent definitions):
+## Gate Failure Context
 
-| Skill | What it orchestrates |
-|-------|---------------------|
-| `/wopr:groom` | Grooming team (4 agents + lead) |
-| `/wopr:auto` | Continuous pipeline (architect → code → review → fix → merge) |
-| `/wopr:audit` | Audit team (5 agents + lead) |
-| `/wopr:devops` | DevOps operations (single agent) |
-| `/wopr:sprint` | Sprint planning |
-| `/wopr:fix-prs` | PR backlog cleanup |
+When a gate fails and the entity re-enters a state (e.g., `coding` after CI failure), the prompt template includes prior failures via the `gate_failures` block:
 
-Skills live in Claude Code user settings. Agent definitions live in `~/.claude/agents/wopr/`. The skill orchestrates; the agent definition specifies behavior.
+```
+{{#if entity.artifacts.gate_failures}}
+## Prior Gate Failures — Address These
+{{#each entity.artifacts.gate_failures}}
+- **{{this.gateName}}** ({{this.failedAt}}): {{this.output}}
+{{/each}}
+{{/if}}
+```
+
+This surfaces the specific gate output to the worker without requiring the pipeline lead to manually copy error messages.
+
+---
+
+## Per-Invocation Context
+
+Per-invocation context comes from `entity.refs` and `entity.artifacts`, not from a hardcoded prompt string passed by the pipeline lead. The pipeline lead does not construct prompts — the seed file defines them. DEFCON renders them with the current entity's data at claim time.
+
+This means:
+- The same template works for WOP-81, WOP-462, and any future issue
+- The architect and coder receive consistent, complete instructions
+- Gate failure context is automatically injected when relevant
+- No copy-paste of issue keys, repo names, or worktree paths by the pipeline lead
