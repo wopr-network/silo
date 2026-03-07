@@ -130,6 +130,52 @@ describe("executeSpawn", () => {
     });
   });
 
+  it("preserves existing artifact keys when updating spawnedChildren", async () => {
+    const transition: Transition = {
+      id: "t-1", flowId: "flow-1", fromState: "review", toState: "done",
+      trigger: "approved", gateId: null, condition: null, priority: 0,
+      spawnFlow: "deploy-flow", spawnTemplate: null, createdAt: null,
+    };
+    const parentEntity: Entity = {
+      id: "ent-1", flowId: "flow-1", state: "done",
+      refs: null,
+      artifacts: { someOtherKey: "value", nested: { data: 42 } },
+      claimedBy: null, claimedAt: null,
+      flowVersion: 1, createdAt: new Date(), updatedAt: new Date(),
+    };
+
+    const spawnedFlow = {
+      id: "flow-2", name: "deploy-flow", description: null, entitySchema: null,
+      initialState: "pending", maxConcurrent: 0, maxConcurrentPerRepo: 0,
+      version: 1, createdBy: null, createdAt: null, updatedAt: null,
+      states: [], transitions: [],
+    };
+    const spawnedEntity: Entity = {
+      id: "ent-2", flowId: "flow-2", state: "pending",
+      refs: null, artifacts: null,
+      claimedBy: null, claimedAt: null, flowVersion: 1,
+      createdAt: new Date(), updatedAt: new Date(),
+    };
+
+    const flowRepo = { getByName: vi.fn().mockResolvedValue(spawnedFlow) } as unknown as IFlowRepository;
+    const entityRepo = {
+      create: vi.fn().mockResolvedValue(spawnedEntity),
+      get: vi.fn().mockResolvedValue(parentEntity),
+      updateArtifacts: vi.fn().mockResolvedValue(undefined),
+    } as unknown as IEntityRepository;
+
+    await executeSpawn(transition, parentEntity, flowRepo, entityRepo);
+
+    // Must include existing artifact keys alongside spawnedChildren
+    expect(entityRepo.updateArtifacts).toHaveBeenCalledWith("ent-1", expect.objectContaining({
+      someOtherKey: "value",
+      nested: { data: 42 },
+      spawnedChildren: [
+        { childId: "ent-2", childFlow: "deploy-flow", spawnedAt: expect.any(String) },
+      ],
+    }));
+  });
+
   it("reads fresh entity from DB before building spawnedChildren (TOCTOU)", async () => {
     const transition: Transition = {
       id: "t-1", flowId: "flow-1", fromState: "review", toState: "done",
@@ -177,7 +223,7 @@ describe("executeSpawn", () => {
     });
   });
 
-  it("throws if updateArtifacts fails after create (orphan guard)", async () => {
+  it("returns child entity if updateArtifacts fails after create (orphan guard — non-throwing)", async () => {
     const transition: Transition = {
       id: "t-1", flowId: "flow-1", fromState: "review", toState: "done",
       trigger: "approved", gateId: null, condition: null, priority: 0,
@@ -206,9 +252,10 @@ describe("executeSpawn", () => {
       updateArtifacts: vi.fn().mockRejectedValue(new Error("DB write failed")),
     } as unknown as IEntityRepository;
 
-    await expect(executeSpawn(transition, parentEntity, flowRepo, entityRepo)).rejects.toThrow(
-      /orphan.*ent-2|updateArtifacts.*ent-1/i,
-    );
+    const result = await executeSpawn(transition, parentEntity, flowRepo, entityRepo);
+    // Child was created successfully; only parent bookkeeping failed — should not throw
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe("ent-2");
   });
 
   it("retries updateArtifacts up to 3 times on failure then throws", async () => {
@@ -241,11 +288,14 @@ describe("executeSpawn", () => {
       updateArtifacts,
     } as unknown as IEntityRepository;
 
-    await expect(executeSpawn(transition, parentEntity, flowRepo, entityRepo)).rejects.toThrow(/orphan.*ent-2/i);
+    const result = await executeSpawn(transition, parentEntity, flowRepo, entityRepo);
     // Should have retried 3 times (3 calls to updateArtifacts)
     expect(updateArtifacts).toHaveBeenCalledTimes(3);
     // Should have re-fetched parent before each retry
     expect(entityRepo.get).toHaveBeenCalledTimes(3);
+    // After all retries exhausted, still returns the child (non-throwing)
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe("ent-2");
   });
 
   it("succeeds on second attempt after transient updateArtifacts failure", async () => {
@@ -318,9 +368,12 @@ describe("executeSpawn", () => {
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await expect(executeSpawn(transition, parentEntity, flowRepo, entityRepo)).rejects.toThrow();
+      const result = await executeSpawn(transition, parentEntity, flowRepo, entityRepo);
       // Must log the orphan child ID at ERROR level
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("ent-2"));
+      // Must still return the child entity (non-throwing)
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe("ent-2");
     } finally {
       errorSpy.mockRestore();
     }
