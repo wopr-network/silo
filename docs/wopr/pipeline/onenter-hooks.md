@@ -1,6 +1,6 @@
 # onEnter Hooks — The WOPR Implementation
 
-> Implements: [method/gates/gate-taxonomy.md — onEnter section](../../method/gates/gate-taxonomy.md)
+> Implements: [method/pipeline/onenter-hooks.md](../../method/pipeline/onenter-hooks.md)
 
 ---
 
