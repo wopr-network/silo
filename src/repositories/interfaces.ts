@@ -302,6 +302,12 @@ export interface IInvocationRepository {
 
   /** Find unclaimed active-mode invocations, optionally filtered by flow. */
   findUnclaimedActive(flowId?: string): Promise<Invocation[]>;
+
+  /** Count active invocations (claimed, not completed/failed) for a flow. */
+  countActiveByFlow(flowId: string): Promise<number>;
+
+  /** Count pending invocations (unclaimed, not completed/failed) for a flow. */
+  countPendingByFlow(flowId: string): Promise<number>;
 }
 
 /** Data-access contract for entity state-transition audit trails. */

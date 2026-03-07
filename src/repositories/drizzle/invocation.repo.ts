@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { Artifacts, IInvocationRepository, Invocation, Mode } from "../interfaces.js";
 import type * as schema from "./schema.js";
@@ -183,6 +183,40 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
       .orderBy(asc(invocations.createdAt))
       .all();
     return rows.map((r) => toInvocation(r.inv));
+  }
+
+  async countActiveByFlow(flowId: string): Promise<number> {
+    const rows = this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(invocations)
+      .innerJoin(entities, eq(invocations.entityId, entities.id))
+      .where(
+        and(
+          eq(entities.flowId, flowId),
+          isNotNull(invocations.claimedAt),
+          isNull(invocations.completedAt),
+          isNull(invocations.failedAt),
+        ),
+      )
+      .get();
+    return rows?.count ?? 0;
+  }
+
+  async countPendingByFlow(flowId: string): Promise<number> {
+    const rows = this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(invocations)
+      .innerJoin(entities, eq(invocations.entityId, entities.id))
+      .where(
+        and(
+          eq(entities.flowId, flowId),
+          isNull(invocations.claimedAt),
+          isNull(invocations.completedAt),
+          isNull(invocations.failedAt),
+        ),
+      )
+      .get();
+    return rows?.count ?? 0;
   }
 
   async reapExpired(): Promise<Invocation[]> {

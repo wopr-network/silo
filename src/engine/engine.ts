@@ -368,16 +368,20 @@ export class Engine {
     let pendingClaims = 0;
 
     for (const flow of allFlows) {
-      const flowStatus: Record<string, number> = {};
-      for (const state of flow.states) {
-        const entitiesInState = await this.entityRepo.findByFlowAndState(flow.id, state.name);
-        flowStatus[state.name] = entitiesInState.length;
-      }
-      statusData[flow.name] = flowStatus;
+      const stateEntries = await Promise.all(
+        flow.states.map(async (state) => {
+          const entities = await this.entityRepo.findByFlowAndState(flow.id, state.name);
+          return [state.name, entities.length] as [string, number];
+        }),
+      );
+      statusData[flow.name] = Object.fromEntries(stateEntries);
 
-      const flowInvocations = await this.invocationRepo.findByFlow(flow.id);
-      activeInvocations += flowInvocations.filter((i) => i.claimedAt !== null && !i.completedAt && !i.failedAt).length;
-      pendingClaims += flowInvocations.filter((i) => !i.claimedAt && !i.completedAt && !i.failedAt).length;
+      const [active, pending] = await Promise.all([
+        this.invocationRepo.countActiveByFlow(flow.id),
+        this.invocationRepo.countPendingByFlow(flow.id),
+      ]);
+      activeInvocations += active;
+      pendingClaims += pending;
     }
 
     return { flows: statusData, activeInvocations, pendingClaims };

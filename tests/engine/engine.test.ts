@@ -104,6 +104,8 @@ function makeMockRepos() {
     findUnclaimed: vi.fn().mockResolvedValue([]),
     findByFlow: vi.fn().mockResolvedValue([]),
     reapExpired: vi.fn().mockResolvedValue([]),
+    countActiveByFlow: vi.fn().mockResolvedValue(0),
+    countPendingByFlow: vi.fn().mockResolvedValue(0),
   };
   const gateRepo: IGateRepository = {
     create: vi.fn(),
@@ -590,22 +592,8 @@ describe("Engine", () => {
         });
 
       // One active (claimed, not completed), one pending (unclaimed, not completed)
-      (mocks.invocationRepo.findByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          id: "inv-1", entityId: "ent-1", stage: "open", agentRole: "planner",
-          mode: "active", prompt: "Plan", context: null,
-          claimedBy: "agent:planner", claimedAt: new Date(), startedAt: null,
-          completedAt: null, failedAt: null, signal: null, artifacts: null,
-          error: null, ttlMs: 1800000,
-        },
-        {
-          id: "inv-2", entityId: "ent-2", stage: "coding", agentRole: "coder",
-          mode: "active", prompt: "Code", context: null,
-          claimedBy: null, claimedAt: null, startedAt: null,
-          completedAt: null, failedAt: null, signal: null, artifacts: null,
-          error: null, ttlMs: 1800000,
-        },
-      ]);
+      (mocks.invocationRepo.countActiveByFlow as ReturnType<typeof vi.fn>).mockResolvedValue(1);
+      (mocks.invocationRepo.countPendingByFlow as ReturnType<typeof vi.fn>).mockResolvedValue(1);
 
       const engine = new Engine({ ...mocks, adapters: new Map() });
       const status = await engine.getStatus();
@@ -625,6 +613,42 @@ describe("Engine", () => {
       const status = await engine.getStatus();
 
       expect(status).toEqual({ flows: {}, activeInvocations: 0, pendingClaims: 0 });
+    });
+
+    it("isolates entity counts per flow and aggregates invocation totals across flows", async () => {
+      const mocks = makeMockRepos();
+
+      const flowA = makeFlow({ id: "flow-a", name: "flow-a" });
+      const flowB = makeFlow({ id: "flow-b", name: "flow-b" });
+      (mocks.flowRepo.listAll as ReturnType<typeof vi.fn>).mockResolvedValue([flowA, flowB]);
+
+      // flow-a: 1 entity in "open", 0 elsewhere; flow-b: 2 in "coding", 0 elsewhere
+      (mocks.entityRepo.findByFlowAndState as ReturnType<typeof vi.fn>)
+        .mockImplementation(async (flowId: string, state: string) => {
+          if (flowId === "flow-a" && state === "open") return [makeEntity({ flowId: "flow-a" })];
+          if (flowId === "flow-b" && state === "coding") return [
+            makeEntity({ id: "ent-b1", flowId: "flow-b", state: "coding" }),
+            makeEntity({ id: "ent-b2", flowId: "flow-b", state: "coding" }),
+          ];
+          return [];
+        });
+
+      // flow-a: 1 active, 0 pending; flow-b: 0 active, 2 pending
+      (mocks.invocationRepo.countActiveByFlow as ReturnType<typeof vi.fn>)
+        .mockImplementation(async (flowId: string) => flowId === "flow-a" ? 1 : 0);
+      (mocks.invocationRepo.countPendingByFlow as ReturnType<typeof vi.fn>)
+        .mockImplementation(async (flowId: string) => flowId === "flow-b" ? 2 : 0);
+
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+      const status = await engine.getStatus();
+
+      // Entity counts are isolated per flow
+      expect(status.flows["flow-a"]).toEqual({ open: 1, coding: 0, done: 0 });
+      expect(status.flows["flow-b"]).toEqual({ open: 0, coding: 2, done: 0 });
+
+      // Invocation totals are summed across both flows
+      expect(status.activeInvocations).toBe(1);
+      expect(status.pendingClaims).toBe(2);
     });
   });
 
