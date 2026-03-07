@@ -61,7 +61,7 @@ export class ActiveRunner {
     }
     while (true) {
       if (signal?.aborted) break;
-      const processed = await this.pollOnce(flowId);
+      const processed = await this.pollOnce(flowId, signal);
       if (once) break;
       if (!processed) {
         await sleep(pollIntervalMs, signal);
@@ -69,19 +69,19 @@ export class ActiveRunner {
     }
   }
 
-  private async pollOnce(flowId?: string): Promise<boolean> {
+  private async pollOnce(flowId?: string, signal?: AbortSignal): Promise<boolean> {
     const candidates = await this.invocationRepo.findUnclaimedActive(flowId);
     if (candidates.length === 0) return false;
     for (const invocation of candidates) {
       const claimed = await this.invocationRepo.claim(invocation.id, "active-runner");
       if (!claimed) continue;
-      await this.processInvocation(claimed);
+      await this.processInvocation(claimed, signal);
       return true;
     }
     return false;
   }
 
-  private async processInvocation(invocation: Invocation): Promise<void> {
+  private async processInvocation(invocation: Invocation, signal?: AbortSignal): Promise<void> {
     const model = await this.resolveModel(invocation);
     let content: string;
     try {
@@ -99,45 +99,49 @@ export class ActiveRunner {
       return;
     }
 
+    // Complete the current invocation BEFORE calling processSignal so the
+    // concurrency check inside the engine doesn't count it as still-active.
+    try {
+      await this.invocationRepo.complete(invocation.id, parsed.signal, parsed.artifacts);
+    } catch (err) {
+      console.error(`[active-runner] complete() failed for invocation ${invocation.id} before processSignal:`, err);
+      return;
+    }
+
     let result: ProcessSignalResult;
     try {
-      result = await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts);
+      result = await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts, invocation.id);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       console.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
-      await this.invocationRepo.fail(invocation.id, message);
+      // processSignal failed after we already completed the invocation — create a
+      // replacement so the entity can be reclaimed rather than being permanently orphaned.
+      await this.invocationRepo.create(
+        invocation.entityId,
+        invocation.stage,
+        invocation.prompt,
+        invocation.mode,
+        invocation.agentRole ?? undefined,
+      );
       return;
     }
 
     // Gate timed out — re-queue after backoff instead of failing.
-    // The engine already created a replacement unclaimed invocation when gated —
-    // it will be picked up on the next poll cycle.
+    // Create a replacement unclaimed invocation so the entity can be reclaimed
+    // on the next poll cycle after the backoff wait.
     if (result.gated && result.gateTimedOut) {
       const retryAfterMs = 30000;
       console.info(
         `[active-runner] gate timed out for entity ${invocation.entityId}, re-queuing after ${retryAfterMs}ms`,
       );
-      await sleep(retryAfterMs);
-      try {
-        await this.invocationRepo.complete(invocation.id, parsed.signal, parsed.artifacts);
-      } catch {
-        // Best-effort — the replacement invocation is what matters
-      }
-      return;
-    }
-
-    // NOTE: The invocation claim TTL (default 30 min) starts at claim time and covers both the
-    // AI call and processSignal. If either takes longer than the TTL, the reaper may release the
-    // claim and allow duplicate processing. No heartbeat/extendClaim mechanism exists yet.
-    // Ensure claimTtl >= 2x the expected AI window when configuring invocations.
-    try {
-      await this.invocationRepo.complete(invocation.id, parsed.signal, parsed.artifacts);
-    } catch (err) {
-      // processSignal already succeeded and entity state has changed — log and continue.
-      console.error(
-        `[active-runner] complete() failed for invocation ${invocation.id} (signal already processed):`,
-        err,
+      await this.invocationRepo.create(
+        invocation.entityId,
+        invocation.stage,
+        invocation.prompt,
+        invocation.mode,
+        invocation.agentRole ?? undefined,
       );
+      await sleep(retryAfterMs, signal);
+      return;
     }
   }
 

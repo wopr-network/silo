@@ -548,7 +548,7 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       return jsonResult({
         next_action: "check_back",
         message:
-          "Your report was received. The gate is still evaluating — this is not an error. Call flow.report again with the same arguments after a short wait.",
+          "Your report was received. The gate is still evaluating — this is not an error. Call flow.claim to reclaim the entity, then call flow.report again with the same arguments after a short wait.",
         retry_after_ms: 30000,
       });
     }
