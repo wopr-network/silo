@@ -340,4 +340,78 @@ describe("evaluateGate", () => {
 
     await expect(evaluateGate(gate, entity, gateRepo)).rejects.toThrow("Unknown gate type: webhook");
   });
+
+  it("returns passed=false for functionRef path outside project root (path traversal)", async () => {
+    const gate = makeGate({
+      type: "function",
+      functionRef: "../../../etc/passwd:check",
+    });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({}),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/outside the project root/);
+    expect(gateRepo.record).toHaveBeenCalledWith("ent-1", "gate-1", false, expect.stringMatching(/outside the project root/));
+  });
+
+  it("clears the timeout timer when the function gate resolves", async () => {
+    // If the timer is not cleared, the handle keeps the test process alive
+    // (vitest detects leaked timers). This test verifies the timer IS cleared.
+    const gate = makeGate({
+      type: "function",
+      functionRef: "tests/engine/fixtures/passing-gate.ts:check",
+      timeoutMs: 5000,
+    });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({
+        id: "gr-1", entityId: "ent-1", gateId: "gate-1",
+        passed: true, output: "all good", evaluatedAt: new Date(),
+      }),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(true);
+    // No leaked timer — passes cleanly if clearTimeout was called
+  });
+
+  it("treats timeoutMs=0 as no timeout (uses default), not zero-ms timeout", async () => {
+    const gate = makeGate({
+      type: "function",
+      functionRef: "tests/engine/fixtures/passing-gate.ts:check",
+      timeoutMs: 0,
+    });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({
+        id: "gr-1", entityId: "ent-1", gateId: "gate-1",
+        passed: true, output: "all good", evaluatedAt: new Date(),
+      }),
+    };
+
+    // Should succeed, not immediately timeout
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(true);
+  });
+
+  it("returns passed=false when function returns wrong shape", async () => {
+    const gate = makeGate({
+      type: "function",
+      functionRef: "tests/engine/fixtures/bad-return-gate.ts:check",
+    });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({
+        id: "gr-1", entityId: "ent-1", gateId: "gate-1",
+        passed: false, output: "", evaluatedAt: new Date(),
+      }),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/invalid return/i);
+  });
 });

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
 
@@ -10,7 +10,9 @@ export interface GateEvalResult {
   output: string;
 }
 
-const PROJECT_ROOT = realpathSync(resolve(fileURLToPath(import.meta.url), "../../.."));
+// Anchor path-traversal checks to the project root. realpathSync resolves symlinks
+// so the containment check works even when the project directory itself is a symlink.
+const PROJECT_ROOT = realpathSync(resolve(fileURLToPath(new URL("../..", import.meta.url))));
 
 /**
  * Evaluate a gate against an entity. Records the result in gateRepo.
@@ -107,21 +109,18 @@ async function runFunction(
   const exportName = functionRef.slice(lastColon + 1);
 
   const absPath = resolve(PROJECT_ROOT, modulePath);
+  // Reject paths that escape the project root (path traversal guard)
   let realPath: string;
   try {
     realPath = realpathSync(absPath);
   } catch {
-    throw new Error(`Gate module not found: ${modulePath}`);
+    // File doesn't exist yet — use the unresolved path for the bounds check
+    realPath = absPath;
   }
-  const rel = realPath.startsWith(PROJECT_ROOT + "/") || realPath === PROJECT_ROOT
-    ? realPath.slice(PROJECT_ROOT.length)
-    : null;
-  if (rel === null) {
-    throw new Error(`Gate module path traversal rejected: ${modulePath}`);
+  if (!realPath.startsWith(`${PROJECT_ROOT}/`) && realPath !== PROJECT_ROOT) {
+    throw new Error(`Gate modulePath "${modulePath}" resolves outside the project root`);
   }
-
-  const { pathToFileURL } = await import("node:url");
-  const moduleUrl = pathToFileURL(realPath).href;
+  const moduleUrl = pathToFileURL(absPath).href;
 
   const mod = await import(moduleUrl);
   const fn = mod[exportName];
@@ -129,17 +128,29 @@ async function runFunction(
     throw new Error(`Gate function "${exportName}" not found in ${modulePath}`);
   }
 
-  const timeout = gate.timeoutMs ?? 30000;
+  const timeout = gate.timeoutMs != null && gate.timeoutMs > 0 ? gate.timeoutMs : 30000;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const result = await Promise.race([
-    Promise.resolve(fn(entity, gate)),
+    Promise.resolve(fn(entity, gate)).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+    }),
     new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`Function gate timed out after ${timeout}ms`)), timeout);
     }),
   ]);
-  clearTimeout(timer);
 
-  return { passed: result.passed, output: result.output ?? "" };
+  // Validate return shape — bad implementations silently fail rather than corrupt the record
+  if (result === null || typeof result !== "object" || typeof (result as { passed?: unknown }).passed !== "boolean") {
+    return {
+      passed: false,
+      output: `Invalid return from gate function "${exportName}": expected { passed: boolean, output?: string }`,
+    };
+  }
+
+  return {
+    passed: (result as { passed: boolean; output?: unknown }).passed,
+    output: String((result as { output?: unknown }).output ?? ""),
+  };
 }
 
 function runCommand(file: string, args: string[], timeoutMs: number): Promise<{ exitCode: number; output: string }> {
