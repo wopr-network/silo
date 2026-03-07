@@ -427,20 +427,31 @@ function constantTimeEqual(a: string, b: string): boolean {
 async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown>) {
   const v = validateInput(FlowClaimSchema, args);
   if (!v.ok) return v.result;
-  const { role, flow: flowName } = v.data;
+  const { role, flow: flowName, worker_id: workerId } = v.data;
 
   let candidates: import("../repositories/interfaces.js").Invocation[] = [];
 
   if (flowName) {
     const flow = await deps.flows.getByName(flowName);
     if (!flow) return errorResult(`Flow not found: ${flowName}`);
-    candidates = await deps.invocations.findUnclaimed(flow.id, role);
+    // Try affinity-matched candidates first if workerId is provided
+    if (workerId) {
+      candidates = await deps.invocations.findUnclaimedWithAffinity(flow.id, role, workerId);
+    }
+    if (candidates.length === 0) {
+      candidates = await deps.invocations.findUnclaimed(flow.id, role);
+    }
   } else {
     // No flow specified — search all flows for a claimable entity with this role
     const allFlows = await deps.flows.list();
     for (const flow of allFlows) {
-      const unclaimed = await deps.invocations.findUnclaimed(flow.id, role);
-      candidates.push(...unclaimed);
+      if (workerId) {
+        candidates = await deps.invocations.findUnclaimedWithAffinity(flow.id, role, workerId);
+      }
+      if (candidates.length === 0) {
+        const unclaimed = await deps.invocations.findUnclaimed(flow.id, role);
+        candidates.push(...unclaimed);
+      }
       if (candidates.length > 0) break;
     }
   }
@@ -457,6 +468,15 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
       continue;
     }
     if (claimed) {
+      // Record affinity for the claiming worker
+      if (workerId) {
+        const entity = await deps.entities.get(claimed.entityId);
+        if (entity) {
+          const flow = await deps.flows.get(entity.flowId);
+          const windowMs = flow?.affinityWindowMs ?? 300000;
+          await deps.entities.setAffinity(claimed.entityId, workerId, role, new Date(Date.now() + windowMs));
+        }
+      }
       return jsonResult({
         entity_id: claimed.entityId,
         invocation_id: claimed.id,
@@ -496,7 +516,7 @@ async function handleFlowGetPrompt(deps: McpServerDeps, args: Record<string, unk
 async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknown>) {
   const v = validateInput(FlowReportSchema, args);
   if (!v.ok) return v.result;
-  const { entity_id: entityId, signal, artifacts } = v.data;
+  const { entity_id: entityId, signal, artifacts, worker_id: workerId } = v.data;
 
   const invocationList = await deps.invocations.findByEntity(entityId);
   const activeInvocation = invocationList.find(
@@ -513,6 +533,21 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
   // Complete the current invocation BEFORE calling processSignal so the
   // concurrency check inside the engine doesn't count it as still-active.
   await deps.invocations.complete(activeInvocation.id, signal, artifacts);
+
+  // Set affinity on completion for passive-mode invocations
+  if (workerId && activeInvocation.mode === "passive") {
+    const entity = await deps.entities.get(entityId);
+    if (entity) {
+      const flow = await deps.flows.get(entity.flowId);
+      const windowMs = flow?.affinityWindowMs ?? 300000;
+      await deps.entities.setAffinity(
+        entityId,
+        workerId,
+        activeInvocation.agentRole ?? "",
+        new Date(Date.now() + windowMs),
+      );
+    }
+  }
 
   // Delegate to the engine — it handles gate evaluation, transition, event
   // emission, invocation creation, concurrency checks, and spawn logic.
