@@ -4,6 +4,13 @@ import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
 import { type ApiResponse, type ParsedRequest, Router } from "./router.js";
 
+function extractBearerToken(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  const lower = header.toLowerCase();
+  if (!lower.startsWith("bearer ")) return undefined;
+  return header.slice(7).trim() || undefined;
+}
+
 export interface HttpServerDeps {
   engine: Engine;
   mcpDeps: McpServerDeps;
@@ -149,12 +156,13 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
     // Only pick known fields from body — never spread req.body to prevent param injection
     const definition = req.body?.definition;
     const description = req.body?.description as string | undefined;
+    const callerToken = extractBearerToken(req.authorization);
     if (existing) {
       const result = await callToolHandler(
         deps.mcpDeps,
         "admin.flow.update",
         { flow_name: req.params.id, definition, description },
-        { adminToken: deps.adminToken },
+        { adminToken: deps.adminToken, callerToken },
       );
       return mcpResultToApi(result);
     } else {
@@ -162,7 +170,7 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
         deps.mcpDeps,
         "admin.flow.create",
         { name: req.params.id, definition, description },
-        { adminToken: deps.adminToken },
+        { adminToken: deps.adminToken, callerToken },
       );
       return mcpResultToApi(result);
     }
@@ -213,6 +221,7 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
       params: match.params,
       query: url.searchParams,
       body,
+      authorization: req.headers.authorization,
     };
 
     try {

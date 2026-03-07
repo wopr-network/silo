@@ -2,6 +2,7 @@ export interface ParsedRequest {
   params: Record<string, string>;
   query: URLSearchParams;
   body: Record<string, unknown> | null;
+  authorization?: string;
 }
 
 export interface ApiResponse {

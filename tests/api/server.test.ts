@@ -182,7 +182,7 @@ describe("HTTP Server - basic", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: "worker" }),
     });
-    // No work available → 204 or error
-    expect([204, 404, 500].includes(res.status)).toBe(true);
+    // No work available → 204 (no entity) or 404 (unknown flow)
+    expect([204, 404].includes(res.status)).toBe(true);
   });
 });
