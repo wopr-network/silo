@@ -169,6 +169,11 @@ const TOOL_DEFINITIONS = [
       properties: {
         name: { type: "string", description: "Unique flow name" },
         initialState: { type: "string", description: "Name of the initial state (must be in states array)" },
+        discipline: {
+          type: "string",
+          description:
+            "Discipline role required to claim work in this flow (e.g. engineering, devops). Null means any role can claim.",
+        },
         description: { type: "string", description: "Flow description" },
         entitySchema: { type: "object", description: "JSON schema for entity data" },
         maxConcurrent: { type: "number", description: "Max concurrent entities (0=unlimited)" },
@@ -192,6 +197,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         flow_name: { type: "string", description: "Flow name to update" },
         description: { type: "string" },
+        discipline: { type: "string", description: "Discipline role required to claim work in this flow" },
         maxConcurrent: { type: "number" },
         maxConcurrentPerRepo: { type: "number" },
         affinityWindowMs: { type: "number", description: "Worker affinity window duration in ms (default 300000)" },
@@ -441,12 +447,12 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
   if (flowName) {
     const flow = await deps.flows.getByName(flowName);
     if (!flow) return errorResult(`Flow not found: ${flowName}`);
-    // Discipline must match — if not, return null (not error)
-    if (flow.discipline !== role) return jsonResult(null);
+    // Discipline must match — null discipline flows are claimable by any role
+    if (flow.discipline !== null && flow.discipline !== role) return jsonResult(null);
     candidateFlows = [flow];
   } else {
     const allFlows = await deps.flows.list();
-    candidateFlows = allFlows.filter((f) => f.discipline === role);
+    candidateFlows = allFlows.filter((f) => f.discipline === null || f.discipline === role);
   }
 
   if (candidateFlows.length === 0) return jsonResult(null);
@@ -525,7 +531,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     if (claimed) {
       const entity = entityMap.get(claimed.entityId);
       if (entity) {
-        await deps.entities.claim(entity.flowId, claimed.stage, workerId);
+        await deps.entities.claimById(entity.id, workerId);
       }
       const flow = entity ? flowById.get(entity.flowId) : undefined;
       // Record affinity for the claiming worker
