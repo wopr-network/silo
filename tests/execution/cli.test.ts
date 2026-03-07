@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -108,8 +109,68 @@ describe("CLI", () => {
     const output = run(["serve", "--help"]);
     expect(output).toContain("--transport");
     expect(output).toContain("--port");
+    expect(output).toContain("--host");
     expect(output).toContain("--db");
   });
+
+  it("SSE server returns CORS headers for localhost origin", async () => {
+    const dbPath = join(tmpdir(), `cli-cors-${Date.now()}.db`);
+    const seedPath = writeSeedFile(validSeed);
+    try {
+      run(["init", "--seed", seedPath], { AGENTIC_DB_PATH: dbPath });
+
+      // Use port 0 to let the OS pick an ephemeral port
+      const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--db", dbPath], {
+        cwd: join(import.meta.dirname, "../.."),
+        env: { ...process.env, AGENTIC_DB_PATH: dbPath },
+      });
+
+      // Poll until server is ready instead of fixed sleep
+      let port: number | undefined;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Server did not start in time")), 10000);
+        child.stdout?.on("data", (chunk: Buffer) => {
+          const text = chunk.toString();
+          const match = text.match(/listening on [^:]+:(\d+)/);
+          if (match) {
+            port = parseInt(match[1], 10);
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+        child.on("error", reject);
+      });
+
+      if (!port) throw new Error("Could not determine server port");
+
+      try {
+        const localhostRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
+          const req = http.request(
+            { hostname: "127.0.0.1", port, path: "/sse", method: "GET", headers: { Origin: "http://localhost:3000" } },
+            resolve,
+          );
+          req.on("error", reject);
+          req.end();
+        });
+        expect(localhostRes.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+
+        const evilRes = await new Promise<http.IncomingMessage>((resolve, reject) => {
+          const req = http.request(
+            { hostname: "127.0.0.1", port, path: "/sse", method: "GET", headers: { Origin: "http://evil.example.com" } },
+            resolve,
+          );
+          req.on("error", reject);
+          req.end();
+        });
+        expect(evilRes.headers["access-control-allow-origin"]).toBeUndefined();
+      } finally {
+        child.kill("SIGTERM");
+      }
+    } finally {
+      if (existsSync(dbPath)) rmSync(dbPath);
+      if (existsSync(seedPath)) rmSync(seedPath);
+    }
+  }, 15000);
 
   it("run --help shows run options", () => {
     const output = run(["run", "--help"]);

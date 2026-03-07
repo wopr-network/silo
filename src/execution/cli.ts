@@ -121,7 +121,11 @@ program
   .description("Start MCP server")
   .option("--transport <type>", "Transport: stdio or sse", "stdio")
   .option("--port <number>", "Port for SSE transport", "3000")
-  .option("--host <addr>", "Bind address for SSE transport", "127.0.0.1")
+  .option(
+    "--host <address>",
+    "Host address to bind to (default: 127.0.0.1, use 0.0.0.0 for network access)",
+    "127.0.0.1",
+  )
   .option("--db <path>", "Database path", DB_DEFAULT)
   .option("--reaper-interval <ms>", "Reaper poll interval in milliseconds", REAPER_INTERVAL_DEFAULT)
   .option("--claim-ttl <ms>", "Claim TTL in milliseconds", CLAIM_TTL_DEFAULT)
@@ -187,7 +191,32 @@ program
       // Map session IDs to the SHA-256 hash of the bearer token used at SSE handshake
       const sessionTokens = new Map<string, string | undefined>();
 
+      const host = opts.host as string;
+      const isLoopback = host === "127.0.0.1" || host === "localhost";
+      let allowedOriginPattern: RegExp | null = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+      if (!isLoopback) {
+        console.warn(`WARNING: --host ${host} is not a loopback address — allowing all CORS origins`);
+        allowedOriginPattern = null;
+      }
+
       const httpServer = http.createServer(async (req, res) => {
+        // CORS: restrict to localhost origins when bound to loopback; allow all when bound to non-loopback
+        const origin = req.headers.origin;
+        if (origin) {
+          if (allowedOriginPattern === null || allowedOriginPattern.test(origin)) {
+            res.setHeader("Vary", "Origin");
+            res.setHeader("Access-Control-Allow-Origin", origin);
+            res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Id");
+          }
+        }
+
+        // Handle CORS preflight — scoped to SSE-related routes only
+        if (req.method === "OPTIONS" && (req.url === "/sse" || req.url?.startsWith("/messages"))) {
+          res.writeHead(204).end();
+          return;
+        }
+
         if (req.url === "/sse" && req.method === "GET") {
           const callerToken = extractBearerToken(req.headers.authorization);
           const transport = new SSEServerTransport("/messages", res);
@@ -222,9 +251,10 @@ program
         }
       });
 
-      const host = opts.host as string;
       httpServer.listen(port, host, () => {
-        console.log(`MCP SSE server listening on ${host}:${port}`);
+        const addr = httpServer.address();
+        const boundPort = addr && typeof addr === "object" ? addr.port : port;
+        console.log(`MCP SSE server listening on ${host}:${boundPort}`);
       });
       if (!adminToken) {
         console.warn("WARNING: DEFCON_ADMIN_TOKEN not set — admin tools are unauthenticated");
