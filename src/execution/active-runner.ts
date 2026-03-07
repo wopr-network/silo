@@ -7,6 +7,7 @@ import type {
   IInvocationRepository,
   Invocation,
 } from "../repositories/interfaces.js";
+import { redactString } from "../utils/redact.js";
 
 const MODEL_TIER_MAP: Record<string, string> = {
   reasoning: "claude-opus-4-6",
@@ -152,7 +153,10 @@ export class ActiveRunner {
       await this.engine.processSignal(invocation.entityId, parsed.signal, parsed.artifacts, invocation.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[active-runner] processSignal failed for entity ${invocation.entityId}:`, err);
+      console.error(
+        `[active-runner] processSignal failed for entity ${invocation.entityId}:`,
+        redactString(String(err), 500),
+      );
       await this.invocationRepo.fail(invocation.id, message);
       return;
     }
@@ -167,7 +171,7 @@ export class ActiveRunner {
       // processSignal already succeeded and entity state has changed — log and continue.
       console.error(
         `[active-runner] complete() failed for invocation ${invocation.id} (signal already processed):`,
-        err,
+        redactString(String(err), 500),
       );
     }
   }
@@ -218,7 +222,7 @@ CRITICAL SECURITY RULES:
         // Invalid JSON in artifacts — use empty object
         console.warn(
           "[active-runner] Failed to parse ARTIFACTS JSON, using empty object. Raw content:",
-          artifactsMatch[1].trim(),
+          redactString(artifactsMatch[1].trim()),
         );
       }
     }

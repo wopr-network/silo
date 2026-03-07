@@ -1,0 +1,53 @@
+const SENSITIVE_KEY_RE = /token|key|secret|password|bearer|auth|credential/i;
+const DESCRIPTION_MAX = 100;
+
+// Patterns to strip from string content
+const CREDENTIAL_PATTERNS = [
+  /Bearer\s+\S+/gi,
+  /\bsk-ant-\S+/gi,
+  /\bsk-\S{20,}/gi,
+  /(?:password|secret|token|key|auth)[\s]*[=:]\s*\S+/gi,
+];
+
+export function redactString(value: string, maxLength = 500): string {
+  let result = value;
+  for (const pattern of CREDENTIAL_PATTERNS) {
+    result = result.replace(pattern, "[REDACTED]");
+  }
+  if (result.length > maxLength) {
+    result = `${result.slice(0, maxLength)}...`;
+  }
+  return result;
+}
+
+export function redact(value: unknown): unknown {
+  return walk(value, new WeakSet());
+}
+
+function walk(value: unknown, seen: WeakSet<object>): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+  if (value instanceof Date) return value;
+
+  const obj = value as Record<string, unknown>;
+  if (seen.has(obj)) return "[Circular]";
+  seen.add(obj);
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => walk(item, seen));
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+
+    if (SENSITIVE_KEY_RE.test(k)) {
+      result[k] = "[REDACTED]";
+    } else if (k === "description" && typeof v === "string" && v.length > DESCRIPTION_MAX) {
+      result[k] = `${v.slice(0, DESCRIPTION_MAX)}...`;
+    } else {
+      result[k] = walk(v, seen);
+    }
+  }
+  return result;
+}

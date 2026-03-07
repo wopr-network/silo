@@ -1,3 +1,4 @@
+import { redact } from "../utils/redact.js";
 import type { EngineEvent, IEventBusAdapter } from "./interfaces.js";
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -19,6 +20,6 @@ export class StdoutAdapter implements IEventBusAdapter {
   async emit(event: EngineEvent): Promise<void> {
     const timestamp = new Date().toISOString();
     const emoji = EVENT_EMOJI[event.type] ?? "📋";
-    console.log(`${emoji} [${timestamp}] ${event.type}`, JSON.stringify(event, null, 2));
+    console.log(`${emoji} [${timestamp}] ${event.type}`, JSON.stringify(redact(event), null, 2));
   }
 }

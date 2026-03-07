@@ -89,4 +89,46 @@ describe("StdoutAdapter", () => {
     expect(spy.mock.calls[0][0]).toContain("📋");
     spy.mockRestore();
   });
+
+  it("redacts sensitive fields from event payload", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const adapter = new StdoutAdapter();
+
+    const event: EngineEvent = {
+      type: "entity.created",
+      entityId: "e1",
+      flowId: "f1",
+      payload: { apiKey: "sk-ant-secret123", name: "test" },
+      emittedAt: new Date("2025-01-01"),
+    };
+
+    await adapter.emit(event);
+
+    const loggedString = spy.mock.calls[0][1] as string;
+    expect(loggedString).not.toContain("sk-ant-secret123");
+    expect(loggedString).toContain("[REDACTED]");
+    expect(loggedString).toContain("test");
+    spy.mockRestore();
+  });
+
+  it("truncates long description fields in payload", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const adapter = new StdoutAdapter();
+    const longDesc = "x".repeat(200);
+
+    const event: EngineEvent = {
+      type: "entity.created",
+      entityId: "e1",
+      flowId: "f1",
+      payload: { description: longDesc },
+      emittedAt: new Date("2025-01-01"),
+    };
+
+    await adapter.emit(event);
+
+    const loggedString = spy.mock.calls[0][1] as string;
+    expect(loggedString).not.toContain(longDesc);
+    expect(loggedString).toContain("...");
+    spy.mockRestore();
+  });
 });
