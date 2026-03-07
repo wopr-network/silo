@@ -477,14 +477,18 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
 
   if (allCandidates.length === 0) {
     // Determine if entities exist but are all claimed (short retry) vs empty backlog (long retry)
-    // Only check states whose agentRole matches the requested role to avoid cross-discipline false positives
-    const stateChecks = candidateFlows.flatMap((flow) =>
-      flow.states
-        .filter((state) => state.agentRole === role)
-        .map((state) => deps.entities.findByFlowAndState(flow.id, state.name)),
-    );
-    const entityResults = await Promise.all(stateChecks);
-    const hasEntities = entityResults.some((entities) => entities.length > 0);
+    // Check all states in candidateFlows (already discipline-filtered) for any existing entities.
+    // Use early-exit sequential loop to avoid unbounded parallel DB queries on large flows.
+    let hasEntities = false;
+    outer: for (const flow of candidateFlows) {
+      for (const state of flow.states) {
+        const entities = await deps.entities.findByFlowAndState(flow.id, state.name);
+        if (entities.length > 0) {
+          hasEntities = true;
+          break outer;
+        }
+      }
+    }
     return noWorkResult(hasEntities ? 30_000 : 300_000, role);
   }
 

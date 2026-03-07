@@ -1102,4 +1102,23 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     expect(data.next_action).toBe("check_back");
     expect(data.retry_after_ms).toBe(30000);
   });
+
+  it("returns check_back with 30s retry when discipline-filtered flow has entities but discipline !== agentRole", async () => {
+    // discipline "engineering" matches the flow; state.agentRole is "coder" (different from discipline)
+    // The old code filtered states by agentRole === role, wrongly excluding all states → 300s
+    // The correct code checks all states in candidateFlows → finds entities → 30s
+    const flow1 = mockFlow({ id: "flow-1", name: "eng-flow", discipline: "engineering" });
+    deps.flows.list = async () => [flow1];
+    deps.flows.listAll = async () => [flow1];
+    deps.invocations.findUnclaimedByFlow = async () => [];
+    deps.entities.findByFlowAndState = async (_flowId, stateName) => {
+      if (stateName === "draft") return [mockEntity({ id: "ent-eng", claimedBy: "wkr_other" })];
+      return [];
+    };
+
+    const result = await callClaim({ workerId: "wkr_eng", role: "engineering" });
+    const data = parseResult(result as { content: Array<{ text: string }> });
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(30000);
+  });
 });
