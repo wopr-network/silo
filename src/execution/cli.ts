@@ -134,6 +134,11 @@ program
     const transitionLogRepo = new DrizzleTransitionLogRepository(db);
 
     const eventEmitter = new EventEmitter();
+    eventEmitter.register({
+      emit: async (event) => {
+        process.stderr.write(`[event] ${event.type} ${JSON.stringify(event)}\n`);
+      },
+    });
 
     const engine = new Engine({
       entityRepo,

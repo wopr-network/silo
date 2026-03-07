@@ -576,6 +576,11 @@ describe("SeedFileSchema", () => {
     }
   });
 
+  it("rejects seed files with unknown keys (strict mode)", () => {
+    const result = SeedFileSchema.safeParse({ flows: [], gates: [], integrations: [] });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts acyclic spawn chains (A spawns B, B spawns C, no cycle)", () => {
     const seed = {
       flows: [

@@ -137,37 +137,5 @@
       "trigger": "closed",
       "priority": 2
     }
-  ],
-  "integrations": [
-    {
-      "capability": "issue_tracker",
-      "adapter": "linear",
-      "config": {
-        "teamKey": "WOP",
-        "stateMapping": {
-          "backlog": "Backlog",
-          "architecting": "In Progress",
-          "coding": "In Progress",
-          "reviewing": "In Review",
-          "fixing": "In Progress",
-          "merging": "In Review",
-          "done": "Done",
-          "stuck": "Backlog"
-        }
-      }
-    },
-    {
-      "capability": "vcs",
-      "adapter": "github",
-      "config": {
-        "org": "wopr-network",
-        "mergeStrategy": "squash",
-        "branchPattern": "agent/coder-{{issueNum}}/{{issueKey}}"
-      }
-    },
-    {
-      "capability": "notifications",
-      "adapter": "stdout"
-    }
   ]
 }
