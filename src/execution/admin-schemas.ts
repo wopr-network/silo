@@ -1,11 +1,16 @@
 import { z } from "zod/v4";
+import { validateTemplate } from "../engine/handlebars.js";
+
+const safeTemplate = z.string().refine(validateTemplate, {
+  message: "Template contains unsafe patterns (lookup, @root, __proto__, constructor)",
+});
 
 const AdminStateInlineSchema = z.object({
   name: z.string().min(1),
   agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
-  promptTemplate: z.string().optional(),
+  promptTemplate: safeTemplate.optional(),
   constraints: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -34,7 +39,7 @@ export const AdminStateCreateSchema = z.object({
   agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
-  promptTemplate: z.string().optional(),
+  promptTemplate: safeTemplate.optional(),
   constraints: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -44,7 +49,7 @@ export const AdminStateUpdateSchema = z.object({
   agentRole: z.string().optional(),
   modelTier: z.string().optional(),
   mode: z.enum(["passive", "active"]).optional(),
-  promptTemplate: z.string().optional(),
+  promptTemplate: safeTemplate.optional(),
   constraints: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -54,7 +59,7 @@ export const AdminTransitionCreateSchema = z.object({
   toState: z.string().min(1),
   trigger: z.string().min(1),
   gateName: z.string().min(1).optional(),
-  condition: z.string().optional(),
+  condition: safeTemplate.optional(),
   priority: z.number().int().min(0).optional(),
   spawnFlow: z.string().optional(),
   spawnTemplate: z.string().optional(),
@@ -67,7 +72,7 @@ export const AdminTransitionUpdateSchema = z.object({
   toState: z.string().min(1).optional(),
   trigger: z.string().min(1).optional(),
   gateName: z.string().min(1).optional(),
-  condition: z.string().nullable().optional(),
+  condition: safeTemplate.nullable().optional(),
   priority: z.number().int().min(0).nullable().optional(),
   spawnFlow: z.string().nullable().optional(),
   spawnTemplate: z.string().nullable().optional(),

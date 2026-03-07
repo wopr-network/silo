@@ -23,7 +23,7 @@ describe("evaluateCondition", () => {
 
   it("evaluates Handlebars expressions against context", () => {
     expect(evaluateCondition("{{name}}", { name: "hello" })).toBe(true);
-    expect(evaluateCondition("{{missing}}", {})).toBe(false);
+    expect(() => evaluateCondition("{{missing}}", {})).toThrow();
   });
 
   it("throws on invalid template", () => {
