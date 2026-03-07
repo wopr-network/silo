@@ -204,6 +204,9 @@ export interface IEntityRepository {
   /** Atomically claim one unclaimed entity in the given flow+state for the specified agent. Returns null if none available. Uses compare-and-swap (UPDATE WHERE claimedBy IS NULL). */
   claim(flowId: string, state: string, agentId: string): Promise<Entity | null>;
 
+  /** Release a claimed entity, clearing claimedBy and claimedAt. */
+  release(entityId: string, agentId: string): Promise<void>;
+
   /** Find entities whose claim has expired beyond ttlMs and release them. Returns the IDs of released entities. */
   reapExpired(ttlMs: number): Promise<string[]>;
 }

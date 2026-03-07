@@ -141,6 +141,7 @@ function createMockDeps(): McpServerDeps {
     updateArtifacts: async () => {},
     claim: async () => mockEntity({ claimedBy: "agent-1" }),
     reapExpired: async () => [],
+    release: async () => {},
   };
 
   const flows: IFlowRepository = {

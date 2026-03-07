@@ -120,6 +120,14 @@ export class DrizzleEntityRepository implements IEntityRepository {
     });
   }
 
+  async release(entityId: string, agentId: string): Promise<void> {
+    await this.db
+      .update(entities)
+      .set({ claimedBy: null, claimedAt: null, updatedAt: Date.now() })
+      .where(and(eq(entities.id, entityId), eq(entities.claimedBy, agentId)))
+      .run();
+  }
+
   async reapExpired(ttlMs: number): Promise<string[]> {
     const cutoff = Date.now() - ttlMs;
     const rows = this.db

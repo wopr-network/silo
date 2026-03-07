@@ -73,6 +73,7 @@ function makeMockRepos() {
     ),
     updateArtifacts: vi.fn().mockResolvedValue(undefined),
     claim: vi.fn().mockResolvedValue(null),
+    release: vi.fn().mockResolvedValue(undefined),
     reapExpired: vi.fn().mockResolvedValue([]),
   };
   const flowRepo: IFlowRepository = {
@@ -405,6 +406,34 @@ describe("Engine", () => {
 
       expect(mocks.flowRepo.listAll).toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+
+    it("releases entity claim when invocation claim fails (race window fix)", async () => {
+      const mocks = makeMockRepos();
+      const claimedEntity = makeEntity({ state: "coding", claimedBy: "agent:coder" });
+      const unclaimedInvocation: Invocation = {
+        id: "inv-1", entityId: "ent-1", stage: "coding", agentRole: "coder",
+        mode: "active", prompt: "Do the thing", context: null,
+        claimedBy: null, claimedAt: null, startedAt: null, completedAt: null,
+        failedAt: null, signal: null, artifacts: null, error: null, ttlMs: 1800000,
+      };
+
+      // findUnclaimed returns a pending invocation
+      (mocks.invocationRepo.findUnclaimed as ReturnType<typeof vi.fn>).mockResolvedValue([unclaimedInvocation]);
+      // Entity claim succeeds on first call (for pre-existing invocation path), then null (for direct-claim path)
+      (mocks.entityRepo.claim as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(claimedEntity)
+        .mockResolvedValue(null);
+      // Invocation claim fails (another agent got it)
+      (mocks.invocationRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+      const engine = new Engine({ ...mocks, adapters: new Map() });
+      const result = await engine.claimWork("coder", "test-flow");
+
+      // Should return null since no work was successfully claimed
+      expect(result).toBeNull();
+      // Entity claim should have been released
+      expect(mocks.entityRepo.release).toHaveBeenCalledWith(claimedEntity.id, 'agent:coder');
     });
   });
 
