@@ -101,6 +101,14 @@ export class ActiveRunner {
       return;
     }
 
+    if (invocation.stage !== entity.state) {
+      await this.invocationRepo.fail(
+        invocation.id,
+        `stale invocation: stage mismatch (invocation.stage="${invocation.stage}", entity.state="${entity.state}")`,
+      );
+      return;
+    }
+
     const validSignals = this.getValidSignals(flow, entity.state);
 
     const model = this.resolveModel(flow, entity.state);

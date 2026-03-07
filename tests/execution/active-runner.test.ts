@@ -309,6 +309,39 @@ describe("ActiveRunner", () => {
     expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining('Invalid signal "clean"'));
   });
 
+  it("fails stale invocation when invocation.stage does not match entity.state", async () => {
+    // invocation was created when entity was in "coding" but entity has since transitioned to "reviewing"
+    const inv = mockInvocation({ stage: "coding" });
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    entityRepo.get.mockResolvedValue({
+      id: "ent-1", flowId: "flow-1", state: "reviewing", refs: null, artifacts: null,
+      claimedBy: null, claimedAt: null, flowVersion: 1, createdAt: new Date(), updatedAt: new Date(),
+    });
+
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).not.toHaveBeenCalled();
+    expect(engine.processSignal).not.toHaveBeenCalled();
+    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining("stale invocation: stage mismatch"));
+  });
+
+  it("proceeds normally when invocation.stage matches entity.state", async () => {
+    const inv = mockInvocation({ stage: "coding" });
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    // entity.state matches invocation.stage
+    entityRepo.get.mockResolvedValue({
+      id: "ent-1", flowId: "flow-1", state: "coding", refs: null, artifacts: null,
+      claimedBy: null, claimedAt: null, flowVersion: 1, createdAt: new Date(), updatedAt: new Date(),
+    });
+
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).toHaveBeenCalled();
+    expect(invocationRepo.fail).not.toHaveBeenCalledWith("inv-1", expect.stringContaining("stale invocation"));
+  });
+
   it("fails invocation when entity is null (fail closed on signal validation)", async () => {
     const inv = mockInvocation();
     invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
