@@ -9,6 +9,7 @@ import type {
   IInvocationRepository,
   ITransitionLogRepository,
 } from "../repositories/interfaces.js";
+import { DEFAULT_TIMEOUT_PROMPT } from "./constants.js";
 import type { IEventBusAdapter } from "./event-types.js";
 import { executeSpawn } from "./flow-spawner.js";
 import { evaluateGate } from "./gate-evaluator.js";
@@ -132,11 +133,9 @@ export class Engine {
             emittedAt: new Date(),
           });
         }
-        const SYSTEM_DEFAULT_TIMEOUT =
-          "Your report was received. The gate is still evaluating — this is not an error. Call flow.claim to reclaim the entity, then call flow.report again with the same arguments after a short wait.";
         let resolvedTimeoutPrompt: string | undefined;
         if (gateResult.timedOut) {
-          const rawTemplate = gate.timeoutPrompt ?? flow.timeoutPrompt ?? SYSTEM_DEFAULT_TIMEOUT;
+          const rawTemplate = gate.timeoutPrompt ?? flow.timeoutPrompt ?? DEFAULT_TIMEOUT_PROMPT;
           try {
             const hbs = getHandlebars();
             const template = hbs.compile(rawTemplate);
@@ -147,7 +146,7 @@ export class Engine {
             });
           } catch (err) {
             console.error("[engine] Failed to render timeoutPrompt template:", err);
-            resolvedTimeoutPrompt = SYSTEM_DEFAULT_TIMEOUT;
+            resolvedTimeoutPrompt = DEFAULT_TIMEOUT_PROMPT;
           }
         }
         return {
