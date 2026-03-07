@@ -169,7 +169,7 @@ describe("admin MCP tools", () => {
     const gateResult = await callToolHandler(deps, "admin.gate.create", {
       name: "lint-gate",
       type: "command",
-      command: "pnpm lint",
+      command: "gates/lint-check.sh",
     });
     expect(gateResult.isError).toBeUndefined();
     const gate = JSON.parse(gateResult.content[0].text);
@@ -291,7 +291,7 @@ describe("admin MCP tools", () => {
     await callToolHandler(deps, "admin.gate.create", {
       name: "lint-check",
       type: "command",
-      command: "pnpm lint",
+      command: "gates/lint-check.sh",
     });
     const flow = await deps.flows.getByName("pipeline");
     const trToAttach = flow!.transitions.find((t) => t.fromState === "in-progress");

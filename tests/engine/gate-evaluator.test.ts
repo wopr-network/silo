@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { evaluateGate } from "../../src/engine/gate-evaluator.js";
 import type { Gate, Entity, IGateRepository } from "../../src/repositories/interfaces.js";
 
+vi.mock("../../src/engine/gate-command-validator.js", () => ({
+  validateGateCommand: () => ({ valid: true, resolvedPath: null, error: null }),
+}));
+
 function makeGate(overrides: Partial<Gate> = {}): Gate {
   return {
     id: "gate-1",

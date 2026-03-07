@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { validateTemplate } from "../engine/handlebars.js";
+import { validateGateCommand } from "../engine/gate-command-validator.js";
 
 const safeTemplate = z.string().refine(validateTemplate, {
   message: "Template contains unsafe patterns (lookup, @root, __proto__, constructor)",
@@ -82,7 +83,13 @@ export const AdminGateCreateSchema = z.discriminatedUnion("type", [
   z.object({
     name: z.string().min(1),
     type: z.literal("command"),
-    command: z.string().min(1),
+    command: z
+      .string()
+      .min(1)
+      .refine(
+        (cmd) => validateGateCommand(cmd).valid,
+        (cmd) => ({ message: validateGateCommand(cmd).error ?? "Gate command not allowed" }),
+      ),
     timeoutMs: z.number().int().min(0).optional(),
   }),
   z.object({
