@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
@@ -14,6 +14,7 @@ export interface GateEvalResult {
 // Anchor path-traversal checks to the project root. realpathSync resolves symlinks
 // so the containment check works even when the project directory itself is a symlink.
 const PROJECT_ROOT = realpathSync(resolve(fileURLToPath(new URL("../..", import.meta.url))));
+const GATES_DIR = resolve(PROJECT_ROOT, "gates") + sep;
 
 function getSystemDefaultGateTimeout(): number {
   const parsed = parseInt(process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS ?? "", 10);
@@ -145,7 +146,7 @@ async function runFunction(
   const exportName = functionRef.slice(lastColon + 1);
 
   const absPath = resolve(PROJECT_ROOT, modulePath);
-  // Reject paths that escape the project root (path traversal guard)
+  // Reject paths that escape the gates/ directory
   let realPath: string;
   try {
     realPath = realpathSync(absPath);
@@ -153,9 +154,8 @@ async function runFunction(
     // File doesn't exist yet — use the unresolved path for the bounds check
     realPath = absPath;
   }
-  const rel = relative(PROJECT_ROOT, realPath);
-  if (rel.startsWith("..") || resolve(PROJECT_ROOT, rel) !== realPath) {
-    throw new Error(`Gate modulePath "${modulePath}" resolves outside the project root`);
+  if (!realPath.startsWith(GATES_DIR)) {
+    throw new Error(`functionRef must resolve to a path inside gates/ directory, got: ${realPath}`);
   }
   const moduleUrl = pathToFileURL(realPath).href;
 

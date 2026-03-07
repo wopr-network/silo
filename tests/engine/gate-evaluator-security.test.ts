@@ -25,6 +25,52 @@ const mockGateRepo = {
   }),
 } as unknown as IGateRepository;
 
+describe("evaluateGate function security", () => {
+  it("rejects functionRef resolving to node_modules", async () => {
+    const gate = makeGate({
+      type: "function",
+      command: null,
+      functionRef: "node_modules/lodash/index.js:default",
+    });
+    const result = await evaluateGate(gate, makeEntity(), mockGateRepo);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/must resolve.*gates\//i);
+  });
+
+  it("rejects functionRef with .. traversal to node_modules", async () => {
+    const gate = makeGate({
+      type: "function",
+      command: null,
+      functionRef: "gates/../node_modules/lodash/index.js:default",
+    });
+    const result = await evaluateGate(gate, makeEntity(), mockGateRepo);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/must resolve.*gates\//i);
+  });
+
+  it("rejects functionRef pointing to src/", async () => {
+    const gate = makeGate({
+      type: "function",
+      command: null,
+      functionRef: "src/engine/gate-evaluator.ts:evaluateGate",
+    });
+    const result = await evaluateGate(gate, makeEntity(), mockGateRepo);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/must resolve.*gates\//i);
+  });
+
+  it("rejects functionRef with absolute path", async () => {
+    const gate = makeGate({
+      type: "function",
+      command: null,
+      functionRef: "/etc/passwd:default",
+    });
+    const result = await evaluateGate(gate, makeEntity(), mockGateRepo);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/must resolve.*gates\//i);
+  });
+});
+
 describe("evaluateGate security", () => {
   it("rejects command with absolute path", async () => {
     const gate = makeGate({ command: "/usr/bin/whoami" });
