@@ -130,17 +130,15 @@ async function runFunction(
 
   const timeout = gate.timeoutMs != null && gate.timeoutMs > 0 ? gate.timeoutMs : 30000;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const result = await Promise.race([
-    Promise.resolve(fn(entity, gate)).finally(() => {
-      if (timer !== undefined) clearTimeout(timer);
-    }),
-    new Promise<{ passed: boolean; output: string }>((resolve) => {
-      timer = setTimeout(
-        () => resolve({ passed: false, output: `Function gate timed out after ${timeout}ms` }),
-        timeout,
-      );
-    }),
-  ]);
+  const timeoutPromise = new Promise<{ passed: boolean; output: string }>((resolve) => {
+    timer = setTimeout(() => resolve({ passed: false, output: `Function gate timed out after ${timeout}ms` }), timeout);
+  });
+  let result: { passed: boolean; output: string };
+  try {
+    result = await Promise.race([Promise.resolve(fn(entity, gate)), timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
 
   // Validate return shape — bad implementations silently fail rather than corrupt the record
   if (result === null || typeof result !== "object" || typeof (result as { passed?: unknown }).passed !== "boolean") {
