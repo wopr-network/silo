@@ -1,5 +1,6 @@
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { GitHubCodeHostAdapter, MergeConflictError, PRNotFoundError } from "../../src/adapters/github.js";
+import { GitHubCodeHostAdapter, MergeConflictError, PRNotFoundError, PathTraversalError } from "../../src/adapters/github.js";
 
 type ExecFn = (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 
@@ -156,15 +157,17 @@ describe("mergePR", () => {
 });
 
 describe("createWorktree", () => {
-  it("calls git worktree add and returns the path", async () => {
+  it("calls git worktree add and returns the validated path", async () => {
     mockExec.mockResolvedValueOnce({ stdout: "", stderr: "" });
 
-    const result = await adapter.createWorktree("/home/user/repos/org-repo", "feat-branch", "/tmp/wt/feat");
+    const result = await adapter.createWorktree("./repos/org-repo", "feat-branch", "./worktrees/feat");
 
+    const expectedWorktree = resolve("./worktrees/feat");
+    const expectedRepo = resolve("./repos/org-repo");
     expect(mockExec).toHaveBeenCalledWith("git", [
-      "-C", "/home/user/repos/org-repo", "worktree", "add", "-b", "feat-branch", "/tmp/wt/feat",
+      "-C", expectedRepo, "worktree", "add", "-b", "feat-branch", expectedWorktree,
     ]);
-    expect(result).toBe("/tmp/wt/feat");
+    expect(result).toBe(expectedWorktree);
   });
 });
 
@@ -174,14 +177,88 @@ describe("removeWorktree", () => {
       .mockResolvedValueOnce({ stdout: "", stderr: "" })
       .mockResolvedValueOnce({ stdout: "", stderr: "" });
 
-    await adapter.removeWorktree("/tmp/wt/feat", "/home/user/repos/org-repo");
+    await adapter.removeWorktree("./worktrees/feat", "./repos/org-repo");
 
+    const expectedWorktree = resolve("./worktrees/feat");
+    const expectedRepo = resolve("./repos/org-repo");
     expect(mockExec).toHaveBeenCalledTimes(2);
     expect(mockExec).toHaveBeenNthCalledWith(1, "git", [
-      "-C", "/home/user/repos/org-repo", "worktree", "remove", "--force", "/tmp/wt/feat",
+      "-C", expectedRepo, "worktree", "remove", "--force", expectedWorktree,
     ]);
     expect(mockExec).toHaveBeenNthCalledWith(2, "git", [
-      "-C", "/home/user/repos/org-repo", "worktree", "prune",
+      "-C", expectedRepo, "worktree", "prune",
     ]);
+  });
+});
+
+describe("path validation", () => {
+  describe("createWorktree", () => {
+    it("rejects worktree path outside WORKTREE_BASE", async () => {
+      await expect(
+        adapter.createWorktree("./repos/org-repo", "feat", "../../etc/important"),
+      ).rejects.toThrow(PathTraversalError);
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("rejects absolute worktree path outside WORKTREE_BASE", async () => {
+      await expect(
+        adapter.createWorktree("./repos/org-repo", "feat", "/etc/important"),
+      ).rejects.toThrow(PathTraversalError);
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("rejects localRepoPath outside REPOS_BASE", async () => {
+      await expect(
+        adapter.createWorktree("../../etc/shadow", "feat", "./worktrees/feat"),
+      ).rejects.toThrow(PathTraversalError);
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid paths within allowed bases", async () => {
+      mockExec.mockResolvedValueOnce({ stdout: "", stderr: "" });
+      const worktreePath = process.env.WORKTREE_BASE
+        ? process.env.WORKTREE_BASE + "/feat"
+        : "./worktrees/feat";
+      const repoPath = process.env.REPOS_BASE
+        ? process.env.REPOS_BASE + "/org-repo"
+        : "./repos/org-repo";
+
+      const result = await adapter.createWorktree(repoPath, "feat", worktreePath);
+
+      expect(mockExec).toHaveBeenCalledTimes(1);
+      expect(typeof result).toBe("string");
+    });
+  });
+
+  describe("removeWorktree", () => {
+    it("rejects worktree path outside WORKTREE_BASE", async () => {
+      await expect(
+        adapter.removeWorktree("../../etc/important", "./repos/org-repo"),
+      ).rejects.toThrow(PathTraversalError);
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("rejects localRepoPath outside REPOS_BASE", async () => {
+      await expect(
+        adapter.removeWorktree("./worktrees/feat", "../../etc/shadow"),
+      ).rejects.toThrow(PathTraversalError);
+      expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it("accepts valid paths within allowed bases", async () => {
+      mockExec
+        .mockResolvedValueOnce({ stdout: "", stderr: "" })
+        .mockResolvedValueOnce({ stdout: "", stderr: "" });
+      const worktreePath = process.env.WORKTREE_BASE
+        ? process.env.WORKTREE_BASE + "/feat"
+        : "./worktrees/feat";
+      const repoPath = process.env.REPOS_BASE
+        ? process.env.REPOS_BASE + "/org-repo"
+        : "./repos/org-repo";
+
+      await adapter.removeWorktree(worktreePath, repoPath);
+
+      expect(mockExec).toHaveBeenCalledTimes(2);
+    });
   });
 });
