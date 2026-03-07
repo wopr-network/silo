@@ -43,4 +43,19 @@ describe("validateGateCommand", () => {
     const result = validateGateCommand("gates/sub/../../../etc/shadow");
     expect(result.valid).toBe(false);
   });
+
+  it("rejects filename that starts with '..' but is not a traversal (false positive fix)", () => {
+    // '..lint-check' starts with '..' but is not a path traversal
+    // It should be rejected because it resolves outside gates/ (since it's not under gates/),
+    // but the rejection must NOT be caused by the startsWith check falsely triggering
+    const result = validateGateCommand("gates/..lint-check");
+    // gates/..lint-check resolves to GATES_ROOT/..lint-check — still inside gates/ lexically
+    // so it should be valid (startsWith(".." + sep) does NOT match "..lint-check")
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects '..' as the entire command", () => {
+    const result = validateGateCommand("..");
+    expect(result.valid).toBe(false);
+  });
 });

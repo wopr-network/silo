@@ -27,7 +27,9 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
       await gateRepo.record(entity.id, gate.id, false, msg);
       return { passed: false, output: msg };
     }
-    const result = await runCommand(validation.resolvedPath!, gate.command, gate.timeoutMs);
+    const [, ...args] = gate.command.split(/\s+/);
+    const resolvedPath = validation.resolvedPath ?? gate.command;
+    const result = await runCommand(resolvedPath, args, gate.timeoutMs);
     passed = result.exitCode === 0;
     output = result.output;
   } else if (gate.type === "function") {
@@ -76,12 +78,9 @@ export async function evaluateGate(gate: Gate, entity: Entity, gateRepo: IGateRe
   return { passed, output };
 }
 
-function runCommand(resolvedFile: string, command: string, timeoutMs: number): Promise<{ exitCode: number; output: string }> {
-  // Use resolvedFile (symlink-resolved, validated path) for execFile to prevent path bypass
-  // Extract args from original command string; split into file + args to avoid shell injection (no shell: true)
-  const [, ...args] = command.split(/\s+/);
+function runCommand(file: string, args: string[], timeoutMs: number): Promise<{ exitCode: number; output: string }> {
   return new Promise((resolve) => {
-    execFile(resolvedFile, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
+    execFile(file, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
       resolve({
         exitCode: error ? 1 : 0,
         output: (stdout + stderr).trim(),
