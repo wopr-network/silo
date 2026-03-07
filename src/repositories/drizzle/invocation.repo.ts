@@ -123,6 +123,14 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
     return toInvocation(row[0]);
   }
 
+  async releaseClaim(id: string): Promise<void> {
+    this.db
+      .update(invocations)
+      .set({ claimedBy: null, claimedAt: null })
+      .where(and(eq(invocations.id, id), isNull(invocations.completedAt), isNull(invocations.failedAt)))
+      .run();
+  }
+
   async findByEntity(entityId: string): Promise<Invocation[]> {
     const rows = this.db
       .select()

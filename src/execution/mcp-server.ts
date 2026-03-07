@@ -525,7 +525,7 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
   for (const invocation of allCandidates) {
     let claimed: Awaited<ReturnType<typeof deps.invocations.claim>>;
     try {
-      claimed = await deps.invocations.claim(invocation.id, workerId ?? "");
+      claimed = await deps.invocations.claim(invocation.id, workerId ?? `agent:${role}`);
     } catch (err) {
       console.error(`Failed to claim invocation ${invocation.id}:`, err);
       continue;
@@ -533,11 +533,11 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     if (claimed) {
       const entity = entityMap.get(claimed.entityId);
       if (entity) {
-        const claimedEntity = await deps.entities.claimById(entity.id, workerId ?? "");
+        const claimedEntity = await deps.entities.claimById(entity.id, workerId ?? `agent:${role}`);
         if (!claimedEntity) {
           // Race condition: another worker claimed this entity first.
-          // Release the invocation claim so it doesn't become a zombie lock.
-          await deps.invocations.fail(claimed.id, "entity claimed by another worker; releasing invocation lock");
+          // Release the invocation claim so it can be picked up by another worker.
+          await deps.invocations.releaseClaim(claimed.id);
           continue;
         }
       }

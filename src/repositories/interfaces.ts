@@ -305,6 +305,9 @@ export interface IInvocationRepository {
   /** Mark an invocation as failed with an error message. */
   fail(id: string, error: string): Promise<Invocation>;
 
+  /** Release a claim on an invocation, making it available for another worker to claim. */
+  releaseClaim(id: string): Promise<void>;
+
   /** Find all invocations for a given entity. */
   findByEntity(entityId: string): Promise<Invocation[]>;
 

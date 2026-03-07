@@ -401,8 +401,8 @@ export class Engine {
       }
 
       // No pre-existing unclaimed invocations — claim entity directly and create invocation
-      // Filter states that have any agentRole (not filtering by discipline string, which conflates two concepts)
-      const claimableStates = flow.states.filter((s) => s.agentRole != null);
+      // Filter states whose agentRole matches the requesting role to prevent cross-role work theft
+      const claimableStates = flow.states.filter((s) => s.agentRole === role);
       for (const state of claimableStates) {
         const claimed = await this.entityRepo.claim(flow.id, state.name, `agent:${role}`);
         if (claimed) {
