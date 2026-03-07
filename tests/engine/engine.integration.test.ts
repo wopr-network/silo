@@ -492,5 +492,34 @@ describe("Engine integration (in-memory SQLite)", () => {
     // Entity stays in working state (flow.fail does NOT transition — it just marks invocation failed)
     const finalEntity = await ctx.entityRepo.get(entity.id);
     expect(finalEntity!.state).toBe("working");
+
+    // After flow.fail, entity is NOT reclaimable: no unclaimed invocation exists, so flow.claim returns check_back
+    const reclaimResult = await callToolHandler(mcpDeps, "flow.claim", { role: "coder" });
+    expect(reclaimResult.isError).toBeUndefined();
+    const reclaimData = JSON.parse(reclaimResult.content[0].text) as { next_action: string };
+    expect(reclaimData.next_action).toBe("check_back");
+  });
+
+  it("error terminal: working→error transition via fail signal", async () => {
+    const seedPath = resolve(__dirname, "fixtures/error-terminal-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("error-pipeline");
+    expect(entity.state).toBe("queued");
+
+    await ctx.engine.processSignal(entity.id, "start");
+    const entityInWorking = await ctx.entityRepo.get(entity.id);
+    expect(entityInWorking!.state).toBe("working");
+
+    // Transition working→error via fail signal
+    const r = await ctx.engine.processSignal(entity.id, "fail");
+    expect(r.newState).toBe("error");
+    expect(r.terminal).toBe(true);
+
+    const finalEntity = await ctx.entityRepo.get(entity.id);
+    expect(finalEntity!.state).toBe("error");
+
+    const history = await ctx.transitionLogRepo.historyFor(entity.id);
+    expect(history.some((h) => h.fromState === "working" && h.toState === "error" && h.trigger === "fail")).toBe(true);
   });
 });

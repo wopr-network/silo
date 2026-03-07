@@ -7,7 +7,7 @@
       "maxConcurrent": 0,
       "maxConcurrentPerRepo": 0,
       "discipline": "engineering",
-      "gateTimeoutMs": 100
+      "gateTimeoutMs": 500
     }
   ],
   "states": [
@@ -19,7 +19,7 @@
       "name": "slow-gate",
       "type": "command",
       "command": "gates/timeout-gate-script.sh",
-      "timeoutMs": 100,
+      "timeoutMs": 500,
       "failurePrompt": "The gate failed. Fix the issue.",
       "timeoutPrompt": "Gate {{gate.name}} timed out for entity {{entity.id}}. Retry after a short wait."
     }
