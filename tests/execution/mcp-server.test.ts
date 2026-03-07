@@ -138,6 +138,7 @@ function createMockDeps(): McpServerDeps {
     create: async () => mockEntity(),
     get: async (id) => (id === "ent-1" ? mockEntity() : null),
     findByFlowAndState: async () => [mockEntity()],
+    hasAnyInFlowAndState: async () => true,
     transition: async (_id, toState) => mockEntity({ state: toState }),
     updateArtifacts: async () => {},
     claim: async () => mockEntity({ claimedBy: "agent-1" }),
@@ -346,11 +347,16 @@ describe("MCP tool handlers", () => {
     expect(data).toHaveProperty("prompt");
   });
 
-  it("flow.claim returns null when no work available", async () => {
+  it("flow.claim returns structured check_back when no work available (empty backlog)", async () => {
     deps.invocations.findUnclaimedByFlow = async () => [];
+    deps.entities.findByFlowAndState = async () => [];
+    deps.entities.hasAnyInFlowAndState = async () => false;
     const result = await callTool("flow.claim", { workerId: "wkr_test", role: "coder", flow: "test-flow" });
     const content = result.content as Array<{ type: string; text: string }>;
-    expect(JSON.parse(content[0].text)).toBeNull();
+    const data = JSON.parse(content[0].text);
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(300000);
+    expect(data.message).toContain("No work available");
   });
 
   it("flow.claim returns error for unknown flow", async () => {
@@ -952,7 +958,8 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
 
     const result = await callClaim({ workerId: "wkr_eng", role: "engineering" });
     const data = parseResult(result as { content: Array<{ text: string }> });
-    expect(data).toBeNull();
+    expect(data.next_action).toBe("check_back");
+    expect((result as { isError?: boolean }).isError).toBeUndefined();
   });
 
   it("claims across all matching-discipline flows when flow param omitted", async () => {
@@ -1056,24 +1063,88 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     expect(data.invocation_id).toBe("inv-old");
   });
 
-  it("returns null when no entities available for discipline", async () => {
+  it("returns check_back when no entities available for discipline", async () => {
     const flow1 = mockFlow({ id: "flow-1", name: "eng-flow", discipline: "engineering" });
     deps.flows.list = async () => [flow1];
     deps.flows.listAll = async () => [flow1];
     deps.invocations.findUnclaimedByFlow = async () => [];
+    deps.entities.findByFlowAndState = async () => [];
+    deps.entities.hasAnyInFlowAndState = async () => false;
 
     const result = await callClaim({ workerId: "wkr_test", role: "engineering" });
     const data = parseResult(result as { content: Array<{ text: string }> });
-    expect(data).toBeNull();
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(300000);
   });
 
-  it("flow param validates discipline match and returns null on mismatch", async () => {
+  it("flow param validates discipline match and returns check_back on mismatch", async () => {
     const devopsFlow = mockFlow({ id: "flow-ops", name: "deploy", discipline: "devops" });
     deps.flows.getByName = async (name) => (name === "deploy" ? devopsFlow : null);
 
     const result = await callClaim({ workerId: "wkr_eng", role: "engineering", flow: "deploy" });
     const data = parseResult(result as { content: Array<{ text: string }> });
-    expect(data).toBeNull();
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(300000);
     expect((result as { isError?: boolean }).isError).toBeUndefined();
+  });
+
+  it("returns check_back with 30s retry when entities exist but are all claimed", async () => {
+    // Use role "coder" to match the default mockFlow state agentRole
+    const flow1 = mockFlow({ id: "flow-1", name: "coder-flow", discipline: null });
+    deps.flows.list = async () => [flow1];
+    deps.flows.listAll = async () => [flow1];
+    deps.invocations.findUnclaimedByFlow = async () => [];
+    // Entities exist in the "draft" state whose agentRole is "coder"
+    deps.entities.findByFlowAndState = async (_flowId, stateName) => {
+      if (stateName === "draft") return [mockEntity({ id: "ent-claimed", claimedBy: "wkr_other" })];
+      return [];
+    };
+    deps.entities.hasAnyInFlowAndState = async () => true;
+
+    const result = await callClaim({ workerId: "wkr_test", role: "coder" });
+    const data = parseResult(result as { content: Array<{ text: string }> });
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(30000);
+  });
+
+  it("returns check_back with 300s retry when all entities are in terminal states (agentRole=null)", async () => {
+    // Flow has a "done" state with agentRole=null. All entities are in that terminal state.
+    // hasAnyInFlowAndState should only be called with claimable state names, not "done".
+    // If terminal states were included, hasAnyInFlowAndState would return true → wrongly 30s retry.
+    const flow1 = mockFlow({ id: "flow-1", name: "test-flow", discipline: null });
+    deps.flows.list = async () => [flow1];
+    deps.flows.listAll = async () => [flow1];
+    deps.invocations.findUnclaimedByFlow = async () => [];
+    deps.entities.findByFlowAndState = async () => [];
+    // hasAnyInFlowAndState returns true only if "done" (terminal) is passed — should NOT be called with it
+    deps.entities.hasAnyInFlowAndState = async (_flowId, stateNames) => {
+      if (stateNames.includes("done")) return true; // would trigger wrong 30s if terminal states leak through
+      return false;
+    };
+
+    const result = await callClaim({ workerId: "wkr_test", role: "coder" });
+    const data = parseResult(result as { content: Array<{ text: string }> });
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(300000); // 300s = empty backlog, not 30s
+  });
+
+  it("returns check_back with 30s retry when discipline-filtered flow has entities but discipline !== agentRole", async () => {
+    // discipline "engineering" matches the flow; state.agentRole is "coder" (different from discipline)
+    // The old code filtered states by agentRole === role, wrongly excluding all states → 300s
+    // The correct code checks all states in candidateFlows → finds entities → 30s
+    const flow1 = mockFlow({ id: "flow-1", name: "eng-flow", discipline: "engineering" });
+    deps.flows.list = async () => [flow1];
+    deps.flows.listAll = async () => [flow1];
+    deps.invocations.findUnclaimedByFlow = async () => [];
+    deps.entities.findByFlowAndState = async (_flowId, stateName) => {
+      if (stateName === "draft") return [mockEntity({ id: "ent-eng", claimedBy: "wkr_other" })];
+      return [];
+    };
+    deps.entities.hasAnyInFlowAndState = async () => true;
+
+    const result = await callClaim({ workerId: "wkr_eng", role: "engineering" });
+    const data = parseResult(result as { content: Array<{ text: string }> });
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBe(30000);
   });
 });

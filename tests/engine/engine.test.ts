@@ -69,6 +69,7 @@ function makeMockRepos() {
     create: vi.fn().mockResolvedValue(makeEntity()),
     get: vi.fn().mockResolvedValue(makeEntity()),
     findByFlowAndState: vi.fn().mockResolvedValue([]),
+    hasAnyInFlowAndState: vi.fn().mockResolvedValue(false),
     transition: vi.fn().mockImplementation(async (id: string, toState: string) =>
       makeEntity({ id, state: toState }),
     ),

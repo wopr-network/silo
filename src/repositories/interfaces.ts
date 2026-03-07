@@ -215,6 +215,9 @@ export interface IEntityRepository {
   /** Find all entities in a given flow and state. */
   findByFlowAndState(flowId: string, state: string): Promise<Entity[]>;
 
+  /** Return true if at least one entity exists in the given flow across any of the given states. */
+  hasAnyInFlowAndState(flowId: string, stateNames: string[]): Promise<boolean>;
+
   /** Transition an entity to a new state, recording the trigger and optional artifacts. */
   transition(id: string, toState: string, trigger: string, artifacts?: Partial<Artifacts>): Promise<Entity>;
 

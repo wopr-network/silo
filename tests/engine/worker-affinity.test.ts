@@ -115,6 +115,7 @@ function makeEntityRepo(overrides: Partial<IEntityRepository> = {}): IEntityRepo
     create: vi.fn(),
     get: vi.fn().mockResolvedValue(makeEntity()),
     findByFlowAndState: vi.fn().mockResolvedValue([]),
+    hasAnyInFlowAndState: vi.fn().mockResolvedValue(false),
     transition: vi.fn(),
     updateArtifacts: vi.fn(),
     claim: vi.fn().mockResolvedValue(null),

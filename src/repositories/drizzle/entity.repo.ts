@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, not } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, not } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { Artifacts, Entity, IEntityRepository, Refs } from "../interfaces.js";
 import type * as schema from "./schema.js";
@@ -61,6 +61,16 @@ export class DrizzleEntityRepository implements IEntityRepository {
       .from(entities)
       .where(and(eq(entities.flowId, flowId), eq(entities.state, state)));
     return rows.map((r) => this.toEntity(r));
+  }
+
+  async hasAnyInFlowAndState(flowId: string, stateNames: string[]): Promise<boolean> {
+    if (stateNames.length === 0) return false;
+    const rows = await this.db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.flowId, flowId), inArray(entities.state, stateNames)))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async transition(

@@ -82,10 +82,7 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
   router.add("POST", "/api/flows/:flow/claim", async (req) => {
     const args = { role: req.body?.role as string, flow: req.params.flow };
     const result = await callToolHandler(deps.mcpDeps, "flow.claim", args);
-    const apiRes = mcpResultToApi(result);
-    // null result (no work) → 204
-    if (apiRes.status === 200 && apiRes.body === null) return { status: 204, body: null };
-    return apiRes;
+    return mcpResultToApi(result);
   });
 
   // --- Entity report ---
