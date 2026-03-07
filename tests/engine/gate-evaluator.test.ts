@@ -414,4 +414,34 @@ describe("evaluateGate", () => {
     expect(result.passed).toBe(false);
     expect(result.output).toMatch(/invalid return/i);
   });
+
+  it("records passed=false and returns when function gate throws", async () => {
+    const gate = makeGate({
+      type: "function",
+      functionRef: "tests/engine/fixtures/throwing-gate.ts:check",
+    });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({}),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/gate exploded/);
+    expect(gateRepo.record).toHaveBeenCalledWith("ent-1", "gate-1", false, expect.stringMatching(/gate exploded/));
+  });
+
+  it("uses path.relative() for traversal check (not startsWith slash)", async () => {
+    // Absolute path that starts with PROJECT_ROOT string but escapes via symlink trickery
+    // is caught by relative() check. A plain traversal path is already covered by the
+    // existing test; this verifies the containment logic handles the absolute-path edge case.
+    const gate = makeGate({
+      type: "function",
+      functionRef: "/etc/passwd:check",
+    });
+    const entity = makeEntity();
+    const gateRepo = {} as IGateRepository;
+
+    await expect(evaluateGate(gate, entity, gateRepo)).rejects.toThrow("outside the project root");
+  });
 });

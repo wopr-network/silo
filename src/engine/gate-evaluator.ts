@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
@@ -117,10 +117,11 @@ async function runFunction(
     // File doesn't exist yet — use the unresolved path for the bounds check
     realPath = absPath;
   }
-  if (!realPath.startsWith(`${PROJECT_ROOT}/`) && realPath !== PROJECT_ROOT) {
+  const rel = relative(PROJECT_ROOT, realPath);
+  if (rel.startsWith("..") || resolve(PROJECT_ROOT, rel) !== realPath) {
     throw new Error(`Gate modulePath "${modulePath}" resolves outside the project root`);
   }
-  const moduleUrl = pathToFileURL(absPath).href;
+  const moduleUrl = pathToFileURL(realPath).href;
 
   const mod = await import(moduleUrl);
   const fn = mod[exportName];
@@ -136,6 +137,8 @@ async function runFunction(
   let result: { passed: boolean; output: string };
   try {
     result = await Promise.race([Promise.resolve(fn(entity, gate)), timeoutPromise]);
+  } catch (err) {
+    result = { passed: false, output: `Function gate error: ${err instanceof Error ? err.message : String(err)}` };
   } finally {
     clearTimeout(timer);
   }
