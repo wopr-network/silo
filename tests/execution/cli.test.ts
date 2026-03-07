@@ -120,9 +120,9 @@ describe("CLI", () => {
       run(["init", "--seed", seedPath], { AGENTIC_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
 
       // Use port 0 to let the OS pick an ephemeral port
-      const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--db", dbPath], {
+      const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--mcp-only", "--db", dbPath], {
         cwd: join(import.meta.dirname, "../.."),
-        env: { ...process.env, AGENTIC_DB_PATH: dbPath },
+        env: { ...process.env, AGENTIC_DB_PATH: dbPath, DEFCON_ADMIN_TOKEN: "test-token" },
       });
 
       // Poll until server is ready instead of fixed sleep

@@ -34,6 +34,29 @@ import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
 const DB_DEFAULT = process.env.AGENTIC_DB_PATH ?? "./agentic-flow.db";
+
+/**
+ * Validates that DEFCON_ADMIN_TOKEN is set when network transports are active.
+ * Throws if a network transport (HTTP or SSE) is started without a token.
+ * Stdio-only mode is exempt (local, single-user).
+ */
+export function validateAdminToken(opts: {
+  adminToken: string | undefined;
+  startHttp: boolean;
+  transport: string;
+}): void {
+  const transport = opts.transport.toLowerCase().trim();
+  const token = opts.adminToken?.trim();
+  const networkActive = opts.startHttp || transport === "sse";
+  if (networkActive && !token) {
+    throw new Error(
+      "DEFCON_ADMIN_TOKEN must be set when using HTTP or SSE transport. " +
+        "Admin tools are accessible over the network and require authentication. " +
+        "Set DEFCON_ADMIN_TOKEN in your environment or use stdio transport for local-only access.",
+    );
+  }
+}
+
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 const REAPER_INTERVAL_DEFAULT = "30000"; // 30s
 const CLAIM_TTL_DEFAULT = "300000"; // 5min
@@ -181,6 +204,7 @@ program
 
     if (opts.httpOnly && opts.mcpOnly) {
       console.error("Cannot use --http-only and --mcp-only together");
+      await stopReaper();
       sqlite.close();
       process.exit(1);
     }
@@ -189,6 +213,15 @@ program
 
     const startHttp = !opts.mcpOnly;
     const startMcp = !opts.httpOnly;
+
+    try {
+      validateAdminToken({ adminToken, startHttp, transport: opts.transport });
+    } catch (err: unknown) {
+      console.error((err as Error).message);
+      await stopReaper();
+      sqlite.close();
+      process.exit(1);
+    }
 
     let restHttpServer: ReturnType<typeof createHttpServer> | undefined;
     if (startHttp) {
@@ -200,9 +233,6 @@ program
         const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;
         console.error(`HTTP REST API listening on ${httpHost}:${boundPort}`);
       });
-      if (!adminToken) {
-        console.warn("WARNING: DEFCON_ADMIN_TOKEN not set — admin routes are unauthenticated");
-      }
     }
 
     if (opts.transport === "sse" && startMcp) {
@@ -280,9 +310,6 @@ program
         const boundPort = addr && typeof addr === "object" ? addr.port : port;
         console.log(`MCP SSE server listening on ${host}:${boundPort}`);
       });
-      if (!adminToken) {
-        console.warn("WARNING: DEFCON_ADMIN_TOKEN not set — admin tools are unauthenticated");
-      }
 
       const shutdown = () => {
         restHttpServer?.close();
