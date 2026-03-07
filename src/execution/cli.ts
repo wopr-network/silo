@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createHash, timingSafeEqual } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 import { Command } from "commander";
@@ -33,6 +34,7 @@ import {
 import { DrizzleTransitionLogRepository } from "../repositories/drizzle/transition-log.repo.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
+import { provisionWorktree } from "./provision-worktree.js";
 
 const DB_DEFAULT = process.env.AGENTIC_DB_PATH ?? "./agentic-flow.db";
 
@@ -464,6 +466,29 @@ program
     }
 
     sqlite.close();
+  });
+
+// ─── provision-worktree ───
+program
+  .command("provision-worktree")
+  .description("Provision a git worktree and branch for an issue")
+  .argument("<repo>", "GitHub repo (e.g. wopr-network/defcon)")
+  .argument("<issue-key>", "Issue key (e.g. WOP-392)")
+  .option("--base-path <path>", "Worktree base directory", join(homedir(), "worktrees"))
+  .option("--clone-root <path>", "Directory where repos are cloned", homedir())
+  .action((repo: string, issueKey: string, opts: { basePath: string; cloneRoot: string }) => {
+    try {
+      const result = provisionWorktree({
+        repo,
+        issueKey,
+        basePath: opts.basePath,
+        cloneRoot: opts.cloneRoot,
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } catch (err) {
+      process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(1);
+    }
   });
 
 /**
