@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { Command } from "commander";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { createHttpServer } from "../api/server.js";
 import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { Engine } from "../engine/engine.js";
@@ -125,6 +126,10 @@ program
   .option("--db <path>", "Database path", DB_DEFAULT)
   .option("--reaper-interval <ms>", "Reaper poll interval in milliseconds", REAPER_INTERVAL_DEFAULT)
   .option("--claim-ttl <ms>", "Claim TTL in milliseconds", CLAIM_TTL_DEFAULT)
+  .option("--http-only", "Start HTTP REST server only (no MCP stdio)")
+  .option("--mcp-only", "Start MCP stdio only (no HTTP REST server)")
+  .option("--http-port <number>", "Port for HTTP REST API", "3000")
+  .option("--http-host <address>", "Host for HTTP REST API", "127.0.0.1")
   .action(async (opts) => {
     const { db, sqlite } = openDb(opts.db);
     const entityRepo = new DrizzleEntityRepository(db);
@@ -176,7 +181,30 @@ program
 
     const adminToken = process.env.DEFCON_ADMIN_TOKEN || undefined;
 
-    if (opts.transport === "sse") {
+    const startHttp = !opts.mcpOnly;
+    const startMcp = !opts.httpOnly;
+
+    if (startHttp) {
+      const httpPort = parseInt(opts.httpPort as string, 10);
+      const httpHost = opts.httpHost as string;
+      const httpServer = createHttpServer({ engine, mcpDeps: deps, adminToken });
+      httpServer.listen(httpPort, httpHost, () => {
+        const addr = httpServer.address();
+        const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;
+        console.error(`HTTP REST API listening on ${httpHost}:${boundPort}`);
+      });
+      if (!adminToken) {
+        console.warn("WARNING: DEFCON_ADMIN_TOKEN not set — admin routes are unauthenticated");
+      }
+
+      const httpShutdown = () => {
+        httpServer.close();
+      };
+      process.on("SIGINT", httpShutdown);
+      process.on("SIGTERM", httpShutdown);
+    }
+
+    if (opts.transport === "sse" && startMcp) {
       const { SSEServerTransport } = await import("@modelcontextprotocol/sdk/server/sse.js");
       const http = await import("node:http");
       const port = parseInt(opts.port, 10);
@@ -264,7 +292,7 @@ program
       };
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
-    } else {
+    } else if (startMcp) {
       // stdio (default)
       console.error("Starting MCP server on stdio...");
       const cleanup = () => {
@@ -277,6 +305,16 @@ program
       process.on("SIGTERM", cleanup);
       const mcpOpts: McpServerOpts = { adminToken, stdioTrusted: true };
       await startStdioServer(deps, mcpOpts);
+    } else {
+      // HTTP-only mode — keep process alive
+      const cleanup = () => {
+        stopReaper().then(() => {
+          sqlite.close();
+          process.exit(0);
+        });
+      };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
     }
   });
 
