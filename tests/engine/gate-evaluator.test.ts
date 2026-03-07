@@ -431,7 +431,7 @@ describe("evaluateGate", () => {
     expect(gateRepo.record).toHaveBeenCalledWith("ent-1", "gate-1", false, expect.stringMatching(/gate exploded/));
   });
 
-  it("uses path.relative() for traversal check (not startsWith slash)", async () => {
+  it("returns passed=false for absolute path outside project root (traversal via absolute path)", async () => {
     // Absolute path that starts with PROJECT_ROOT string but escapes via symlink trickery
     // is caught by relative() check. A plain traversal path is already covered by the
     // existing test; this verifies the containment logic handles the absolute-path edge case.
@@ -440,8 +440,13 @@ describe("evaluateGate", () => {
       functionRef: "/etc/passwd:check",
     });
     const entity = makeEntity();
-    const gateRepo = {} as IGateRepository;
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({}),
+    };
 
-    await expect(evaluateGate(gate, entity, gateRepo)).rejects.toThrow("outside the project root");
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(false);
+    expect(result.output).toMatch(/outside the project root/);
+    expect(gateRepo.record).toHaveBeenCalledWith("ent-1", "gate-1", false, expect.stringMatching(/outside the project root/));
   });
 });
