@@ -247,6 +247,47 @@ export const SeedFileSchema = z
         });
       }
     }
+
+    // Detect circular spawnFlow chains via DFS
+    const spawnAdj = new Map<string, Set<string>>();
+    for (const t of seed.transitions) {
+      if (t.spawnFlow && flowNames.has(t.flowName) && flowNames.has(t.spawnFlow)) {
+        if (!spawnAdj.has(t.flowName)) spawnAdj.set(t.flowName, new Set());
+        spawnAdj.get(t.flowName)?.add(t.spawnFlow);
+      }
+    }
+
+    const visited = new Set<string>();
+    const inStack = new Set<string>();
+
+    function dfs(node: string, path: string[]): string[] | null {
+      if (inStack.has(node)) return [...path, node];
+      if (visited.has(node)) return null;
+      visited.add(node);
+      inStack.add(node);
+      for (const neighbor of spawnAdj.get(node) ?? []) {
+        const cycle = dfs(neighbor, [...path, node]);
+        if (cycle) return cycle;
+      }
+      inStack.delete(node);
+      return null;
+    }
+
+    for (const flowName of spawnAdj.keys()) {
+      if (visited.has(flowName)) continue;
+      const cycle = dfs(flowName, []);
+      if (cycle) {
+        const cycleStart = cycle[cycle.length - 1];
+        const cycleStartIdx = cycle.indexOf(cycleStart);
+        const cyclePath = cycle.slice(cycleStartIdx);
+        ctx.addIssue({
+          code: "custom",
+          message: `Circular spawnFlow chain detected: ${cyclePath.join(" -> ")}`,
+          path: ["transitions"],
+        });
+        break;
+      }
+    }
   });
 
 // ─── Inferred Types ───

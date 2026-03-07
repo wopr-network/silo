@@ -544,4 +544,102 @@ describe("SeedFileSchema", () => {
       expect(result.data.integrations).toEqual([]);
     }
   });
+
+  it("rejects direct self-spawn cycle (A spawns A)", () => {
+    const seed = {
+      flows: [{ name: "flow-a", initialState: "open" }],
+      states: [
+        { name: "open", flowName: "flow-a" },
+        { name: "done", flowName: "flow-a" },
+      ],
+      transitions: [
+        { flowName: "flow-a", fromState: "open", toState: "done", trigger: "finish", spawnFlow: "flow-a" },
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.toLowerCase().includes("circular") && m.includes("flow-a"))).toBe(true);
+    }
+  });
+
+  it("rejects two-flow circular spawn chain (A spawns B, B spawns A)", () => {
+    const seed = {
+      flows: [
+        { name: "flow-a", initialState: "start" },
+        { name: "flow-b", initialState: "start" },
+      ],
+      states: [
+        { name: "start", flowName: "flow-a" },
+        { name: "end", flowName: "flow-a" },
+        { name: "start", flowName: "flow-b" },
+        { name: "end", flowName: "flow-b" },
+      ],
+      transitions: [
+        { flowName: "flow-a", fromState: "start", toState: "end", trigger: "go", spawnFlow: "flow-b" },
+        { flowName: "flow-b", fromState: "start", toState: "end", trigger: "go", spawnFlow: "flow-a" },
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.toLowerCase().includes("circular"))).toBe(true);
+    }
+  });
+
+  it("rejects three-flow circular spawn chain (A→B→C→A)", () => {
+    const seed = {
+      flows: [
+        { name: "flow-a", initialState: "s" },
+        { name: "flow-b", initialState: "s" },
+        { name: "flow-c", initialState: "s" },
+      ],
+      states: [
+        { name: "s", flowName: "flow-a" },
+        { name: "e", flowName: "flow-a" },
+        { name: "s", flowName: "flow-b" },
+        { name: "e", flowName: "flow-b" },
+        { name: "s", flowName: "flow-c" },
+        { name: "e", flowName: "flow-c" },
+      ],
+      transitions: [
+        { flowName: "flow-a", fromState: "s", toState: "e", trigger: "go", spawnFlow: "flow-b" },
+        { flowName: "flow-b", fromState: "s", toState: "e", trigger: "go", spawnFlow: "flow-c" },
+        { flowName: "flow-c", fromState: "s", toState: "e", trigger: "go", spawnFlow: "flow-a" },
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.toLowerCase().includes("circular"))).toBe(true);
+    }
+  });
+
+  it("accepts acyclic spawn chains (A spawns B, B spawns C, no cycle)", () => {
+    const seed = {
+      flows: [
+        { name: "flow-a", initialState: "s" },
+        { name: "flow-b", initialState: "s" },
+        { name: "flow-c", initialState: "s" },
+      ],
+      states: [
+        { name: "s", flowName: "flow-a" },
+        { name: "e", flowName: "flow-a" },
+        { name: "s", flowName: "flow-b" },
+        { name: "e", flowName: "flow-b" },
+        { name: "s", flowName: "flow-c" },
+        { name: "e", flowName: "flow-c" },
+      ],
+      transitions: [
+        { flowName: "flow-a", fromState: "s", toState: "e", trigger: "go", spawnFlow: "flow-b" },
+        { flowName: "flow-b", fromState: "s", toState: "e", trigger: "go", spawnFlow: "flow-c" },
+        { flowName: "flow-c", fromState: "s", toState: "e", trigger: "go" },
+      ],
+    };
+    const result = SeedFileSchema.safeParse(seed);
+    expect(result.success).toBe(true);
+  });
 });
