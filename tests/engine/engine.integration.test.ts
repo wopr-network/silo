@@ -257,4 +257,269 @@ describe("Engine integration (in-memory SQLite)", () => {
     const finalEntity = await ctx.entityRepo.get(entity.id);
     expect(finalEntity!.state).toBe("done");
   });
+
+  it("multi-gate traversal: two sequential gates pass, assertions at each boundary", async () => {
+    const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("multi-gate-pipeline");
+    expect(entity.state).toBe("draft");
+
+    // Gate 1: lint-check on draft→review
+    const r1 = await ctx.engine.processSignal(entity.id, "submit");
+    expect(r1.gated).toBe(false);
+    expect(r1.newState).toBe("review");
+    expect(r1.gatesPassed).toContain("lint-check");
+    expect(r1.terminal).toBe(false);
+
+    const afterR1 = await ctx.entityRepo.get(entity.id);
+    expect(afterR1!.state).toBe("review");
+
+    // Gate 2: deploy-check on review→staging
+    const r2 = await ctx.engine.processSignal(entity.id, "approve");
+    expect(r2.gated).toBe(false);
+    expect(r2.newState).toBe("staging");
+    expect(r2.gatesPassed).toContain("deploy-check");
+    expect(r2.terminal).toBe(false);
+
+    const afterR2 = await ctx.entityRepo.get(entity.id);
+    expect(afterR2!.state).toBe("staging");
+
+    // Final ungated transition: staging→released
+    const r3 = await ctx.engine.processSignal(entity.id, "ship");
+    expect(r3.gated).toBe(false);
+    expect(r3.newState).toBe("released");
+    expect(r3.gatesPassed).toEqual([]);
+    expect(r3.terminal).toBe(true);
+
+    // Verify gate results recorded for both gates
+    const gateResults = await ctx.gateRepo.resultsFor(entity.id);
+    const passedGates = gateResults.filter((r) => r.passed);
+    expect(passedGates).toHaveLength(2);
+
+    // Verify gate.passed events for both gates
+    const gatePassEvents = ctx.events.filter((e) => e.type === "gate.passed");
+    expect(gatePassEvents).toHaveLength(2);
+  });
+
+  it("transition history: full audit trail with correct from/to/trigger for every step", async () => {
+    const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("multi-gate-pipeline");
+
+    await ctx.engine.processSignal(entity.id, "submit");
+    await ctx.engine.processSignal(entity.id, "approve");
+    await ctx.engine.processSignal(entity.id, "ship");
+
+    const history = await ctx.transitionLogRepo.historyFor(entity.id);
+    expect(history).toHaveLength(3);
+
+    expect(history[0].fromState).toBe("draft");
+    expect(history[0].toState).toBe("review");
+    expect(history[0].trigger).toBe("submit");
+
+    expect(history[1].fromState).toBe("review");
+    expect(history[1].toState).toBe("staging");
+    expect(history[1].trigger).toBe("approve");
+
+    expect(history[2].fromState).toBe("staging");
+    expect(history[2].toState).toBe("released");
+    expect(history[2].trigger).toBe("ship");
+
+    // Timestamps are monotonically increasing
+    for (let i = 1; i < history.length; i++) {
+      expect(history[i].timestamp.getTime()).toBeGreaterThanOrEqual(history[i - 1].timestamp.getTime());
+    }
+  });
+
+  it("event coverage: entity.created + entity.transitioned emitted for full lifecycle", async () => {
+    const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("multi-gate-pipeline");
+
+    await ctx.engine.processSignal(entity.id, "submit");
+    await ctx.engine.processSignal(entity.id, "approve");
+    await ctx.engine.processSignal(entity.id, "ship");
+
+    // entity.created
+    const createdEvents = ctx.events.filter((e) => e.type === "entity.created");
+    expect(createdEvents).toHaveLength(1);
+    expect(createdEvents[0].entityId).toBe(entity.id);
+
+    // entity.transitioned — one per signal
+    const transitionEvents = ctx.events.filter((e) => e.type === "entity.transitioned");
+    expect(transitionEvents).toHaveLength(3);
+
+    const transitions = transitionEvents as Array<{
+      type: "entity.transitioned";
+      entityId: string;
+      fromState: string;
+      toState: string;
+      trigger: string;
+    }>;
+    expect(transitions[0].fromState).toBe("draft");
+    expect(transitions[0].toState).toBe("review");
+    expect(transitions[0].trigger).toBe("submit");
+
+    expect(transitions[1].fromState).toBe("review");
+    expect(transitions[1].toState).toBe("staging");
+    expect(transitions[1].trigger).toBe("approve");
+
+    expect(transitions[2].fromState).toBe("staging");
+    expect(transitions[2].toState).toBe("released");
+    expect(transitions[2].trigger).toBe("ship");
+
+    // gate.passed — 2 gated transitions
+    const gatePassedEvents = ctx.events.filter((e) => e.type === "gate.passed");
+    expect(gatePassedEvents).toHaveLength(2);
+
+    // All events have entityId matching our entity
+    const allEntityEvents = ctx.events.filter(
+      (e) => "entityId" in e && e.entityId === entity.id,
+    );
+    // entity.created(1) + entity.transitioned(3) + gate.passed(2) = 6
+    expect(allEntityEvents).toHaveLength(6);
+  });
+
+  it("gate timeout: gate times out → gateTimedOut true, timeoutPrompt rendered, gate.timedOut event", async () => {
+    const seedPath = resolve(__dirname, "fixtures/timeout-gate-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("timeout-pipeline");
+    expect(entity.state).toBe("pending");
+
+    const result = await ctx.engine.processSignal(entity.id, "validate");
+    expect(result.gated).toBe(true);
+    expect(result.gateTimedOut).toBe(true);
+    expect(result.gateName).toBe("slow-gate");
+    expect(result.newState).toBeUndefined();
+    expect(result.terminal).toBe(false);
+
+    // timeoutPrompt should be rendered with Handlebars
+    expect(result.timeoutPrompt).toContain("slow-gate");
+    expect(result.timeoutPrompt).toContain(entity.id);
+
+    // Entity stays in pending
+    const afterTimeout = await ctx.entityRepo.get(entity.id);
+    expect(afterTimeout!.state).toBe("pending");
+
+    // gate.timedOut event emitted (NOT gate.failed)
+    const timedOutEvents = ctx.events.filter((e) => e.type === "gate.timedOut");
+    expect(timedOutEvents).toHaveLength(1);
+    expect(timedOutEvents[0].entityId).toBe(entity.id);
+
+    const failedEvents = ctx.events.filter((e) => e.type === "gate.failed");
+    expect(failedEvents).toHaveLength(0);
+
+    // Gate failure recorded in entity artifacts
+    const artifacts = afterTimeout!.artifacts as Record<string, unknown>;
+    const failures = artifacts.gate_failures as Array<Record<string, unknown>>;
+    expect(failures).toHaveLength(1);
+    expect(failures[0].gateName).toBe("slow-gate");
+  });
+
+  it("check_back: flow.claim returns check_back with retry_after_ms when no work available", async () => {
+    // Load a flow but do NOT create any entities — no work exists
+    const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const mcpDeps: McpServerDeps = {
+      entities: ctx.entityRepo,
+      flows: ctx.flowRepo,
+      invocations: ctx.invocationRepo,
+      gates: ctx.gateRepo,
+      transitions: ctx.transitionLogRepo,
+      eventRepo: ctx.eventRepo,
+      engine: ctx.engine,
+    };
+
+    const claimResult = await callToolHandler(mcpDeps, "flow.claim", { role: "coder" });
+    expect(claimResult.isError).toBeUndefined();
+    const data = JSON.parse(claimResult.content[0].text) as {
+      next_action: string;
+      retry_after_ms: number;
+      message: string;
+    };
+    expect(data.next_action).toBe("check_back");
+    expect(data.retry_after_ms).toBeGreaterThan(0);
+    expect(data.message).toContain("No work available");
+  });
+
+  it("flow.fail: marks active invocation as failed via MCP callToolHandler", async () => {
+    const seedPath = resolve(__dirname, "fixtures/error-terminal-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("error-pipeline");
+    expect(entity.state).toBe("queued");
+
+    // Move to working state (has promptTemplate, creates invocation)
+    const r1 = await ctx.engine.processSignal(entity.id, "start");
+    expect(r1.newState).toBe("working");
+    expect(r1.invocationId).toBeDefined();
+
+    const mcpDeps: McpServerDeps = {
+      entities: ctx.entityRepo,
+      flows: ctx.flowRepo,
+      invocations: ctx.invocationRepo,
+      gates: ctx.gateRepo,
+      transitions: ctx.transitionLogRepo,
+      eventRepo: ctx.eventRepo,
+      engine: ctx.engine,
+    };
+
+    // Claim the invocation so it becomes "active"
+    const claimResult = await callToolHandler(mcpDeps, "flow.claim", { role: "coder" });
+    expect(claimResult.isError).toBeUndefined();
+    const claimData = JSON.parse(claimResult.content[0].text);
+    expect(claimData.entity_id).toBe(entity.id);
+
+    // Call flow.fail
+    const failResult = await callToolHandler(mcpDeps, "flow.fail", {
+      entity_id: entity.id,
+      error: "Agent encountered unrecoverable error",
+    });
+    expect(failResult.isError).toBeUndefined();
+    const failData = JSON.parse(failResult.content[0].text) as { acknowledged: boolean };
+    expect(failData.acknowledged).toBe(true);
+
+    // Verify invocation is marked failed
+    const invocations = await ctx.invocationRepo.findByEntity(entity.id);
+    const failedInvocations = invocations.filter((i) => i.failedAt !== null);
+    expect(failedInvocations).toHaveLength(1);
+
+    // Entity stays in working state (flow.fail does NOT transition — it just marks invocation failed)
+    const finalEntity = await ctx.entityRepo.get(entity.id);
+    expect(finalEntity!.state).toBe("working");
+
+    // After flow.fail, entity is NOT reclaimable: no unclaimed invocation exists, so flow.claim returns check_back
+    const reclaimResult = await callToolHandler(mcpDeps, "flow.claim", { role: "coder" });
+    expect(reclaimResult.isError).toBeUndefined();
+    const reclaimData = JSON.parse(reclaimResult.content[0].text) as { next_action: string };
+    expect(reclaimData.next_action).toBe("check_back");
+  });
+
+  it("error terminal: working→error transition via fail signal", async () => {
+    const seedPath = resolve(__dirname, "fixtures/error-terminal-flow.seed.json");
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+
+    const entity = await ctx.engine.createEntity("error-pipeline");
+    expect(entity.state).toBe("queued");
+
+    await ctx.engine.processSignal(entity.id, "start");
+    const entityInWorking = await ctx.entityRepo.get(entity.id);
+    expect(entityInWorking!.state).toBe("working");
+
+    // Transition working→error via fail signal
+    const r = await ctx.engine.processSignal(entity.id, "fail");
+    expect(r.newState).toBe("error");
+    expect(r.terminal).toBe(true);
+
+    const finalEntity = await ctx.entityRepo.get(entity.id);
+    expect(finalEntity!.state).toBe("error");
+
+    const history = await ctx.transitionLogRepo.historyFor(entity.id);
+    expect(history.some((h) => h.fromState === "working" && h.toState === "error" && h.trigger === "fail")).toBe(true);
+  });
 });

@@ -1,0 +1,57 @@
+{
+  "flows": [
+    {
+      "name": "multi-gate-pipeline",
+      "description": "4-state flow with gates on two consecutive transitions",
+      "initialState": "draft",
+      "maxConcurrent": 0,
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering"
+    }
+  ],
+  "states": [
+    { "name": "draft", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "review", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "staging", "flowName": "multi-gate-pipeline", "mode": "passive" },
+    { "name": "released", "flowName": "multi-gate-pipeline", "mode": "passive" }
+  ],
+  "gates": [
+    {
+      "name": "lint-check",
+      "type": "command",
+      "command": "gates/test-pass.sh",
+      "timeoutMs": 5000
+    },
+    {
+      "name": "deploy-check",
+      "type": "command",
+      "command": "gates/test-pass.sh",
+      "timeoutMs": 5000
+    }
+  ],
+  "transitions": [
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "draft",
+      "toState": "review",
+      "trigger": "submit",
+      "gateName": "lint-check",
+      "priority": 0
+    },
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "review",
+      "toState": "staging",
+      "trigger": "approve",
+      "gateName": "deploy-check",
+      "priority": 0
+    },
+    {
+      "flowName": "multi-gate-pipeline",
+      "fromState": "staging",
+      "toState": "released",
+      "trigger": "ship",
+      "priority": 0
+    }
+  ]
+}

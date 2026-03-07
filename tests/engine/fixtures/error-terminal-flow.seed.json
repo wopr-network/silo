@@ -1,0 +1,29 @@
+{
+  "flows": [
+    {
+      "name": "error-pipeline",
+      "description": "Flow with error terminal state reachable via fail signal",
+      "initialState": "queued",
+      "maxConcurrent": 0,
+      "maxConcurrentPerRepo": 0,
+      "discipline": "coder"
+    }
+  ],
+  "states": [
+    { "name": "queued", "flowName": "error-pipeline", "mode": "passive" },
+    {
+      "name": "working",
+      "flowName": "error-pipeline",
+      "mode": "active",
+      "promptTemplate": "Do the work for {{entity.id}}"
+    },
+    { "name": "done", "flowName": "error-pipeline", "mode": "passive" },
+    { "name": "error", "flowName": "error-pipeline", "mode": "passive" }
+  ],
+  "gates": [],
+  "transitions": [
+    { "flowName": "error-pipeline", "fromState": "queued", "toState": "working", "trigger": "start", "priority": 0 },
+    { "flowName": "error-pipeline", "fromState": "working", "toState": "done", "trigger": "completed", "priority": 0 },
+    { "flowName": "error-pipeline", "fromState": "working", "toState": "error", "trigger": "fail", "priority": 0 }
+  ]
+}

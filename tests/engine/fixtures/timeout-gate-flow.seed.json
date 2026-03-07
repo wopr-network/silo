@@ -1,0 +1,37 @@
+{
+  "flows": [
+    {
+      "name": "timeout-pipeline",
+      "description": "Flow with a gate that always times out",
+      "initialState": "pending",
+      "maxConcurrent": 0,
+      "maxConcurrentPerRepo": 0,
+      "discipline": "engineering",
+      "gateTimeoutMs": 500
+    }
+  ],
+  "states": [
+    { "name": "pending", "flowName": "timeout-pipeline", "mode": "passive" },
+    { "name": "validated", "flowName": "timeout-pipeline", "mode": "passive" }
+  ],
+  "gates": [
+    {
+      "name": "slow-gate",
+      "type": "command",
+      "command": "gates/timeout-gate-script.sh",
+      "timeoutMs": 500,
+      "failurePrompt": "The gate failed. Fix the issue.",
+      "timeoutPrompt": "Gate {{gate.name}} timed out for entity {{entity.id}}. Retry after a short wait."
+    }
+  ],
+  "transitions": [
+    {
+      "flowName": "timeout-pipeline",
+      "fromState": "pending",
+      "toState": "validated",
+      "trigger": "validate",
+      "gateName": "slow-gate",
+      "priority": 0
+    }
+  ]
+}
