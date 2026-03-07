@@ -16,6 +16,8 @@ function toGate(row: typeof gateDefinitions.$inferSelect): Gate {
     functionRef: row.functionRef,
     apiConfig: row.apiConfig as Record<string, unknown> | null,
     timeoutMs: row.timeoutMs ?? 30000,
+    failurePrompt: row.failurePrompt ?? null,
+    timeoutPrompt: row.timeoutPrompt ?? null,
   };
 }
 
@@ -43,6 +45,8 @@ export class DrizzleGateRepository implements IGateRepository {
       functionRef: gate.functionRef ?? null,
       apiConfig: gate.apiConfig ?? null,
       ...(gate.timeoutMs != null ? { timeoutMs: gate.timeoutMs } : {}),
+      failurePrompt: gate.failurePrompt ?? null,
+      timeoutPrompt: gate.timeoutPrompt ?? null,
     };
     this.db.insert(gateDefinitions).values(values).run();
     const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();
@@ -86,7 +90,9 @@ export class DrizzleGateRepository implements IGateRepository {
 
   async update(
     id: string,
-    changes: Partial<Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs">>,
+    changes: Partial<
+      Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt">
+    >,
   ): Promise<Gate> {
     this.db.update(gateDefinitions).set(changes).where(eq(gateDefinitions.id, id)).run();
     const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();

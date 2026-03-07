@@ -43,6 +43,13 @@
       "when": 1772894164983,
       "tag": "0005_old_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1772893521314,
+      "tag": "0006_solid_magik",
+      "breakpoints": true
     }
   ]
 }

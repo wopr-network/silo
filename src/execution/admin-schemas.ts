@@ -97,18 +97,24 @@ export const AdminGateCreateSchema = z.discriminatedUnion("type", [
         }
       }),
     timeoutMs: z.number().int().min(0).optional(),
+    failurePrompt: z.string().optional(),
+    timeoutPrompt: z.string().optional(),
   }),
   z.object({
     name: z.string().min(1),
     type: z.literal("function"),
     functionRef: z.string().regex(/^[^:]+:[^:]+$/, "functionRef must be in 'path:exportName' format"),
     timeoutMs: z.number().int().min(0).optional(),
+    failurePrompt: z.string().optional(),
+    timeoutPrompt: z.string().optional(),
   }),
   z.object({
     name: z.string().min(1),
     type: z.literal("api"),
     apiConfig: z.record(z.string(), z.unknown()),
     timeoutMs: z.number().int().min(0).optional(),
+    failurePrompt: z.string().optional(),
+    timeoutPrompt: z.string().optional(),
   }),
 ]);
 

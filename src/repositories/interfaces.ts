@@ -114,6 +114,8 @@ export interface Gate {
   functionRef: string | null;
   apiConfig: Record<string, unknown> | null;
   timeoutMs: number;
+  failurePrompt: string | null;
+  timeoutPrompt: string | null;
 }
 
 /** A complete flow definition with its states and transitions */
@@ -189,6 +191,8 @@ export interface CreateGateInput {
   functionRef?: string;
   apiConfig?: Record<string, unknown>;
   timeoutMs?: number;
+  failurePrompt?: string;
+  timeoutPrompt?: string;
 }
 
 /** Data-access contract for entity lifecycle operations. */
@@ -374,6 +378,8 @@ export interface IGateRepository {
   /** Update mutable fields on a gate definition. */
   update(
     id: string,
-    changes: Partial<Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs">>,
+    changes: Partial<
+      Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt">
+    >,
   ): Promise<Gate>;
 }

@@ -78,6 +78,8 @@ async function parseSeedAndLoad(
         functionRef: "functionRef" in g ? g.functionRef : undefined,
         apiConfig: "apiConfig" in g ? g.apiConfig : undefined,
         timeoutMs: g.timeoutMs,
+        failurePrompt: g.failurePrompt,
+        timeoutPrompt: g.timeoutPrompt,
       });
       gateNameToId.set(g.name, gate.id);
     }
