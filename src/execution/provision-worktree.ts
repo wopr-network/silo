@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface ProvisionWorktreeResult {
   worktreePath: string;
@@ -66,6 +66,9 @@ export function provisionWorktree(opts: {
   const cloneRoot = opts.cloneRoot ?? homedir();
   const name = validateRepoName(repoName(opts.repo));
   const clonePath = join(cloneRoot, name);
+  if (!resolve(clonePath).startsWith(`${resolve(cloneRoot)}/`) && resolve(clonePath) !== resolve(cloneRoot)) {
+    throw new Error(`Repo name escapes cloneRoot: ${name}`);
+  }
   const worktreePath = buildWorktreePath(opts.repo, opts.issueKey, basePath);
   const branch = buildBranch(opts.issueKey);
 
@@ -79,7 +82,11 @@ export function provisionWorktree(opts: {
       }
       const remoteUrl = run("git", ["remote", "get-url", "origin"], worktreePath);
       const repoPath = opts.repo.replace(/\.git$/, "");
-      const urlMatchesRepo = remoteUrl.endsWith(`/${repoPath}`) || remoteUrl.endsWith(`/${repoPath}.git`);
+      const urlMatchesRepo =
+        remoteUrl.endsWith(`/${repoPath}`) ||
+        remoteUrl.endsWith(`/${repoPath}.git`) ||
+        remoteUrl.endsWith(`:${repoPath}`) ||
+        remoteUrl.endsWith(`:${repoPath}.git`);
       if (!urlMatchesRepo) {
         throw new Error(
           `Worktree at ${worktreePath} has unexpected remote: ${remoteUrl} (expected to contain ${opts.repo})`,
@@ -109,7 +116,24 @@ export function provisionWorktree(opts: {
   process.stderr.write(`Creating worktree at ${worktreePath}...\n`);
   const defaultBranchRef = run("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], clonePath);
   const defaultBranch = defaultBranchRef.replace("origin/", "");
-  run("git", ["worktree", "add", worktreePath, "-B", branch, `origin/${defaultBranch}`], clonePath);
+  try {
+    run("git", ["worktree", "add", worktreePath, "-b", branch, `origin/${defaultBranch}`], clonePath);
+  } catch (err) {
+    // Branch may already exist — check if a worktree with the right branch is now present
+    if (existsSync(worktreePath)) {
+      try {
+        run("git", ["rev-parse", "--git-dir"], worktreePath);
+        const currentBranch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"], worktreePath);
+        if (currentBranch === branch) {
+          // Worktree already exists on the correct branch — idempotent success
+          return { worktreePath, branch, repo: opts.repo };
+        }
+      } catch {
+        // fall through to rethrow original error
+      }
+    }
+    throw err;
+  }
 
   // Install dependencies
   const hasPnpmLock = existsSync(join(worktreePath, "pnpm-lock.yaml"));
