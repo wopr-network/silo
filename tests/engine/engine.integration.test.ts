@@ -94,7 +94,8 @@ describe("Engine integration (in-memory SQLite)", () => {
     expect(r1.newState).toBe("coding");
     expect(r1.gated).toBe(false);
     expect(r1.terminal).toBe(false);
-    expect(r1.invocationId).toBeDefined();
+    expect(typeof r1.invocationId).toBe("string");
+    expect(r1.invocationId!.length).toBeGreaterThan(0);
 
     const r2 = await ctx.engine.processSignal(entity.id, "completed");
     expect(r2.newState).toBe("done");
@@ -146,7 +147,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
     const gateResults = await ctx.gateRepo.resultsFor(entity.id);
     expect(gateResults.length).toBeGreaterThanOrEqual(2);
-    expect(gateResults.some((r) => r.passed)).toBe(true);
+    expect(gateResults).toContainEqual(expect.objectContaining({ passed: true }));
   });
 
   it("multi-entity concurrency: 10 entities reach correct states independently", async () => {
@@ -189,7 +190,9 @@ describe("Engine integration (in-memory SQLite)", () => {
     const result = await ctx.engine.processSignal(parentEntity.id, "finish");
     expect(result.newState).toBe("completed");
     expect(result.terminal).toBe(true);
-    expect(result.spawned).toBeDefined();
+    expect(Array.isArray(result.spawned)).toBe(true);
+    expect(result.spawned!.length).toBeGreaterThan(0);
+    expect(typeof result.spawned![0]).toBe("string");
     expect(result.spawned).toHaveLength(1);
 
     const spawnEvents = ctx.events.filter((e) => e.type === "flow.spawned");
@@ -212,7 +215,8 @@ describe("Engine integration (in-memory SQLite)", () => {
     const entity = await ctx.engine.createEntity("simple-pipeline");
     const r1 = await ctx.engine.processSignal(entity.id, "assigned");
     expect(r1.newState).toBe("coding");
-    expect(r1.invocationId).toBeDefined();
+    expect(typeof r1.invocationId).toBe("string");
+    expect(r1.invocationId!.length).toBeGreaterThan(0);
 
     const mcpDeps: McpServerDeps = {
       entities: ctx.entityRepo,
@@ -233,13 +237,14 @@ describe("Engine integration (in-memory SQLite)", () => {
     } | null;
     expect(claimData).not.toBeNull();
     expect(claimData!.entity_id).toBe(entity.id);
-    expect(claimData!.invocation_id).toBeDefined();
+    expect(typeof claimData!.invocation_id).toBe("string");
     expect(claimData!.prompt).toContain(entity.id);
 
     const promptResult = await callToolHandler(mcpDeps, "flow.get_prompt", { entity_id: entity.id });
     expect(promptResult.isError).toBeUndefined();
     const promptData = JSON.parse(promptResult.content[0].text) as { prompt: string };
-    expect(promptData.prompt).toBeDefined();
+    expect(typeof promptData.prompt).toBe("string");
+    expect(promptData.prompt.length).toBeGreaterThan(0);
 
     const reportResult = await callToolHandler(mcpDeps, "flow.report", {
       entity_id: entity.id,

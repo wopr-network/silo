@@ -78,7 +78,8 @@ describe("DrizzleGateRepository", () => {
         command: "npm run lint",
       });
 
-      expect(gate.id).toBeDefined();
+      expect(typeof gate.id).toBe("string");
+      expect(gate.id.length).toBeGreaterThan(0);
       expect(gate.name).toBe("lint-check");
       expect(gate.type).toBe("shell");
       expect(gate.command).toBe("npm run lint");
@@ -161,7 +162,8 @@ describe("DrizzleGateRepository", () => {
 
       const result = await repo.record("entity-1", gate.id, true, "All checks passed");
 
-      expect(result.id).toBeDefined();
+      expect(typeof result.id).toBe("string");
+      expect(result.id.length).toBeGreaterThan(0);
       expect(result.entityId).toBe("entity-1");
       expect(result.gateId).toBe(gate.id);
       expect(result.passed).toBe(true);

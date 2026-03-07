@@ -35,7 +35,8 @@ describe("DrizzleInvocationRepository", () => {
     it("should create an invocation and retrieve it by id", async () => {
       await seedEntity();
       const inv = await repo.create("ent-1", "review", "Please review", "active", 60000);
-      expect(inv.id).toBeDefined();
+      expect(typeof inv.id).toBe("string");
+      expect(inv.id.length).toBeGreaterThan(0);
       expect(inv.entityId).toBe("ent-1");
       expect(inv.stage).toBe("review");
       expect(inv.prompt).toBe("Please review");

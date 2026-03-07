@@ -152,8 +152,8 @@ describe("Engine", () => {
       expect(result.invocationId).toBe("inv-1");
       expect(mocks.entityRepo.transition).toHaveBeenCalledWith("ent-1", "coding", "start", undefined);
       expect(mocks.invocationRepo.create).toHaveBeenCalled();
-      expect(mocks.events.some((e) => e.type === "entity.transitioned")).toBe(true);
-      expect(mocks.events.some((e) => e.type === "invocation.created")).toBe(true);
+      expect(mocks.events).toContainEqual(expect.objectContaining({ type: "entity.transitioned" }));
+      expect(mocks.events).toContainEqual(expect.objectContaining({ type: "invocation.created" }));
     });
 
     it("throws when entity is not found", async () => {
@@ -344,11 +344,11 @@ describe("Engine", () => {
       await engine.processSignal("ent-1", "start");
 
       const transitioned = mocks.events.find((e) => e.type === "entity.transitioned");
-      expect(transitioned).toBeDefined();
-      if (transitioned?.type === "entity.transitioned") {
-        expect(transitioned.fromState).toBe("open");
-        expect(transitioned.toState).toBe("coding");
-      }
+      expect(transitioned).toEqual(expect.objectContaining({
+        type: "entity.transitioned",
+        fromState: "open",
+        toState: "coding",
+      }));
     });
   });
 
@@ -361,7 +361,7 @@ describe("Engine", () => {
 
       expect(mocks.flowRepo.getByName).toHaveBeenCalledWith("test-flow");
       expect(mocks.entityRepo.create).toHaveBeenCalledWith("flow-1", "open", undefined);
-      expect(mocks.events.some((e) => e.type === "entity.created")).toBe(true);
+      expect(mocks.events).toContainEqual(expect.objectContaining({ type: "entity.created" }));
     });
 
     it("creates invocation if initial state has an agent", async () => {
@@ -689,8 +689,7 @@ describe("Engine", () => {
         await vi.advanceTimersByTimeAsync(120);
         await stop();
 
-        // If we reach here without an unhandled rejection crash, the test passes
-        expect(true).toBe(true);
+        expect(mocks.invocationRepo.reapExpired).toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
       }

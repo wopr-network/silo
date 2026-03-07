@@ -251,6 +251,7 @@ describe("MCP server", () => {
     const deps = createMockDeps();
     const server = createMcpServer(deps);
     expect(server).toBeDefined();
+    expect(typeof server.connect).toBe("function");
   });
 });
 
@@ -387,7 +388,7 @@ describe("MCP tool handlers", () => {
     const content = result.content as Array<{ type: string; text: string }>;
     const data = JSON.parse(content[0].text);
     expect(data.new_state).toBe("review");
-    expect(data.next_action).toBeDefined();
+    expect(["continue", "waiting", "completed", "check_back"]).toContain(data.next_action);
   });
 
   it("flow.report returns error for missing entity", async () => {
@@ -676,6 +677,8 @@ describe("MCP tool handlers", () => {
     expect(result.isError).toBeUndefined();
     const clearCall = updateArtifactsCalls.find((a) => Array.isArray(a.gate_failures) && (a.gate_failures as unknown[]).length === 0);
     expect(clearCall).toBeDefined();
+    expect(Array.isArray(clearCall!.gate_failures)).toBe(true);
+    expect((clearCall!.gate_failures as unknown[]).length).toBe(0);
   });
 
   // Zod validation tests

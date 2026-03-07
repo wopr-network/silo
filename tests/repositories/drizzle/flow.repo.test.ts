@@ -29,7 +29,8 @@ describe("DrizzleFlowRepository", () => {
         name: "test-flow",
         initialState: "open",
       });
-      expect(flow.id).toBeDefined();
+      expect(typeof flow.id).toBe("string");
+      expect(flow.id.length).toBeGreaterThan(0);
       expect(flow.name).toBe("test-flow");
       expect(flow.initialState).toBe("open");
       expect(flow.version).toBe(1);
@@ -106,7 +107,8 @@ describe("DrizzleFlowRepository", () => {
     it("adds a state to a flow", async () => {
       const flow = await repo.create({ name: "sf", initialState: "open" });
       const state = await repo.addState(flow.id, { name: "open", mode: "active" });
-      expect(state.id).toBeDefined();
+      expect(typeof state.id).toBe("string");
+      expect(state.id.length).toBeGreaterThan(0);
       expect(state.flowId).toBe(flow.id);
       expect(state.name).toBe("open");
       expect(state.mode).toBe("active");
@@ -152,7 +154,8 @@ describe("DrizzleFlowRepository", () => {
         trigger: "close",
         priority: 10,
       });
-      expect(t.id).toBeDefined();
+      expect(typeof t.id).toBe("string");
+      expect(t.id.length).toBeGreaterThan(0);
       expect(t.flowId).toBe(flow.id);
       expect(t.fromState).toBe("open");
       expect(t.toState).toBe("closed");

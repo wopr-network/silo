@@ -258,7 +258,8 @@ describe("Engine onEnter integration", () => {
 
     expect(result.gated).toBe(false);
     expect(result.newState).toBe("coding");
-    expect(result.invocationId).toBeDefined();
+    expect(typeof result.invocationId).toBe("string");
+    expect(result.invocationId!.length).toBeGreaterThan(0);
 
     const updatedEntity = await entityRepo.get(entity.id);
     expect(updatedEntity?.artifacts).toMatchObject({
@@ -266,7 +267,7 @@ describe("Engine onEnter integration", () => {
       branch: "fix-1",
     });
 
-    expect(events.some((e) => e.type === "onEnter.completed")).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.completed" }));
   });
 
   it("onEnter skipped on re-entry when artifacts present", async () => {
@@ -292,7 +293,7 @@ describe("Engine onEnter integration", () => {
     events.length = 0;
     await engine.processSignal(entity.id, "fix");
 
-    expect(events.some((e) => e.type === "onEnter.skipped")).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.skipped" }));
     expect(events.some((e) => e.type === "onEnter.completed")).toBe(false);
   });
 
