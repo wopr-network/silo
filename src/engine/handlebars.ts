@@ -54,7 +54,7 @@ hbs.compile = ((template: string, options?: CompileOptions) => {
   }
   const compiled = originalCompile(template, { ...options, ...SAFE_COMPILE_OPTIONS });
   return (context: unknown, runtimeOptions?: Handlebars.RuntimeOptions) =>
-    compiled(context, { ...SAFE_RUNTIME_OPTIONS, ...runtimeOptions });
+    compiled(context, { ...runtimeOptions, ...SAFE_RUNTIME_OPTIONS });
 }) as typeof hbs.compile;
 
 /** Get the shared Handlebars instance with all built-in helpers. */

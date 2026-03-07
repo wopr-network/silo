@@ -79,7 +79,12 @@ export const TransitionRuleSchema = z.object({
     .optional(),
   priority: z.number().int().min(0).optional().default(0),
   spawnFlow: z.string().optional(),
-  spawnTemplate: z.string().optional(),
+  spawnTemplate: z
+    .string()
+    .refine((val) => validateTemplate(val), {
+      message: "spawnTemplate contains disallowed Handlebars expressions",
+    })
+    .optional(),
 });
 
 export const IntegrationConfigSchema = z.object({
