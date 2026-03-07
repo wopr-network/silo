@@ -24,7 +24,6 @@ describe("resolveGateTimeout", () => {
     expect(resolveGateTimeout(null, 120000)).toBe(120000);
   });
 
-
   it("falls through to flow-level when gate timeout is 0", () => {
     expect(resolveGateTimeout(0, 120000)).toBe(120000);
   });
@@ -49,7 +48,6 @@ describe("resolveGateTimeout", () => {
     process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "600000";
     expect(resolveGateTimeout(undefined, undefined)).toBe(600000);
   });
-<<<<<<< HEAD
 
   it("falls back to 300000 when DEFCON_DEFAULT_GATE_TIMEOUT_MS is not a valid number", () => {
     process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "not-a-number";
@@ -60,6 +58,4 @@ describe("resolveGateTimeout", () => {
     process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "0";
     expect(resolveGateTimeout(undefined, undefined)).toBe(300000);
   });
-=======
->>>>>>> 9dcf643 (feat: configurable gate timeout at flow and gate level (WOP-1885))
 });

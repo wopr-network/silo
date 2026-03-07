@@ -32,12 +32,12 @@ export function resolveGateTimeout(
 }
 
 function getSystemDefaultGateTimeout(): number {
-  const envVal = Number(process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS);
-  return envVal > 0 ? envVal : 300000;
+  const parsed = parseInt(process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS ?? "", 10);
+  return !Number.isNaN(parsed) && parsed > 0 ? parsed : 300000;
 }
 
 export function resolveGateTimeout(
-  gateTimeoutMs: number | undefined,
+  gateTimeoutMs: number | null | undefined,
   flowGateTimeoutMs: number | null | undefined,
 ): number {
   if (gateTimeoutMs != null && gateTimeoutMs > 0) return gateTimeoutMs;
