@@ -72,13 +72,19 @@ These aren't suggestions in a prompt. They're shell commands the engine executes
 
 `claim` = *"I'm ready. What needs escalating?"*
 
-DEFCON hands the agent a prompt — the work for the current level. The agent doesn't know the flow. Doesn't know how many levels there are. Doesn't know what comes next. It just gets instructions and a signal to report when it's done.
+DEFCON hands the agent a prompt — the work for the current level. The agent doesn't know the flow. Doesn't know how many levels there are. Doesn't know what comes next. It just gets instructions and a signal to report when it's done. Pass a `workerId` so DEFCON knows who you are — if you don't have one yet, the first `claim` mints one for you and tells you to use it going forward.
 
 `report` = *"I did the thing. Am I clear to advance?"*
 
-DEFCON runs the gate. If it passes, the entity advances and the response contains the next prompt — the work for the next level. If it fails, the response says why and what to fix. If the entity reaches a terminal state, the response says "done."
+DEFCON runs the gate. The call blocks — the agent waits — until the gate resolves. That could be 200ms. It could be 8 minutes while CI finishes. The agent doesn't poll. It doesn't retry. It sits on the call. When the response comes back, there are exactly three outcomes:
+
+- **`continue`** — gate passed. The response contains the next prompt. Keep going.
+- **`waiting`** — gate failed. The response says why. The agent should stop — something external needs to change before the entity can advance. This is good news: DEFCON caught a real problem and is conserving the agent's context for work that matters.
+- **`check_back`** — gate timed out without resolving. This is not an error. The response says "call again after a short wait." The gate is still running; DEFCON just couldn't hold the connection long enough to see it finish.
 
 One `claim` to start. Then `report`, `report`, `report` until DEFCON says stop. The agent never decides what level comes next. It never decides "good enough." It does work, reports signals, and DEFCON — based on evidence, not opinion — tells it what to do.
+
+**Why `waiting` is the right response to a gate failure** — when a gate says no, there's nothing useful the agent can do. Keeping it spinning, re-reading the codebase, retrying the same check — that's wasted tokens. `waiting` is DEFCON telling the agent *stand down*. When something changes — a human intervenes, a dependency ships, a deploy completes — the entity gets reclaimed by a fresh agent with a full context window, not a stale one that's been burning tokens on hold.
 
 ### See It In Action
 
@@ -91,18 +97,20 @@ Agent: flow.claim()
 DEFCON: feat-392. State: "backlog". Write an implementation spec — read
         the codebase, identify the files, the function signatures, the
         edge cases. Post the spec on the issue. Report "spec_ready".
+        [workerId: wkr_abc123 — include this in all future flow calls]
 
         ... agent writes the spec ...
 
-Agent: flow.report({ signal: "spec_ready" })
+Agent: flow.report({ workerId: "wkr_abc123", signal: "spec_ready" })
 DEFCON: Gate passed. State: "coding". Implement the spec. Create a branch,
         write failing tests first, then implementation. Push a PR.
         Report "pr_created" with the PR URL.
 
         ... agent writes the code, pushes the PR ...
 
-Agent: flow.report({ signal: "pr_created", artifacts: { prUrl: "..." } })
-DEFCON: Running gate... tsc: PASS. biome: PASS. tests: PASS.
+Agent: flow.report({ workerId: "wkr_abc123", signal: "pr_created", artifacts: { prUrl: "..." } })
+DEFCON: Gate running... [8 minutes pass — CI is slow today]
+        tsc: PASS. biome: PASS. tests: PASS.
         State: "reviewing". Check CI on the PR. Read every review bot
         comment. Read the diff. Report one of two signals:
 
@@ -111,7 +119,7 @@ DEFCON: Running gate... tsc: PASS. biome: PASS. tests: PASS.
 
         ... agent reviews, security bot flagged unvalidated input ...
 
-Agent: flow.report({ signal: "issues", artifacts: { findings: "..." } })
+Agent: flow.report({ workerId: "wkr_abc123", signal: "issues", artifacts: { findings: "..." } })
 DEFCON: State: "fixing". Here's what the reviewer found:
         [unvalidated user input on line 47 of auth.ts]
         Fix it. Push. Report "fixes_pushed".
@@ -122,18 +130,27 @@ DEFCON: State: "fixing". Here's what the reviewer found:
 
         ... agent fixes the finding, pushes ...
 
-Agent: flow.report({ signal: "fixes_pushed" })
+Agent: flow.report({ workerId: "wkr_abc123", signal: "fixes_pushed" })
 DEFCON: State: "reviewing". Back to review. Not forward — back. A fresh
         check from scratch. Report "clean" or "issues".
 
         ... agent reviews again, everything clean this time ...
 
-Agent: flow.report({ signal: "clean" })
+Agent: flow.report({ workerId: "wkr_abc123", signal: "clean" })
+DEFCON: Gate running... [merge queue is backed up, gate timeout reached]
+        next_action: "check_back". Your report was received. The merge
+        queue gate is still evaluating — this is not an error. Call
+        flow.report again with the same arguments after a short wait.
+        retry_after_ms: 30000
+
+        ... agent waits 30 seconds, calls again ...
+
+Agent: flow.report({ workerId: "wkr_abc123", signal: "clean" })
 DEFCON: Gate passed. State: "merging". Merge queue entered.
 
         ... CI passes on merge commit ...
 
-Agent: flow.report({ signal: "merged" })
+Agent: flow.report({ workerId: "wkr_abc123", signal: "merged" })
 DEFCON: feat-392 is done.
 ```
 

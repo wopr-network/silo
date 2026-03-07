@@ -8,12 +8,24 @@ The categories of deterministic gates every agentic engineering project needs.
 
 A gate is a check that:
 
-1. **Has a binary outcome** — pass or fail, nothing in between
+1. **Has a ternary outcome** — pass, fail, or timeout (not yet resolved)
 2. **Is deterministic** — same input always produces the same result
 3. **Is automated** — no human judgment required
 4. **Blocks progress on failure** — work cannot advance past a failing gate
 
 Gates are not suggestions, warnings, or "consider this" comments. They are hard blocks.
+
+### The Three Outcomes
+
+| Outcome | Meaning | Worker action |
+|---|---|---|
+| **Pass** | Gate resolved affirmatively | Continue — receive next stage prompt |
+| **Fail** | Gate resolved negatively | Stop — entity is gated, wait for reclaim |
+| **Timeout** | Gate did not resolve within `timeout_ms` | Do timeout work, call report again |
+
+Timeout is not failure. A gate that hasn't resolved yet has not said no. The worker calls report again after a delay. The gate may pass on the next attempt.
+
+Each outcome has a different prompt source — see the [worker protocol](../pipeline/worker-protocol.md) for the full prompt resolution model.
 
 ---
 
