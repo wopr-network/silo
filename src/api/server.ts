@@ -22,8 +22,9 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 
 function extractBearerToken(header: string | undefined): string | undefined {
   if (!header) return undefined;
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim();
+  const lower = header.toLowerCase();
+  if (!lower.startsWith("bearer ")) return undefined;
+  return header.slice(7).trim() || undefined;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -221,9 +222,9 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
         res.end(JSON.stringify(apiRes.body));
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Request error:", err);
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: msg }));
+      res.end(JSON.stringify({ error: "Internal server error" }));
     }
   });
 
