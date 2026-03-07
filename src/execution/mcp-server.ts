@@ -671,6 +671,8 @@ async function handleFlowReport(deps: McpServerDeps, args: Record<string, unknow
       gate_output: result.gateOutput,
       gateName: result.gateName,
       next_action: "waiting",
+      failure_prompt: result.failurePrompt ?? null,
+      timeout_prompt: result.timeoutPrompt ?? null,
     });
   }
 

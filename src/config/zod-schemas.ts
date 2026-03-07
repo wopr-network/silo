@@ -36,6 +36,8 @@ export const StateDefinitionSchema = z.object({
 const BaseGateSchema = z.object({
   name: z.string().min(1),
   timeoutMs: z.number().int().min(0).optional().default(30000),
+  failurePrompt: z.string().optional(),
+  timeoutPrompt: z.string().optional(),
 });
 
 export const CommandGateSchema = BaseGateSchema.extend({

@@ -28,7 +28,9 @@ function createTestDb() {
       command TEXT,
       function_ref TEXT,
       api_config TEXT,
-      timeout_ms INTEGER DEFAULT 30000
+      timeout_ms INTEGER DEFAULT 30000,
+      failure_prompt TEXT,
+      timeout_prompt TEXT
     );
     CREATE TABLE entities (
       id TEXT PRIMARY KEY,

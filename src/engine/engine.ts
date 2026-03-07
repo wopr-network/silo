@@ -23,6 +23,8 @@ export interface ProcessSignalResult {
   gateTimedOut?: boolean;
   gateOutput?: string;
   gateName?: string;
+  failurePrompt?: string;
+  timeoutPrompt?: string;
   invocationId?: string;
   spawned?: string[];
   terminal: boolean;
@@ -132,6 +134,8 @@ export class Engine {
           gateTimedOut: gateResult.timedOut,
           gateOutput: gateResult.output,
           gateName: gate.name,
+          failurePrompt: gate.failurePrompt ?? undefined,
+          timeoutPrompt: gate.timeoutPrompt ?? undefined,
           gatesPassed,
           terminal: false,
         };
