@@ -52,7 +52,7 @@ describe("ActiveRunner", () => {
       get: vi.fn().mockResolvedValue({ id: "ent-1", flowId: "flow-1", state: "coding", refs: null, artifacts: null, claimedBy: null, claimedAt: null, flowVersion: 1, createdAt: new Date(), updatedAt: new Date() }),
     };
     flowRepo = {
-      get: vi.fn().mockResolvedValue({ id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "execution", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null }),
+      get: vi.fn().mockResolvedValue({ id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "execution", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [{ id: "t1", flowId: "flow-1", fromState: "coding", toState: "review", trigger: "done", gateId: null, condition: null, priority: 0, spawnFlow: null, spawnTemplate: null, createdAt: null }], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null }),
       getByName: vi.fn().mockResolvedValue(null),
     };
     runner = new ActiveRunner({
@@ -89,7 +89,7 @@ describe("ActiveRunner", () => {
     invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
     invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
     flowRepo.get.mockResolvedValue({
-      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "reasoning", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
+      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "reasoning", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [{ id: "t1", flowId: "flow-1", fromState: "coding", toState: "review", trigger: "done", gateId: null, condition: null, priority: 0, spawnFlow: null, spawnTemplate: null, createdAt: null }], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
     });
 
     await runner.run({ once: true });
@@ -102,7 +102,7 @@ describe("ActiveRunner", () => {
     invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
     invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
     flowRepo.get.mockResolvedValue({
-      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "monitoring", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
+      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "monitoring", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [{ id: "t1", flowId: "flow-1", fromState: "coding", toState: "review", trigger: "done", gateId: null, condition: null, priority: 0, spawnFlow: null, spawnTemplate: null, createdAt: null }], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
     });
 
     await runner.run({ once: true });
@@ -115,7 +115,7 @@ describe("ActiveRunner", () => {
     invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
     invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
     flowRepo.get.mockResolvedValue({
-      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: null, mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
+      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: null, mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }], transitions: [{ id: "t1", flowId: "flow-1", fromState: "coding", toState: "review", trigger: "done", gateId: null, condition: null, priority: 0, spawnFlow: null, spawnTemplate: null, createdAt: null }], initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
     });
 
     await runner.run({ once: true });
@@ -162,6 +162,11 @@ describe("ActiveRunner", () => {
     const inv = mockInvocation();
     invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
     invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    flowRepo.get.mockResolvedValue({
+      id: "flow-1", name: "dev", states: [{ name: "coding", modelTier: "execution", mode: "active", agentRole: "coder", promptTemplate: null, constraints: null, id: "s1", flowId: "flow-1" }],
+      transitions: [{ id: "t1", flowId: "flow-1", fromState: "coding", toState: "done", trigger: "complete", gateId: null, condition: null, priority: 0, spawnFlow: null, spawnTemplate: null, createdAt: null }],
+      initialState: "coding", maxConcurrent: 0, maxConcurrentPerRepo: 0, version: 1, description: null, entitySchema: null, createdBy: null, createdAt: null, updatedAt: null,
+    });
     (aiAdapter.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({ content: "SIGNAL: complete" });
 
     await runner.run({ once: true });
@@ -302,6 +307,49 @@ describe("ActiveRunner", () => {
 
     expect(engine.processSignal).not.toHaveBeenCalled();
     expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining('Invalid signal "clean"'));
+  });
+
+  it("fails invocation when entity is null (fail closed on signal validation)", async () => {
+    const inv = mockInvocation();
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    entityRepo.get.mockResolvedValue(null);
+
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).not.toHaveBeenCalled();
+    expect(engine.processSignal).not.toHaveBeenCalled();
+    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining("entity or flow not found"));
+  });
+
+  it("fails invocation when flow is null (fail closed on signal validation)", async () => {
+    const inv = mockInvocation();
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+    flowRepo.get.mockResolvedValue(null);
+
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).not.toHaveBeenCalled();
+    expect(engine.processSignal).not.toHaveBeenCalled();
+    expect(invocationRepo.fail).toHaveBeenCalledWith("inv-1", expect.stringContaining("entity or flow not found"));
+  });
+
+  it("uses systemPrompt and userContent from invocation context when present", async () => {
+    const inv = mockInvocation({
+      context: {
+        systemPrompt: "Custom security instructions from template",
+        userContent: "<external-data>\n{\"id\":\"ent-1\"}\n</external-data>",
+      },
+    });
+    invocationRepo.findUnclaimedActive.mockResolvedValue([inv]);
+    invocationRepo.claim.mockResolvedValue({ ...inv, claimedBy: "active-runner" });
+
+    await runner.run({ once: true });
+
+    const invokeCall = (aiAdapter.invoke as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(invokeCall[0]).toContain("<external-data>");
+    expect(invokeCall[1].systemPrompt).toContain("Custom security instructions from template");
   });
 
   it("passes systemPrompt to AI adapter on every invoke", async () => {

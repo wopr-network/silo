@@ -266,6 +266,7 @@ export interface IInvocationRepository {
     mode: Mode,
     agentRole?: string,
     ttlMs?: number,
+    context?: Record<string, unknown>,
   ): Promise<Invocation>;
 
   /** Get an invocation by ID, or null if not found. */

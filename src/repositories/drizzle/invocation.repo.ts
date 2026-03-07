@@ -37,6 +37,7 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
     mode: Mode,
     agentRole?: string,
     ttlMs?: number,
+    context?: Record<string, unknown>,
   ): Promise<Invocation> {
     const id = crypto.randomUUID();
     this.db
@@ -49,6 +50,7 @@ export class DrizzleInvocationRepository implements IInvocationRepository {
         mode,
         agentRole: agentRole ?? null,
         ttlMs: ttlMs ?? 1800000,
+        context: context ?? null,
         createdAt: Date.now(),
       })
       .run();
