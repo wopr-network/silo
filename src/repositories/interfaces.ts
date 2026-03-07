@@ -351,4 +351,3 @@ export interface IGateRepository {
     changes: Partial<Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs">>,
   ): Promise<Gate>;
 }
-

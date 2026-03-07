@@ -830,4 +830,3 @@ async function handleAdminFlowRestore(deps: McpServerDeps, args: Record<string, 
   emitDefinitionChanged(deps.eventRepo, flow.id, "admin.flow.restore", { version: v.data.version });
   return jsonResult({ restored: true, version: v.data.version });
 }
-
