@@ -84,7 +84,7 @@ describe("DrizzleGateRepository", () => {
       expect(gate.command).toBe("npm run lint");
       expect(gate.functionRef).toBeNull();
       expect(gate.apiConfig).toBeNull();
-      expect(gate.timeoutMs).toBe(30000);
+      expect(gate.timeoutMs).toBeNull();
     });
 
     it("should create a function gate", async () => {

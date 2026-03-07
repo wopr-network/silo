@@ -159,13 +159,13 @@ describe("GateDefinitionSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("defaults timeoutMs to 30000", () => {
+  it("leaves timeoutMs undefined when not provided (fallback handled by resolveGateTimeout)", () => {
     const result = GateDefinitionSchema.parse({
       name: "lint-check",
       type: "command",
       command: "gates/blocking-graph.ts",
     });
-    expect(result.timeoutMs).toBe(30000);
+    expect(result.timeoutMs).toBeUndefined();
   });
 });
 
