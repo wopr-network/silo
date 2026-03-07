@@ -591,29 +591,66 @@ describe("Engine", () => {
 
   describe("startReaper", () => {
     it("calls reapExpired on repos periodically", async () => {
-      const mocks = makeMockRepos();
-      const engine = new Engine({ ...mocks, adapters: new Map() });
+      vi.useFakeTimers();
+      try {
+        const mocks = makeMockRepos();
+        const engine = new Engine({ ...mocks, adapters: new Map() });
 
-      const stop = engine.startReaper(50);
-      await new Promise((r) => setTimeout(r, 120));
-      stop();
+        const stop = engine.startReaper(50);
+        await vi.advanceTimersByTimeAsync(120);
+        await stop();
 
-      expect(mocks.invocationRepo.reapExpired).toHaveBeenCalled();
-      expect(mocks.entityRepo.reapExpired).toHaveBeenCalled();
+        expect(mocks.invocationRepo.reapExpired).toHaveBeenCalled();
+        expect(mocks.entityRepo.reapExpired).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("does not crash the process when reaper callback throws", async () => {
-      const mocks = makeMockRepos();
-      (mocks.invocationRepo.reapExpired as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("db error"));
-      const engine = new Engine({ ...mocks, adapters: new Map() });
+      vi.useFakeTimers();
+      try {
+        const mocks = makeMockRepos();
+        (mocks.invocationRepo.reapExpired as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("db error"));
+        const engine = new Engine({ ...mocks, adapters: new Map() });
 
-      const stop = engine.startReaper(50);
-      // Wait long enough for the timer to fire at least once
-      await new Promise((r) => setTimeout(r, 120));
-      stop();
+        const stop = engine.startReaper(50);
+        await vi.advanceTimersByTimeAsync(120);
+        await stop();
 
-      // If we reach here without an unhandled rejection crash, the test passes
-      expect(true).toBe(true);
+        // If we reach here without an unhandled rejection crash, the test passes
+        expect(true).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stop() prevents new ticks from starting after it is called", async () => {
+      vi.useFakeTimers();
+      try {
+        const mocks = makeMockRepos();
+        let ticksStarted = 0;
+        (mocks.invocationRepo.reapExpired as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+          ticksStarted++;
+          return [];
+        });
+
+        const engine = new Engine({ ...mocks, adapters: new Map() });
+        const stop = engine.startReaper(30);
+
+        // Advance enough for a few ticks
+        await vi.advanceTimersByTimeAsync(100);
+        await stop();
+
+        // Record count after stop — no further ticks should start
+        const countAtStop = ticksStarted;
+        await vi.advanceTimersByTimeAsync(100);
+        expect(ticksStarted).toBe(countAtStop);
+        // 30ms interval over 100ms → exactly 3 ticks (fake timers are deterministic)
+        expect(countAtStop).toBe(3);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

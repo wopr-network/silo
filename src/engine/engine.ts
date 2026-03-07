@@ -370,28 +370,41 @@ export class Engine {
   }
 
   startReaper(intervalMs: number, entityTtlMs: number = 60_000): () => Promise<void> {
-    let inFlightTick: Promise<void> = Promise.resolve();
+    let tickInFlight = false;
+    let stopped = false;
 
+    const tick = async () => {
+      const expired = await this.invocationRepo.reapExpired();
+      for (const inv of expired) {
+        await this.eventEmitter.emit({
+          type: "invocation.expired",
+          entityId: inv.entityId,
+          invocationId: inv.id,
+          emittedAt: new Date(),
+        });
+      }
+      await this.entityRepo.reapExpired(entityTtlMs);
+    };
+
+    let currentTickPromise: Promise<void> = Promise.resolve();
     const timer = setInterval(() => {
-      inFlightTick = (async () => {
-        const expired = await this.invocationRepo.reapExpired();
-        for (const inv of expired) {
-          await this.eventEmitter.emit({
-            type: "invocation.expired",
-            entityId: inv.entityId,
-            invocationId: inv.id,
-            emittedAt: new Date(),
-          });
-        }
-        await this.entityRepo.reapExpired(entityTtlMs);
-      })().catch((err) => {
-        console.error("[reaper] error:", err);
-      });
+      if (stopped || tickInFlight) return;
+      tickInFlight = true;
+      currentTickPromise = tick()
+        .catch((err) => {
+          console.error("[reaper] error:", err);
+        })
+        .finally(() => {
+          tickInFlight = false;
+          // Reset chain head so completed ticks don't accumulate in memory
+          currentTickPromise = Promise.resolve();
+        });
     }, intervalMs);
 
     return async () => {
+      stopped = true;
       clearInterval(timer);
-      await inFlightTick;
+      await currentTickPromise;
     };
   }
 
