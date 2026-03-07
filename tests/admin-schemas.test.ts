@@ -44,7 +44,7 @@ describe("admin-schemas", () => {
     const result = AdminGateCreateSchema.safeParse({
       name: "lint-check",
       type: "command",
-      command: "pnpm lint",
+      command: "./gates/lint-check.sh",
     });
     expect(result.success).toBe(true);
   });
