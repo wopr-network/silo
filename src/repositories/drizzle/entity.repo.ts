@@ -55,11 +55,12 @@ export class DrizzleEntityRepository implements IEntityRepository {
     return rows.length > 0 ? this.toEntity(rows[0]) : null;
   }
 
-  async findByFlowAndState(flowId: string, state: string): Promise<Entity[]> {
-    const rows = await this.db
+  async findByFlowAndState(flowId: string, state: string, limit?: number): Promise<Entity[]> {
+    const query = this.db
       .select()
       .from(entities)
       .where(and(eq(entities.flowId, flowId), eq(entities.state, state)));
+    const rows = await (limit !== undefined ? query.limit(limit) : query);
     return rows.map((r) => this.toEntity(r));
   }
 

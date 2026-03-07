@@ -1,5 +1,5 @@
-import type { McpServerDeps } from "../mcp-server.js";
-import { errorResult, jsonResult, validateInput } from "../mcp-server.js";
+import type { McpServerDeps } from "../mcp-helpers.js";
+import { errorResult, jsonResult, validateInput } from "../mcp-helpers.js";
 import { QueryEntitiesSchema, QueryEntitySchema, QueryFlowSchema, QueryInvocationsSchema } from "../tool-schemas.js";
 
 export async function handleQueryEntity(deps: McpServerDeps, args: Record<string, unknown>) {
@@ -23,8 +23,8 @@ export async function handleQueryEntities(deps: McpServerDeps, args: Record<stri
   const flow = await deps.flows.getByName(flowName);
   if (!flow) return errorResult(`Flow not found: ${flowName}`);
 
-  const results = await deps.entities.findByFlowAndState(flow.id, state);
-  return jsonResult(results.slice(0, effectiveLimit));
+  const results = await deps.entities.findByFlowAndState(flow.id, state, effectiveLimit);
+  return jsonResult(results);
 }
 
 export async function handleQueryInvocations(deps: McpServerDeps, args: Record<string, unknown>) {

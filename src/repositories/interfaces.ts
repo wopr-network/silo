@@ -215,8 +215,8 @@ export interface IEntityRepository {
   /** Get an entity by ID, or null if not found. */
   get(id: string): Promise<Entity | null>;
 
-  /** Find all entities in a given flow and state. */
-  findByFlowAndState(flowId: string, state: string): Promise<Entity[]>;
+  /** Find entities in a given flow and state, up to an optional limit. */
+  findByFlowAndState(flowId: string, state: string, limit?: number): Promise<Entity[]>;
 
   /** Return true if at least one entity exists in the given flow across any of the given states. */
   hasAnyInFlowAndState(flowId: string, stateNames: string[]): Promise<boolean>;

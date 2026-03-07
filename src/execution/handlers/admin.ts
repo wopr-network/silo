@@ -10,8 +10,8 @@ import {
   AdminTransitionCreateSchema,
   AdminTransitionUpdateSchema,
 } from "../admin-schemas.js";
-import type { McpServerDeps } from "../mcp-server.js";
-import { emitDefinitionChanged, errorResult, jsonResult, validateInput } from "../mcp-server.js";
+import type { McpServerDeps } from "../mcp-helpers.js";
+import { emitDefinitionChanged, errorResult, jsonResult, validateInput } from "../mcp-helpers.js";
 import { FlowSeedSchema } from "../tool-schemas.js";
 
 export async function handleAdminEntityCreate(deps: McpServerDeps, args: Record<string, unknown>) {

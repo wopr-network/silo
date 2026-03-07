@@ -3,15 +3,10 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { Engine } from "../engine/engine.js";
-import type {
-  IEntityRepository,
-  IEventRepository,
-  IFlowRepository,
-  IGateRepository,
-  IInvocationRepository,
-  ITransitionLogRepository,
-} from "../repositories/interfaces.js";
+
+export type { McpServerDeps } from "./mcp-helpers.js";
+export { emitDefinitionChanged, errorResult, jsonResult, validateInput } from "./mcp-helpers.js";
+
 import {
   handleAdminEntityCreate,
   handleAdminFlowCreate,
@@ -33,16 +28,8 @@ import {
   handleQueryFlows,
   handleQueryInvocations,
 } from "./handlers/query.js";
-
-export interface McpServerDeps {
-  entities: IEntityRepository;
-  flows: IFlowRepository;
-  invocations: IInvocationRepository;
-  gates: IGateRepository;
-  transitions: ITransitionLogRepository;
-  eventRepo: IEventRepository;
-  engine?: Engine;
-}
+import type { McpServerDeps } from "./mcp-helpers.js";
+import { errorResult } from "./mcp-helpers.js";
 
 export interface McpServerOpts {
   /** DEFCON_ADMIN_TOKEN — if set, admin.* tools require this token */
@@ -488,43 +475,10 @@ export async function callToolHandler(
   }
 }
 
-export function jsonResult(data: unknown) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(data) }],
-  };
-}
-
-export function errorResult(message: string) {
-  return {
-    content: [{ type: "text" as const, text: message }],
-    isError: true,
-  };
-}
-
 function constantTimeEqual(a: string, b: string): boolean {
   const hashA = createHash("sha256").update(a.trim()).digest();
   const hashB = createHash("sha256").update(b.trim()).digest();
   return timingSafeEqual(hashA, hashB);
-}
-
-export function validateInput<T>(
-  schema: { safeParse: (data: unknown) => { success: boolean; data?: T; error?: { issues: unknown[] } } },
-  args: Record<string, unknown>,
-): { ok: true; data: T } | { ok: false; result: ReturnType<typeof errorResult> } {
-  const parsed = schema.safeParse(args);
-  if (!parsed.success) {
-    return { ok: false, result: errorResult(`Validation error: ${JSON.stringify(parsed.error?.issues)}`) };
-  }
-  return { ok: true, data: parsed.data as T };
-}
-
-export function emitDefinitionChanged(
-  eventRepo: IEventRepository,
-  flowId: string | null,
-  tool: string,
-  payload: Record<string, unknown>,
-) {
-  void eventRepo.emitDefinitionChanged(flowId, tool, payload);
 }
 
 /** Start the MCP server on stdio transport. */

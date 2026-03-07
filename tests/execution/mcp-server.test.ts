@@ -1062,7 +1062,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
         return [mockInvocation({
           entityId: "ent-affinity",
           claimedBy: "wkr_test",
-          completedAt: new Date(Date.now() - 30 * 60 * 1000),
+          completedAt: new Date(Date.now() - 60 * 1000), // 1 minute ago — within default 5-min affinity window
         })];
       }
       return [];
