@@ -130,7 +130,7 @@ describe("CLI", () => {
     if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("status --json outputs valid JSON", () => {
+  it("status --json outputs valid JSON", { timeout: 15000 }, () => {
     const dbPath = join(tmpdir(), `cli-status-json-${Date.now()}.db`);
     const seedPath = writeSeedFile(validSeed);
     run(["init", "--seed", seedPath], { AGENTIC_DB_PATH: dbPath });
