@@ -217,4 +217,176 @@ describe("DrizzleInvocationRepository", () => {
       expect(expired).toHaveLength(0);
     });
   });
+
+  describe("releaseClaim", () => {
+    it("should release a claimed invocation", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      await repo.releaseClaim(inv.id);
+      const after = await repo.get(inv.id);
+      expect(after!.claimedBy).toBeNull();
+      expect(after!.claimedAt).toBeNull();
+    });
+
+    it("should not release a completed invocation", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      await repo.complete(inv.id, "done");
+      await repo.releaseClaim(inv.id);
+      const after = await repo.get(inv.id);
+      // claimedBy should still be set because the WHERE clause excludes completed
+      expect(after!.claimedBy).toBe("agent-1");
+    });
+  });
+
+  describe("findUnclaimedByFlow", () => {
+    it("should return unclaimed invocations for a flow", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "Review", "active");
+      const results = await repo.findUnclaimedByFlow("flow-1");
+      expect(results).toHaveLength(1);
+      expect(results[0].claimedBy).toBeNull();
+    });
+
+    it("should exclude claimed invocations", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      const results = await repo.findUnclaimedByFlow("flow-1");
+      expect(results).toHaveLength(0);
+    });
+
+    it("should exclude completed invocations", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      await repo.complete(inv.id, "done");
+      const results = await repo.findUnclaimedByFlow("flow-1");
+      expect(results).toHaveLength(0);
+    });
+
+    it("should return empty for unknown flow", async () => {
+      const results = await repo.findUnclaimedByFlow("nonexistent");
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe("findByFlow", () => {
+    it("should return all invocations for a flow ordered by creation", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "First", "active");
+      await repo.create("ent-1", "build", "Second", "passive");
+      const results = await repo.findByFlow("flow-1");
+      expect(results).toHaveLength(2);
+      expect(results[0].stage).toBe("review");
+      expect(results[1].stage).toBe("build");
+    });
+
+    it("should return empty for unknown flow", async () => {
+      const results = await repo.findByFlow("nonexistent");
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe("findUnclaimedActive", () => {
+    it("should return unclaimed active-mode invocations", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "Review", "active");
+      await repo.create("ent-1", "build", "Build", "passive");
+      const results = await repo.findUnclaimedActive();
+      expect(results).toHaveLength(1);
+      expect(results[0].mode).toBe("active");
+    });
+
+    it("should filter by flowId when provided", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "Review", "active");
+      const results = await repo.findUnclaimedActive("flow-1");
+      expect(results).toHaveLength(1);
+
+      const noResults = await repo.findUnclaimedActive("nonexistent");
+      expect(noResults).toHaveLength(0);
+    });
+
+    it("should exclude claimed invocations", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      const results = await repo.findUnclaimedActive();
+      expect(results).toHaveLength(0);
+    });
+  });
+
+  describe("countActiveByFlow", () => {
+    it("should count claimed, non-completed invocations", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      const count = await repo.countActiveByFlow("flow-1");
+      expect(count).toBe(1);
+    });
+
+    it("should return 0 when no active invocations", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "Review", "active");
+      const count = await repo.countActiveByFlow("flow-1");
+      expect(count).toBe(0);
+    });
+
+    it("should not count completed invocations", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      await repo.complete(inv.id, "done");
+      const count = await repo.countActiveByFlow("flow-1");
+      expect(count).toBe(0);
+    });
+  });
+
+  describe("countPendingByFlow", () => {
+    it("should count unclaimed, non-completed invocations", async () => {
+      await seedEntity();
+      await repo.create("ent-1", "review", "Review", "active");
+      const count = await repo.countPendingByFlow("flow-1");
+      expect(count).toBe(1);
+    });
+
+    it("should return 0 when all are claimed", async () => {
+      await seedEntity();
+      const inv = await repo.create("ent-1", "review", "Review", "active");
+      await repo.claim(inv.id, "agent-1");
+      const count = await repo.countPendingByFlow("flow-1");
+      expect(count).toBe(0);
+    });
+
+    it("should return 0 for unknown flow", async () => {
+      const count = await repo.countPendingByFlow("nonexistent");
+      expect(count).toBe(0);
+    });
+  });
+
+  describe("create with context", () => {
+    it("should create an invocation with context", async () => {
+      await seedEntity();
+      const ctx = { repo: "wopr-network/defcon", branch: "main" };
+      const inv = await repo.create("ent-1", "review", "Review", "active", 60000, ctx);
+      expect(inv.context).toEqual(ctx);
+      const fetched = await repo.get(inv.id);
+      expect(fetched!.context).toEqual(ctx);
+    });
+  });
+
+  describe("complete - nonexistent", () => {
+    it("should throw if invocation does not exist", async () => {
+      await expect(repo.complete("nonexistent", "done")).rejects.toThrow("not found");
+    });
+  });
+
+  describe("fail - nonexistent", () => {
+    it("should throw if invocation does not exist", async () => {
+      await expect(repo.fail("nonexistent", "error")).rejects.toThrow("not found");
+    });
+  });
 });

@@ -185,4 +185,176 @@ describe("HTTP Server - basic", () => {
     // No work available → 204 (no entity) or 404 (unknown flow)
     expect([204, 404]).toContain(res.status);
   });
+
+  it("POST with invalid JSON returns 400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not valid json{{{",
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Invalid JSON");
+  });
+
+  it("CORS header not set for non-loopback origin", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { Origin: "https://evil.com" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("CORS header set for loopback origin", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { Origin: "http://127.0.0.1:3000" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:3000");
+  });
+
+  it("OPTIONS without Origin returns 204 without CORS headers", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      method: "OPTIONS",
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("GET /api/entities with only flow param returns 400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities?flow=test`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Required query params: flow, state");
+  });
+
+  it("GET /api/entities with only state param returns 400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities?state=init`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Required query params: flow, state");
+  });
+
+  it("GET /api/entities with valid flow+state returns non-400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities?flow=test&state=init`);
+    expect(res.status).not.toBe(400);
+  });
+
+  it("GET /api/entities with limit param returns non-400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities?flow=test&state=init&limit=5`);
+    expect(res.status).not.toBe(400);
+  });
+
+  it("GET /api/entities with invalid limit param ignored", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities?flow=test&state=init&limit=abc`);
+    expect(res.status).not.toBe(400);
+  });
+
+  it("GET /api/flows/:id for unknown flow returns 404", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/flows/nonexistent-flow-xyz`);
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/claim returns 204 when no work available", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "worker" }),
+    });
+    expect([204, 200].includes(res.status)).toBe(true);
+  });
+
+  it("POST /api/entities/:id/report for nonexistent entity", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signal: "done" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("POST /api/entities/:id/report with artifacts", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signal: "done", artifacts: { key: "value" } }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("POST /api/entities/:id/fail for nonexistent entity", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/fail`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: "something broke" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+});
+
+describe("HTTP Server - explicit CORS origin", () => {
+  let deps: ReturnType<typeof makeTestDeps>;
+  let server: http.Server;
+  let port: number;
+
+  beforeAll(async () => {
+    deps = makeTestDeps();
+    (deps as unknown as Record<string, unknown>).corsOrigin = "https://app.example.com";
+    server = createHttpServer(deps);
+    port = await listen(server);
+  });
+
+  afterAll(async () => {
+    server.close();
+    await deps.stopReaper();
+  });
+
+  it("reflects matching explicit CORS origin", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { Origin: "https://app.example.com" },
+    });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://app.example.com");
+  });
+
+  it("does not reflect non-matching origin", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { Origin: "https://other.com" },
+    });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("does not reflect loopback when explicit origin is set", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { Origin: "http://localhost:4000" },
+    });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+});
+
+describe("HTTP Server - handler error", () => {
+  let server: http.Server;
+  let port: number;
+  let stopReaper: () => Promise<void>;
+
+  beforeAll(async () => {
+    const deps = makeTestDeps();
+    stopReaper = deps.stopReaper;
+    deps.engine.getStatus = async () => {
+      throw new Error("boom");
+    };
+    server = createHttpServer(deps);
+    port = await listen(server);
+  });
+
+  afterAll(async () => {
+    server.close();
+    await stopReaper();
+  });
+
+  it("returns 500 when handler throws", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("Internal server error");
+  });
 });
