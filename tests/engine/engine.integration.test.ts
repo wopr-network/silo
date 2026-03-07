@@ -190,7 +190,7 @@ describe("Engine integration (in-memory SQLite)", () => {
     const result = await ctx.engine.processSignal(parentEntity.id, "finish");
     expect(result.newState).toBe("completed");
     expect(result.terminal).toBe(true);
-    expect(Array.isArray(result.spawned)).toBe(true);
+    expect(result.spawned).toBeInstanceOf(Array);
     expect(result.spawned!.length).toBeGreaterThan(0);
     expect(typeof result.spawned![0]).toBe("string");
     expect(result.spawned).toHaveLength(1);

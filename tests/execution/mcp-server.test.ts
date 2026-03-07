@@ -677,8 +677,8 @@ describe("MCP tool handlers", () => {
     expect(result.isError).toBeUndefined();
     const clearCall = updateArtifactsCalls.find((a) => Array.isArray(a.gate_failures) && (a.gate_failures as unknown[]).length === 0);
     expect(clearCall).toBeDefined();
-    expect(Array.isArray(clearCall!.gate_failures)).toBe(true);
-    expect((clearCall!.gate_failures as unknown[]).length).toBe(0);
+    expect(clearCall!.gate_failures).toBeInstanceOf(Array);
+    expect(clearCall!.gate_failures).toHaveLength(0);
   });
 
   // Zod validation tests

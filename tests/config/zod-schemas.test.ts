@@ -461,8 +461,7 @@ describe("SeedFileSchema", () => {
     if (!result.success) {
       const messages = result.error.issues.map((i) => i.message);
       // Should error on fromState or toState for empty-flow
-      const joined = messages.join("; ");
-      expect(joined.includes("start") || joined.includes("done") || joined.includes("empty-flow")).toBe(true);
+      expect(messages.some((m) => m.includes("start") || m.includes("done") || m.includes("empty-flow"))).toBe(true);
     }
   });
 
@@ -486,11 +485,11 @@ describe("SeedFileSchema", () => {
     const result = SeedFileSchema.safeParse(seed);
     expect(result.success).toBe(false);
     if (!result.success) {
-      const messages = result.error.issues.map((i) => i.message);
-      const joined = messages.join("; ").toLowerCase();
-      expect(joined).toContain("duplicate");
-      expect(joined).toContain("open");
-      expect(joined).toContain("pr-review");
+      const messages = result.error.issues.map((i) => i.message.toLowerCase());
+      const duplicateError = messages.find(
+        (m) => m.includes("duplicate") && m.includes("open") && m.includes("pr-review"),
+      );
+      expect(duplicateError).toBeDefined();
     }
   });
 
