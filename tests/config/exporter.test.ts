@@ -53,9 +53,9 @@ const tmpRoot = realpathSync(tmpdir());
 
 describe("exportSeed", () => {
   it("exports current DB state as a valid SeedFile", async () => {
-    const { sqlite, flowRepo, gateRepo } = setupDb();
+    const { db, sqlite, flowRepo, gateRepo } = setupDb();
     const seedPath = writeSeedFile(validSeed);
-    await loadSeed(seedPath, flowRepo, gateRepo, sqlite, { allowedRoot: tmpRoot });
+    await loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot });
 
     const exported = await exportSeed(flowRepo, gateRepo);
 
@@ -93,7 +93,7 @@ describe("exportSeed", () => {
     const flowRepo1 = new DrizzleFlowRepository(db1);
     const gateRepo1 = new DrizzleGateRepository(db1);
     const seedPath = writeSeedFile(validSeed);
-    await loadSeed(seedPath, flowRepo1, gateRepo1, sqlite1, { allowedRoot: tmpRoot });
+    await loadSeed(seedPath, flowRepo1, gateRepo1, { allowedRoot: tmpRoot });
 
     const exported = await exportSeed(flowRepo1, gateRepo1);
 
@@ -103,7 +103,7 @@ describe("exportSeed", () => {
     const flowRepo2 = new DrizzleFlowRepository(db2);
     const gateRepo2 = new DrizzleGateRepository(db2);
     const exportPath = writeSeedFile(exported);
-    await loadSeed(exportPath, flowRepo2, gateRepo2, sqlite2, { allowedRoot: tmpRoot });
+    await loadSeed(exportPath, flowRepo2, gateRepo2, { allowedRoot: tmpRoot });
 
     const reExported = await exportSeed(flowRepo2, gateRepo2);
 

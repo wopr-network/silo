@@ -84,7 +84,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("happy path: seed load → entity create → signal through to terminal", async () => {
     const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
-    const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
     expect(seedResult.flows).toBe(1);
 
     const entity = await ctx.engine.createEntity("simple-pipeline");
@@ -115,7 +115,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("gate evaluation: gate blocks → update gate → gate passes", async () => {
     const seedPath = resolve(__dirname, "fixtures/gated-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("gated-pipeline");
     expect(entity.state).toBe("coding");
@@ -152,7 +152,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("multi-gate lifecycle: seed → create → gate fail → retry → advance through all gates to terminal", async () => {
     const seedPath = resolve(__dirname, "fixtures/multi-gate-pipeline.seed.json");
-    const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    const seedResult = await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
     expect(seedResult.flows).toBe(1);
     expect(seedResult.gates).toBe(3);
 
@@ -259,7 +259,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("multi-entity concurrency: 10 entities reach correct states independently", async () => {
     const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entities = await Promise.all(Array.from({ length: 10 }, () => ctx.engine.createEntity("simple-pipeline")));
     expect(entities).toHaveLength(10);
@@ -289,7 +289,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("spawn flow: parent terminal transition spawns child entity", async () => {
     const seedPath = resolve(__dirname, "fixtures/spawn-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const parentEntity = await ctx.engine.createEntity("parent-flow");
     expect(parentEntity.state).toBe("working");
@@ -317,7 +317,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("MCP flow: claim → get_prompt → report through to terminal via callToolHandler", async () => {
     const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("simple-pipeline");
     const r1 = await ctx.engine.processSignal(entity.id, "assigned");
@@ -372,7 +372,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("multi-gate traversal: two sequential gates pass, assertions at each boundary", async () => {
     const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("multi-gate-pipeline");
     expect(entity.state).toBe("draft");
@@ -416,7 +416,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("transition history: full audit trail with correct from/to/trigger for every step", async () => {
     const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("multi-gate-pipeline");
 
@@ -447,7 +447,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("event coverage: entity.created + entity.transitioned emitted for full lifecycle", async () => {
     const seedPath = resolve(__dirname, "fixtures/multi-gate-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("multi-gate-pipeline");
 
@@ -497,7 +497,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("gate timeout: gate times out → gateTimedOut true, timeoutPrompt rendered, gate.timedOut event", async () => {
     const seedPath = resolve(__dirname, "fixtures/timeout-gate-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("timeout-pipeline");
     expect(entity.state).toBe("pending");
@@ -535,7 +535,7 @@ describe("Engine integration (in-memory SQLite)", () => {
   it("check_back: flow.claim returns check_back with retry_after_ms when no work available", async () => {
     // Load a flow but do NOT create any entities — no work exists
     const seedPath = resolve(__dirname, "fixtures/simple-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const mcpDeps: McpServerDeps = {
       entities: ctx.entityRepo,
@@ -561,7 +561,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("flow.fail: marks active invocation as failed via MCP callToolHandler", async () => {
     const seedPath = resolve(__dirname, "fixtures/error-terminal-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("error-pipeline");
     expect(entity.state).toBe("queued");
@@ -614,7 +614,7 @@ describe("Engine integration (in-memory SQLite)", () => {
 
   it("error terminal: working→error transition via fail signal", async () => {
     const seedPath = resolve(__dirname, "fixtures/error-terminal-flow.seed.json");
-    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, ctx.sqlite);
+    await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
 
     const entity = await ctx.engine.createEntity("error-pipeline");
     expect(entity.state).toBe("queued");

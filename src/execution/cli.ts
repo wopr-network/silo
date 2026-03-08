@@ -128,13 +128,10 @@ program
     }
 
     const seedRoot = process.env.DEFCON_SEED_ROOT;
-    const result = await loadSeed(
-      resolve(seedPath),
-      flowRepo,
-      gateRepo,
-      sqlite,
-      seedRoot ? { allowedRoot: seedRoot } : undefined,
-    );
+    const result = await loadSeed(resolve(seedPath), flowRepo, gateRepo, {
+      allowedRoot: seedRoot ?? process.cwd(),
+      db,
+    });
     console.log(`Loaded seed: flows: ${result.flows}, gates: ${result.gates}`);
     sqlite.close();
   });

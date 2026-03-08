@@ -1,11 +1,19 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
-import type Database from "better-sqlite3";
+import { sql } from "drizzle-orm";
+// BetterSQLite3Database is imported here (outside a DrizzleFooRepository file) because
+// seed-loader.ts wraps seed loading in a synchronous SQLite transaction via db.run(sql`BEGIN/COMMIT/ROLLBACK`).
+// The Db type parameter is needed to type the optional `db` field in LoadSeedOptions.
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type * as schema from "../repositories/drizzle/schema.js";
 import type { IFlowRepository, IGateRepository } from "../repositories/interfaces.js";
 import { SeedFileSchema } from "./zod-schemas.js";
 
+type Db = BetterSQLite3Database<typeof schema>;
+
 export interface LoadSeedOptions {
   allowedRoot?: string;
+  db?: Db;
 }
 
 export interface LoadSeedResult {
@@ -17,7 +25,6 @@ export async function loadSeed(
   seedPath: string,
   flowRepo: IFlowRepository,
   gateRepo: IGateRepository,
-  sqlite: InstanceType<typeof Database>,
   options?: LoadSeedOptions,
 ): Promise<LoadSeedResult> {
   const allowedRoot = options?.allowedRoot ?? process.cwd();
@@ -29,7 +36,17 @@ export async function loadSeed(
     throw new Error(`Seed path escapes allowed root: ${resolvedSeed} is not under ${resolvedRoot}`);
   }
 
-  const realSeed = realpathSync(resolvedSeed);
+  let realSeed: string;
+  try {
+    realSeed = realpathSync(resolvedSeed);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // File doesn't exist — let readFileSync throw its normal ENOENT error
+      readFileSync(resolvedSeed, "utf-8");
+      throw err; // unreachable, but satisfies TypeScript
+    }
+    throw err;
+  }
 
   let realRoot: string;
   try {
@@ -44,7 +61,7 @@ export async function loadSeed(
   }
 
   const raw = readFileSync(realSeed, "utf-8");
-  return parseSeedAndLoad(parseJson(raw, realSeed), flowRepo, gateRepo, sqlite);
+  return parseSeedAndLoad(parseJson(raw, realSeed), flowRepo, gateRepo, options?.db);
 }
 
 function parseJson(raw: string, path: string): unknown {
@@ -60,11 +77,12 @@ async function parseSeedAndLoad(
   json: unknown,
   flowRepo: IFlowRepository,
   gateRepo: IGateRepository,
-  sqlite: InstanceType<typeof Database>,
+  db?: Db,
 ): Promise<LoadSeedResult> {
   const parsed = SeedFileSchema.parse(json);
+  // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
+  if (db) db.run(sql`BEGIN`);
 
-  sqlite.exec("BEGIN");
   try {
     // 1. Create gates first (transitions reference them by name)
     const gateNameToId = new Map<string, string>();
@@ -130,14 +148,19 @@ async function parseSeedAndLoad(
       }
     }
 
-    sqlite.exec("COMMIT");
+    // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
+    if (db) db.run(sql`COMMIT`);
+    return {
+      flows: parsed.flows.length,
+      gates: parsed.gates.length,
+    };
   } catch (err) {
-    sqlite.exec("ROLLBACK");
+    try {
+      // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
+      if (db) db.run(sql`ROLLBACK`);
+    } catch {
+      // ignore rollback errors — original error takes priority
+    }
     throw err;
   }
-
-  return {
-    flows: parsed.flows.length,
-    gates: parsed.gates.length,
-  };
 }
