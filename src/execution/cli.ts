@@ -32,6 +32,7 @@ import {
   transitionRules,
 } from "../repositories/drizzle/schema.js";
 import { DrizzleTransitionLogRepository } from "../repositories/drizzle/transition-log.repo.js";
+import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 import { provisionWorktree } from "./provision-worktree.js";
@@ -288,6 +289,14 @@ program
         workerToken,
         corsOrigin: restCorsResult.origin ?? undefined,
       });
+      if (adminToken) {
+        const wsBroadcaster = new WebSocketBroadcaster({
+          server: restHttpServer,
+          engine,
+          adminToken,
+        });
+        eventEmitter.register(wsBroadcaster);
+      }
       restHttpServer.listen(httpPort, httpHost, () => {
         const addr = restHttpServer?.address();
         const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;

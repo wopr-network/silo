@@ -29,6 +29,9 @@ importers:
       handlebars:
         specifier: ^4.7.8
         version: 4.7.8
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -42,6 +45,9 @@ importers:
       '@types/node':
         specifier: ^25.3.3
         version: 25.3.5
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@vitest/coverage-v8':
         specifier: ^4.0.18
         version: 4.0.18(vitest@4.0.18(@types/node@25.3.5)(tsx@4.21.0))
@@ -779,6 +785,9 @@ packages:
 
   '@types/node@25.3.5':
     resolution: {integrity: sha512-oX8xrhvpiyRCQkG1MFchB09f+cXftgIXb3a7UUa4Y3wpmZPw5tyZGTLWhlESOLq1Rq6oDlc8npVU2/9xiCuXMA==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@vitest/coverage-v8@4.0.18':
     resolution: {integrity: sha512-7i+N2i0+ME+2JFZhfuz7Tg/FqKtilHjGyGvoHYQ6iLV0zahbsJ9sljC9OcFcPDbhYKCet+sG8SsVqlyGvPflZg==}
@@ -1662,6 +1671,18 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   zod-to-json-schema@3.25.1:
     resolution: {integrity: sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA==}
     peerDependencies:
@@ -2102,6 +2123,10 @@ snapshots:
   '@types/node@25.3.5':
     dependencies:
       undici-types: 7.18.2
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 25.3.5
 
   '@vitest/coverage-v8@4.0.18(vitest@4.0.18(@types/node@25.3.5)(tsx@4.21.0))':
     dependencies:
@@ -2986,6 +3011,8 @@ snapshots:
   wordwrap@1.0.0: {}
 
   wrappy@1.0.2: {}
+
+  ws@8.19.0: {}
 
   zod-to-json-schema@3.25.1(zod@4.3.6):
     dependencies:
