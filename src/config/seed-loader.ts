@@ -1,6 +1,9 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { sql } from "drizzle-orm";
+// BetterSQLite3Database is imported here (outside a DrizzleFooRepository file) because
+// seed-loader.ts wraps seed loading in a synchronous SQLite transaction via db.run(sql`BEGIN/COMMIT/ROLLBACK`).
+// The Db type parameter is needed to type the optional `db` field in LoadSeedOptions.
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "../repositories/drizzle/schema.js";
 import type { IFlowRepository, IGateRepository } from "../repositories/interfaces.js";
@@ -77,6 +80,7 @@ async function parseSeedAndLoad(
   db?: Db,
 ): Promise<LoadSeedResult> {
   const parsed = SeedFileSchema.parse(json);
+  // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
   if (db) db.run(sql`BEGIN`);
 
   try {
@@ -144,6 +148,7 @@ async function parseSeedAndLoad(
       }
     }
 
+    // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
     if (db) db.run(sql`COMMIT`);
     return {
       flows: parsed.flows.length,
@@ -151,6 +156,7 @@ async function parseSeedAndLoad(
     };
   } catch (err) {
     try {
+      // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
       if (db) db.run(sql`ROLLBACK`);
     } catch {
       // ignore rollback errors — original error takes priority
