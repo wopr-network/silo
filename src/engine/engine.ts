@@ -323,11 +323,20 @@ export class Engine {
   async createEntity(
     flowName: string,
     refs?: Record<string, { adapter: string; id: string; [key: string]: unknown }>,
+    payload?: Record<string, unknown>,
   ): Promise<Entity> {
     const flow = await this.flowRepo.getByName(flowName);
     if (!flow) throw new NotFoundError(`Flow "${flowName}" not found`);
 
-    const entity = await this.entityRepo.create(flow.id, flow.initialState, refs);
+    let entity = await this.entityRepo.create(flow.id, flow.initialState, refs);
+
+    // Store any caller-supplied payload as initial artifacts so prompt templates
+    // can access refs like {{entity.artifacts.refs.linear.id}}.
+    if (payload && Object.keys(payload).length > 0) {
+      await this.entityRepo.updateArtifacts(entity.id, payload);
+      const refreshed = await this.entityRepo.get(entity.id);
+      if (refreshed) entity = refreshed;
+    }
 
     await this.eventEmitter.emit({
       type: "entity.created",

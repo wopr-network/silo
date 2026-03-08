@@ -50,7 +50,19 @@ export async function buildInvocation(
     }),
   );
 
-  const context: Record<string, unknown> = { entity, state, refs: resolvedRefs, flow: flow ?? null };
+  // Merge payload-stored refs (entity.artifacts.refs) into entity.refs for template context,
+  // so {{entity.refs.linear.id}} works whether refs were set via formal adapters or via payload.
+  // Normalize to empty object so Handlebars strict mode doesn't throw on missing paths.
+  const artifactRefs =
+    entity.artifacts !== null &&
+    typeof entity.artifacts === "object" &&
+    "refs" in entity.artifacts &&
+    entity.artifacts.refs !== null &&
+    typeof entity.artifacts.refs === "object"
+      ? (entity.artifacts.refs as Record<string, unknown>)
+      : {};
+  const entityForContext = { ...entity, refs: { ...artifactRefs, ...(entity.refs ?? {}) } };
+  const context: Record<string, unknown> = { entity: entityForContext, state, refs: resolvedRefs, flow: flow ?? null };
 
   let prompt = "";
   let systemPrompt = "";

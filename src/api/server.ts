@@ -153,9 +153,10 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
   router.add("POST", "/api/entities", async (req) => {
     const flowName = req.body?.flow as string;
     const refs = req.body?.refs as Record<string, { adapter: string; id: string }> | undefined;
+    const payload = req.body?.payload as Record<string, unknown> | undefined;
     if (!flowName) return { status: 400, body: { error: "Missing required field: flow" } };
     try {
-      const entity = await deps.engine.createEntity(flowName, refs);
+      const entity = await deps.engine.createEntity(flowName, refs, payload);
       return { status: 201, body: entity };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
