@@ -54,7 +54,7 @@ describe("loadSeed", () => {
     const { db, sqlite, flowRepo, gateRepo } = setupDb();
     const seedPath = writeSeedFile(validSeed);
 
-    const result = await loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot });
+    const result = await loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot });
 
     expect(result).toEqual({ flows: 1, gates: 1 });
 
@@ -77,7 +77,7 @@ describe("loadSeed", () => {
     const { db, sqlite, flowRepo, gateRepo } = setupDb();
     const seedPath = writeSeedFile({ flows: [], states: [], transitions: [] });
 
-    await expect(loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot })).rejects.toThrow();
+    await expect(loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot })).rejects.toThrow();
 
     sqlite.close();
   });
@@ -85,7 +85,7 @@ describe("loadSeed", () => {
   it("rejects non-existent file", async () => {
     const { db, sqlite, flowRepo, gateRepo } = setupDb();
 
-    await expect(loadSeed(join(tmpRoot, "nonexistent-seed.json"), flowRepo, gateRepo, db, { allowedRoot: tmpRoot })).rejects.toThrow();
+    await expect(loadSeed(join(tmpRoot, "nonexistent-seed.json"), flowRepo, gateRepo, { allowedRoot: tmpRoot })).rejects.toThrow();
 
     sqlite.close();
   });
@@ -99,7 +99,7 @@ describe("loadSeed", () => {
     };
     const seedPath = writeSeedFile(seed);
 
-    const result = await loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot });
+    const result = await loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot });
     expect(result).toEqual({ flows: 1, gates: 0 });
 
     sqlite.close();
@@ -118,7 +118,7 @@ describe("loadSeed", () => {
     const seedPath = writeSeedFile(seed);
 
     // The Zod schema validates gate references and throws with a descriptive message
-    await expect(loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot })).rejects.toThrow(
+    await expect(loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot })).rejects.toThrow(
       "nonexistent-gate",
     );
 
@@ -129,7 +129,7 @@ describe("loadSeed", () => {
     const { db, sqlite, flowRepo, gateRepo } = setupDb();
 
     await expect(
-      loadSeed("/etc/passwd", flowRepo, gateRepo, db, { allowedRoot: "/home/fake" }),
+      loadSeed("/etc/passwd", flowRepo, gateRepo, { allowedRoot: "/home/fake" }),
     ).rejects.toThrow("Seed path escapes allowed root");
 
     sqlite.close();
@@ -140,7 +140,7 @@ describe("loadSeed", () => {
     const cwd = process.cwd();
 
     await expect(
-      loadSeed("../../etc/passwd", flowRepo, gateRepo, db, { allowedRoot: cwd }),
+      loadSeed("../../etc/passwd", flowRepo, gateRepo, { allowedRoot: cwd }),
     ).rejects.toThrow("Seed path escapes allowed root");
 
     sqlite.close();
@@ -160,7 +160,7 @@ describe("loadSeed", () => {
     }
 
     await expect(
-      loadSeed(link, flowRepo, gateRepo, db, { allowedRoot: dir }),
+      loadSeed(link, flowRepo, gateRepo, { allowedRoot: dir }),
     ).rejects.toThrow("Seed path escapes allowed root");
 
     sqlite.close();
@@ -177,7 +177,7 @@ describe("loadSeed", () => {
     writeFileSync(seedPath, JSON.stringify(validSeed));
 
     await expect(
-      loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: dir }),
+      loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: dir }),
     ).rejects.toThrow("Seed path escapes allowed root");
 
     sqlite.close();
@@ -191,7 +191,7 @@ describe("loadSeed", () => {
     writeFileSync(seedPath, "{ not valid json !!");
 
     await expect(
-      loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot }),
+      loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot }),
     ).rejects.toThrow(/Invalid JSON in seed file/);
 
     sqlite.close();
@@ -206,7 +206,7 @@ describe("loadSeed", () => {
 
     let thrown: unknown;
     try {
-      await loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot });
+      await loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot });
     } catch (e) {
       thrown = e;
     }
@@ -221,7 +221,7 @@ describe("loadSeed", () => {
     const { db, sqlite, flowRepo, gateRepo } = setupDb();
     const seedPath = writeSeedFile(validSeed);
 
-    const result = await loadSeed(seedPath, flowRepo, gateRepo, db, { allowedRoot: tmpRoot });
+    const result = await loadSeed(seedPath, flowRepo, gateRepo, { allowedRoot: tmpRoot });
     expect(result).toEqual({ flows: 1, gates: 1 });
 
     sqlite.close();

@@ -132,7 +132,6 @@ program
       resolve(seedPath),
       flowRepo,
       gateRepo,
-      db,
       seedRoot ? { allowedRoot: seedRoot } : undefined,
     );
     console.log(`Loaded seed: flows: ${result.flows}, gates: ${result.gates}`);
