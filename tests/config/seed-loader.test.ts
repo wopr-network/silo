@@ -197,6 +197,26 @@ describe("loadSeed", () => {
     sqlite.close();
   });
 
+  it("preserves SyntaxError cause on malformed JSON", async () => {
+    const { sqlite, flowRepo, gateRepo } = setupDb();
+    const dir = join(tmpRoot, `seed-cause-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    const seedPath = join(dir, "bad.json");
+    writeFileSync(seedPath, "{ not valid json !!");
+
+    let thrown: unknown;
+    try {
+      await loadSeed(seedPath, flowRepo, gateRepo, sqlite, { allowedRoot: tmpRoot });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error & { cause?: unknown }).cause).toBeInstanceOf(SyntaxError);
+
+    sqlite.close();
+  });
+
   it("accepts a seed path within the allowed root", async () => {
     const { sqlite, flowRepo, gateRepo } = setupDb();
     const seedPath = writeSeedFile(validSeed);

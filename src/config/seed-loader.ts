@@ -29,17 +29,7 @@ export async function loadSeed(
     throw new Error(`Seed path escapes allowed root: ${resolvedSeed} is not under ${resolvedRoot}`);
   }
 
-  let realSeed: string;
-  try {
-    realSeed = realpathSync(resolvedSeed);
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      // File doesn't exist — let readFileSync throw its normal ENOENT error
-      const raw = readFileSync(resolvedSeed, "utf-8");
-      return parseSeedAndLoad(parseJson(raw, resolvedSeed), flowRepo, gateRepo, sqlite);
-    }
-    throw err;
-  }
+  const realSeed = realpathSync(resolvedSeed);
 
   let realRoot: string;
   try {
@@ -62,7 +52,7 @@ function parseJson(raw: string, path: string): unknown {
     return JSON.parse(raw);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Invalid JSON in seed file: ${path}: ${msg}`);
+    throw new Error(`Invalid JSON in seed file: ${path}: ${msg}`, { cause: e });
   }
 }
 
