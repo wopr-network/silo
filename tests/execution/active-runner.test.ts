@@ -329,6 +329,318 @@ describe("maxRetries guard on processSignal error", () => {
   });
 });
 
+describe("parseResponse", () => {
+  let runner: ActiveRunner;
+
+  beforeEach(() => {
+    runner = new ActiveRunner(makeDeps());
+  });
+
+  it("returns null when response has no SIGNAL line", () => {
+    const result = runner.parseResponse("just some text without a signal");
+    expect(result).toBeNull();
+  });
+
+  it("returns signal with empty artifacts when no ARTIFACTS block", () => {
+    const result = runner.parseResponse("SIGNAL: done");
+    expect(result).toEqual({ signal: "done", artifacts: {} });
+  });
+
+  it("parses SIGNAL and ARTIFACTS correctly", () => {
+    const content = 'SIGNAL: complete\nARTIFACTS:\n{"key": "value"}';
+    const result = runner.parseResponse(content);
+    expect(result).toEqual({ signal: "complete", artifacts: { key: "value" } });
+  });
+
+  it("returns empty artifacts when ARTIFACTS JSON is malformed", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const content = "SIGNAL: done\nARTIFACTS:\n{not valid json}";
+    const result = runner.parseResponse(content);
+    expect(result).toEqual({ signal: "done", artifacts: {} });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to parse ARTIFACTS JSON"),
+      expect.any(String),
+    );
+    warnSpy.mockRestore();
+  });
+});
+
+describe("resolveModel fallbacks", () => {
+  it("returns default model when entity is not found", async () => {
+    const invocation = makeInvocationForModelTier();
+    const aiAdapter: IAIProviderAdapter = { invoke: vi.fn().mockResolvedValue({ content: "SIGNAL: done" }) };
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockResolvedValue(undefined),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+      entityRepo: {
+        get: vi.fn().mockResolvedValue(null),
+        updateArtifacts: vi.fn(),
+      } as any,
+      flowRepo: {
+        get: vi.fn().mockResolvedValue(null),
+        getByName: vi.fn(),
+      } as any,
+      aiAdapter,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({ gated: false }),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).toHaveBeenCalledWith(invocation.prompt, { model: "claude-sonnet-4-6" });
+  });
+
+  it("returns default model when flow is not found for entity", async () => {
+    const invocation = makeInvocationForModelTier();
+    const aiAdapter: IAIProviderAdapter = { invoke: vi.fn().mockResolvedValue({ content: "SIGNAL: done" }) };
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockResolvedValue(undefined),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+      entityRepo: {
+        get: vi.fn().mockResolvedValue(makeEntity()),
+        updateArtifacts: vi.fn(),
+      } as any,
+      flowRepo: {
+        get: vi.fn().mockResolvedValue(null),
+        getByName: vi.fn(),
+      } as any,
+      aiAdapter,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({ gated: false }),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).toHaveBeenCalledWith(invocation.prompt, { model: "claude-sonnet-4-6" });
+  });
+
+  it("returns default model when state not found in flow (stage mismatch)", async () => {
+    const invocation = makeInvocationForModelTier({ stage: "nonexistent-state" });
+    const flow = makeFlow({ states: [makeState({ name: "coding", modelTier: "opus" })] });
+    const aiAdapter: IAIProviderAdapter = { invoke: vi.fn().mockResolvedValue({ content: "SIGNAL: done" }) };
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockResolvedValue(undefined),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+      entityRepo: {
+        get: vi.fn().mockResolvedValue(makeEntity()),
+        updateArtifacts: vi.fn(),
+      } as any,
+      flowRepo: {
+        get: vi.fn().mockResolvedValue(flow),
+        getByName: vi.fn(),
+      } as any,
+      aiAdapter,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({ gated: false }),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).toHaveBeenCalledWith(invocation.prompt, { model: "claude-sonnet-4-6" });
+  });
+
+  it("returns default model when tier key not in modelTierMap", async () => {
+    const state = makeState({ name: "coding", modelTier: "unknown-tier" });
+    const flow = makeFlow({ states: [state] });
+    const entity = makeEntity();
+    const invocation = makeInvocationForModelTier();
+    const aiAdapter: IAIProviderAdapter = { invoke: vi.fn().mockResolvedValue({ content: "SIGNAL: done" }) };
+
+    const runner = new ActiveRunner(makeFullDeps(invocation, entity, flow, aiAdapter));
+    await runner.run({ once: true });
+
+    expect(aiAdapter.invoke).toHaveBeenCalledWith(invocation.prompt, { model: "claude-sonnet-4-6" });
+  });
+});
+
+describe("run() with flowName", () => {
+  it("resolves flowId from flowName and passes to pollOnce", async () => {
+    const flow = makeFlow({ id: "flow-99", name: "my-flow" });
+    const invocation = makeInvocation();
+    const deps = makeDeps({
+      flowRepo: {
+        get: vi.fn().mockResolvedValue(flow),
+        getByName: vi.fn().mockResolvedValue(flow),
+      } as any,
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockResolvedValue(undefined),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({ gated: false }),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true, flowName: "my-flow" });
+
+    expect(deps.flowRepo.getByName).toHaveBeenCalledWith("my-flow");
+    expect(deps.invocationRepo.findUnclaimedActive).toHaveBeenCalledWith("flow-99");
+  });
+
+  it("throws when flowName not found", async () => {
+    const deps = makeDeps({
+      flowRepo: {
+        get: vi.fn().mockResolvedValue(null),
+        getByName: vi.fn().mockResolvedValue(null),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await expect(runner.run({ once: true, flowName: "nonexistent" })).rejects.toThrow(
+      'Flow "nonexistent" not found',
+    );
+  });
+});
+
+describe("pollOnce — all claims fail", () => {
+  it("returns false when all candidates fail to claim", async () => {
+    const inv1 = makeInvocation({ id: "inv-a" });
+    const inv2 = makeInvocation({ id: "inv-b" });
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([inv1, inv2]),
+        claim: vi.fn().mockResolvedValue(null),
+        complete: vi.fn(),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true });
+
+    expect(deps.invocationRepo.claim).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("processInvocation — complete() throws", () => {
+  it("returns early without calling processSignal when complete() fails", async () => {
+    const invocation = makeInvocation();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const processSignalMock = vi.fn();
+    const releaseClaimMock = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockRejectedValue(new Error("DB write failed")),
+        fail: vi.fn(),
+        create: vi.fn(),
+        releaseClaim: releaseClaimMock,
+      } as any,
+      engine: {
+        processSignal: processSignalMock,
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ once: true });
+
+    expect(processSignalMock).not.toHaveBeenCalled();
+    expect(releaseClaimMock).toHaveBeenCalledWith(invocation.id);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("complete() failed"),
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
+  });
+});
+
+describe("processInvocation — releaseClaim() throws", () => {
+  it("swallows releaseClaim error and does not rethrow when complete() and releaseClaim() both fail", async () => {
+    const invocation = makeInvocation();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const processSignalMock = vi.fn();
+    const releaseClaimMock = vi.fn().mockRejectedValue(new Error("release failed"));
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
+        claim: vi.fn().mockResolvedValue(invocation),
+        complete: vi.fn().mockRejectedValue(new Error("DB write failed")),
+        fail: vi.fn(),
+        create: vi.fn(),
+        releaseClaim: releaseClaimMock,
+      } as any,
+      engine: {
+        processSignal: processSignalMock,
+      } as any,
+    });
+
+    const runner = new ActiveRunner(deps);
+    // Should not throw even though both complete() and releaseClaim() throw
+    await expect(runner.run({ once: true })).resolves.toBeUndefined();
+
+    expect(processSignalMock).not.toHaveBeenCalled();
+    expect(releaseClaimMock).toHaveBeenCalledWith(invocation.id);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("releaseClaim failed:"),
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
+  });
+});
+
+describe("run() abort signal", () => {
+  it("exits immediately when signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const deps = makeDeps();
+
+    const runner = new ActiveRunner(deps);
+    await runner.run({ signal: controller.signal });
+
+    expect(deps.invocationRepo.findUnclaimedActive).not.toHaveBeenCalled();
+  });
+});
+
+describe("sleep() with pre-aborted signal", () => {
+  it("resolves immediately when signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    vi.useFakeTimers();
+    const deps = makeDeps({
+      invocationRepo: {
+        findUnclaimedActive: vi.fn().mockResolvedValue([]),
+        claim: vi.fn(),
+        complete: vi.fn(),
+        fail: vi.fn(),
+        create: vi.fn(),
+      } as any,
+    });
+    const runner = new ActiveRunner(deps);
+    const p = runner.run({ signal: controller.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    await p;
+    vi.useRealTimers();
+  });
+});
+
 describe("ActiveRunner", () => {
   describe("resolveModel via processInvocation", () => {
     it("uses state modelTier=opus to select claude-opus-4-6", async () => {
