@@ -55,39 +55,60 @@ The entity remains in a "pending" sub-state until a human resolves the issue (us
 
 ## WOPR Usage: Worktree Creation
 
-> **Note:** The `coding` state's `onEnter` in `seeds/wopr-changeset.json` is currently `null`. The configuration below is the intended target, pending the `defcon provision-worktree` CLI tool (WOP-1895).
-
-The canonical onEnter usage in WOPR is the `coding` state's worktree setup:
+The `architecting` state uses `onEnter` to provision a git worktree before the architect agent claims the entity. The live configuration in `seeds/wopr-changeset.json`:
 
 ```json
 {
-  "name": "coding",
+  "name": "architecting",
   "flowName": "wopr-changeset",
   "onEnter": {
-    "command": "scripts/create-worktree.sh {{entity.refs.github.repo}} {{entity.refs.linear.key}}",
-    "artifacts": ["worktreePath", "branch"],
-    "timeout_ms": 60000
+    "command": "node $CLI provision-worktree {{entity.refs.github.repo}} {{entity.refs.linear.key}} --base-path /data/worktrees --clone-root /data/repos | node -e \"...tail-scanner...\"",
+    "artifacts": ["codebasePath", "worktreePath", "branch"],
+    "timeout_ms": 120000
   }
 }
 ```
 
-When an entity enters `coding`, DEFCON runs `scripts/create-worktree.sh wopr-network/wopr WOP-392`. The script creates the worktree and returns:
+When an entity enters `architecting`, DEFCON runs `provision-worktree wopr-network/wopr WOP-392`, which clones the repo (or reuses an existing clone under `/data/repos`) and creates a worktree under `/data/worktrees`. It returns:
 
 ```json
 {
-  "worktreePath": "/home/tsavo/worktrees/wopr-wopr-coder-392",
+  "worktreePath": "/data/worktrees/wopr-wopr-coder-392",
+  "codebasePath": "/data/worktrees/wopr-wopr-coder-392",
   "branch": "agent/coder-392/wop-392"
 }
 ```
 
-DEFCON merges these into `entity.artifacts`. The coder's promptTemplate can then reference:
+DEFCON merges these into `entity.artifacts`. The architect's `promptTemplate` can then reference:
 
 ```
-Worktree: {{entity.artifacts.worktreePath}}
-Branch: {{entity.artifacts.branch}}
+Codebase (READ ONLY): {{entity.artifacts.codebasePath}}
 ```
 
-The coder never runs `git worktree add`. The worktree arrives ready.
+The agent never runs `git worktree add` or `git clone`. The worktree arrives ready.
+
+### stdout contamination
+
+`provision-worktree` internally runs `pnpm install`, which writes progress lines to stdout alongside the final JSON result. Naive JSON parsing fails because the output is not pure JSON.
+
+Fix: pipe through a tail-scanner that scans lines from the end and returns the first valid JSON object:
+
+```bash
+provision-worktree ... | node -e "
+let d='';
+process.stdin.on('data', c => d += c);
+process.stdin.on('end', () => {
+  const lines = d.trim().split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try { const r = JSON.parse(lines[i]); process.stdout.write(JSON.stringify(r)); return; }
+    catch(e) {}
+  }
+  process.exit(1);
+});
+"
+```
+
+Apply this same pattern to any onEnter command that invokes a package manager.
 
 ---
 
