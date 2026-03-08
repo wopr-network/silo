@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, timingSafeEqual } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -82,7 +82,20 @@ export function validateWorkerToken(opts: {
   }
 }
 
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
+// Resolve drizzle migrations folder. Works for both tsx (src/) and compiled (dist/src/) contexts.
+const MIGRATIONS_FOLDER = (() => {
+  const candidates = ["../../drizzle", "../../../drizzle"].map((rel) => new URL(rel, import.meta.url).pathname);
+  const found = candidates.find((p) => {
+    try {
+      readdirSync(p);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (!found) throw new Error(`Cannot find drizzle migrations folder (tried: ${candidates.join(", ")})`);
+  return found;
+})();
 const REAPER_INTERVAL_DEFAULT = "30000"; // 30s
 const CLAIM_TTL_DEFAULT = "300000"; // 5min
 
