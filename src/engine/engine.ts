@@ -577,6 +577,11 @@ export class Engine {
         } catch (err) {
           this.logger.error(`[engine] invocationRepo.claim() failed for invocation ${invocation.id}:`, err);
           try {
+            await this.invocationRepo.fail(invocation.id, "claim failed");
+          } catch (failErr) {
+            this.logger.error(`[engine] fail() for orphaned invocation ${invocation.id} failed:`, failErr);
+          }
+          try {
             await this.entityRepo.release(claimed.id, entityClaimToken);
           } catch (releaseErr) {
             this.logger.error(`[engine] release() failed for entity ${claimed.id}:`, releaseErr);
@@ -584,6 +589,11 @@ export class Engine {
           continue;
         }
         if (!claimedInvocation) {
+          try {
+            await this.invocationRepo.fail(invocation.id, "claim returned null");
+          } catch (failErr) {
+            this.logger.error(`[engine] fail() for orphaned invocation ${invocation.id} failed:`, failErr);
+          }
           try {
             await this.entityRepo.release(claimed.id, entityClaimToken);
           } catch (err) {
