@@ -23,6 +23,11 @@ if echo "$RESPONSE" | jq -e '.errors' > /dev/null 2>&1; then
   exit 1
 fi
 
+if [ "$(echo "$RESPONSE" | jq '.data.issue')" = "null" ]; then
+  echo "ERROR: Linear issue $LINEAR_ID not found"
+  exit 1
+fi
+
 COMMENTS=$(echo "$RESPONSE" | jq -r '.data.issue.comments.nodes[].body // empty')
 
 if echo "$COMMENTS" | grep -qiE '(palette|typography|responsive|design spec|color scheme|breakpoint)'; then

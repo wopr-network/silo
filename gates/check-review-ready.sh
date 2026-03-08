@@ -8,13 +8,15 @@ REPO="${2:?Usage: check-review-ready.sh <pr-number> <repo>}"
 
 # Check 1: All CI checks passing
 echo "Checking CI status..."
-CHECKS_OUTPUT=$(gh pr checks "$PR" --repo "$REPO" 2>&1) || { echo "ERROR: gh pr checks failed: $CHECKS_OUTPUT"; exit 1; }
-if echo "$CHECKS_OUTPUT" | grep -qiE '\bfail\b'; then
-  echo "CI checks failing for PR #$PR in $REPO"
+CHECKS=$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup --jq '.statusCheckRollup' 2>/dev/null) || { echo "ERROR: failed to query statusCheckRollup for PR #$PR"; exit 1; }
+FAILING=$(echo "$CHECKS" | jq -r '[.[] | select(.conclusion == "FAILURE") | .name] | .[]' 2>/dev/null)
+if [ -n "$FAILING" ]; then
+  echo "CI checks failing for PR #$PR in $REPO: $FAILING"
   exit 1
 fi
-if echo "$CHECKS_OUTPUT" | grep -qiE '(pending|queued|in_progress)'; then
-  echo "CI checks still pending for PR #$PR in $REPO"
+PENDING=$(echo "$CHECKS" | jq -r '[.[] | select(.status == "IN_PROGRESS" or .status == "QUEUED" or .status == "PENDING") | .name] | .[]' 2>/dev/null)
+if [ -n "$PENDING" ]; then
+  echo "CI checks still pending for PR #$PR in $REPO: $PENDING"
   exit 1
 fi
 echo "CI checks passed"

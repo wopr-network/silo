@@ -11,11 +11,16 @@ REPO="${2:?Usage: check-merge.sh <pr-number> <repo>}"
 trap 'echo "Timed out waiting for PR #$PR to merge"; exit 1' TERM
 
 while true; do
-  STATUS=$(gh pr view "$PR" --repo "$REPO" --json state,mergeStateStatus --jq '{state: .state, mergeStateStatus: .mergeStateStatus}' 2>&1) || {
-    echo "Failed to query PR status: $STATUS"
+  STATUS=$(gh pr view "$PR" --repo "$REPO" --json state,mergeStateStatus --jq '{state: .state, mergeStateStatus: .mergeStateStatus}' 2>/dev/null) || {
+    echo "Failed to query PR status"
     sleep 30
     continue
   }
+  if ! echo "$STATUS" | jq . >/dev/null 2>&1; then
+    echo "ERROR: invalid JSON from gh pr view"
+    sleep 30
+    continue
+  fi
 
   STATE=$(echo "$STATUS" | jq -r '.state')
   MERGE_STATUS=$(echo "$STATUS" | jq -r '.mergeStateStatus')
