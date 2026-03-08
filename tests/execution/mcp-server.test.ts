@@ -1275,3 +1275,597 @@ describe("admin.entity.create", () => {
     expect(result.content[0].text).toContain("Unauthorized");
   });
 });
+
+describe("admin tool handlers — direct callToolHandler", () => {
+  let deps: McpServerDeps;
+
+  beforeEach(() => {
+    deps = createMockDeps();
+  });
+
+  it("returns error for unknown tool name", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "nonexistent.tool", {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Unknown tool: nonexistent.tool");
+  });
+
+  // admin.flow.create
+  it("admin.flow.create creates flow with matching initialState", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.create", {
+      name: "new-flow",
+      initialState: "draft",
+      states: [{ name: "draft", mode: "passive", promptTemplate: "do work" }, { name: "done", mode: "passive" }],
+    });
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.name).toBe("test-flow");
+  });
+
+  it("admin.flow.create rejects when initialState not in states", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.create", {
+      name: "new-flow",
+      initialState: "missing",
+      states: [{ name: "draft", mode: "passive", promptTemplate: "do work" }],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("initialState 'missing' must be included");
+  });
+
+  // admin.flow.update
+  it("admin.flow.update updates flow metadata", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.update", {
+      flow_name: "test-flow",
+      description: "updated description",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.flow.update returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.update", {
+      flow_name: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.state.create
+  it("admin.state.create adds state to flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.state.create", {
+      flow_name: "test-flow",
+      name: "new-state",
+      mode: "passive",
+      promptTemplate: "do stuff",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.state.create returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.state.create", {
+      flow_name: "nonexistent",
+      name: "s1",
+      mode: "passive",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.state.update
+  it("admin.state.update updates existing state", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.state.update", {
+      flow_name: "test-flow",
+      state_name: "draft",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.state.update returns error for unknown state", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.state.update", {
+      flow_name: "test-flow",
+      state_name: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("State not found");
+  });
+
+  it("admin.state.update returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.state.update", {
+      flow_name: "nonexistent",
+      state_name: "draft",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.transition.create
+  it("admin.transition.create adds transition between valid states", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "test-flow",
+      fromState: "draft",
+      toState: "review",
+      trigger: "submit",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.transition.create with gateName resolves gate", async () => {
+    deps.gates = {
+      ...deps.gates,
+      getByName: async () => ({
+        id: "g-lint",
+        name: "lint",
+        type: "command",
+        command: "pnpm lint",
+        functionRef: null,
+        apiConfig: null,
+        timeoutMs: 30000,
+      }),
+    } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "test-flow",
+      fromState: "draft",
+      toState: "review",
+      trigger: "submit",
+      gateName: "lint",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.transition.create returns error for unknown fromState", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "test-flow",
+      fromState: "nonexistent",
+      toState: "review",
+      trigger: "submit",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("State not found: 'nonexistent'");
+  });
+
+  it("admin.transition.create returns error for unknown toState", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "test-flow",
+      fromState: "draft",
+      toState: "nonexistent",
+      trigger: "submit",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("State not found: 'nonexistent'");
+  });
+
+  it("admin.transition.create returns error for unknown gate", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "test-flow",
+      fromState: "draft",
+      toState: "review",
+      trigger: "submit",
+      gateName: "nonexistent-gate",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Gate not found: nonexistent-gate");
+  });
+
+  it("admin.transition.create returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.create", {
+      flow_name: "nonexistent",
+      fromState: "draft",
+      toState: "review",
+      trigger: "submit",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.transition.update
+  it("admin.transition.update updates transition", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      trigger: "new-trigger",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.transition.update returns error for unknown transition", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Transition not found");
+  });
+
+  it("admin.transition.update returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "nonexistent",
+      transition_id: "t1",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  it("admin.transition.update validates fromState exists", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      fromState: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("State not found: 'nonexistent'");
+  });
+
+  it("admin.transition.update validates toState exists", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      toState: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("State not found: 'nonexistent'");
+  });
+
+  it("admin.transition.update with gateName resolves gate id", async () => {
+    deps.gates = {
+      ...deps.gates,
+      getByName: async () => ({
+        id: "g-lint",
+        name: "lint",
+        type: "command",
+        command: "pnpm lint",
+        functionRef: null,
+        apiConfig: null,
+        timeoutMs: 30000,
+      }),
+    } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      gateName: "lint",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.transition.update with no gateName passes through unchanged", async () => {
+    const updateTransitionSpy = vi.fn().mockResolvedValue(mockFlow().transitions[0]);
+    deps.flows = { ...deps.flows, updateTransition: updateTransitionSpy } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(updateTransitionSpy).toHaveBeenCalledWith("t1", {});
+  });
+
+  it("admin.transition.update with unknown gateName returns error", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.transition.update", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      gateName: "nonexistent-gate",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Gate not found: nonexistent-gate");
+  });
+
+  // admin.gate.create
+  it("admin.gate.create creates a gate", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.gate.create", {
+      name: "ci-check",
+      type: "command",
+      command: "gates/ci-check.sh",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  // admin.gate.attach
+  it("admin.gate.attach attaches gate to transition", async () => {
+    deps.gates = {
+      ...deps.gates,
+      getByName: async () => ({
+        id: "g-lint",
+        name: "lint",
+        type: "command",
+        command: "pnpm lint",
+        functionRef: null,
+        apiConfig: null,
+        timeoutMs: 30000,
+      }),
+    } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.gate.attach", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      gate_name: "lint",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.gate.attach returns error for unknown transition", async () => {
+    deps.gates = {
+      ...deps.gates,
+      getByName: async () => ({
+        id: "g-lint",
+        name: "lint",
+        type: "command",
+        command: "pnpm lint",
+        functionRef: null,
+        apiConfig: null,
+        timeoutMs: 30000,
+      }),
+    } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.gate.attach", {
+      flow_name: "test-flow",
+      transition_id: "nonexistent",
+      gate_name: "lint",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Transition not found");
+  });
+
+  it("admin.gate.attach returns error for unknown gate", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.gate.attach", {
+      flow_name: "test-flow",
+      transition_id: "t1",
+      gate_name: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Gate not found: nonexistent");
+  });
+
+  it("admin.gate.attach returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.gate.attach", {
+      flow_name: "nonexistent",
+      transition_id: "t1",
+      gate_name: "lint",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.flow.snapshot
+  it("admin.flow.snapshot creates snapshot", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.snapshot", {
+      flow_name: "test-flow",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("admin.flow.snapshot returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.snapshot", {
+      flow_name: "nonexistent",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // admin.flow.restore
+  it("admin.flow.restore restores to version", async () => {
+    deps.invocations = { ...deps.invocations, countActiveByFlow: async () => 0 } as any;
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.restore", {
+      flow_name: "test-flow",
+      version: 1,
+    });
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.restored).toBe(true);
+    expect(data.version).toBe(1);
+  });
+
+  it("admin.flow.restore returns error for unknown flow", async () => {
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(deps, "admin.flow.restore", {
+      flow_name: "nonexistent",
+      version: 1,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Flow not found: nonexistent");
+  });
+
+  // flow.report uncovered branches
+  it("flow.report returns error when engine is not available", async () => {
+    const testDeps: McpServerDeps = { ...deps, engine: undefined as any };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(testDeps, "flow.report", {
+      entity_id: "ent-1",
+      signal: "done",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Engine not available");
+  });
+
+  it("flow.report re-queues invocation when processSignal throws", async () => {
+    const createMock = vi.fn().mockResolvedValue(mockInvocation());
+    const testDeps: McpServerDeps = {
+      ...deps,
+      invocations: {
+        ...deps.invocations,
+        findByEntity: async () => [mockInvocation({ claimedAt: new Date(), completedAt: null, failedAt: null })],
+        create: createMock,
+      } as any,
+      entities: {
+        ...deps.entities,
+        get: async (id: string) => (id === "ent-1" ? mockEntity({ state: "draft" }) : null),
+      } as any,
+      engine: {
+        processSignal: vi.fn().mockRejectedValue(new Error("engine crash")),
+      } as any,
+    };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(testDeps, "flow.report", {
+      entity_id: "ent-1",
+      signal: "done",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("engine crash");
+    expect(createMock).toHaveBeenCalled();
+  });
+
+  it("flow.claim continues to next candidate when claim throws", async () => {
+    let callCount = 0;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const testDeps: McpServerDeps = {
+      ...deps,
+      invocations: {
+        ...deps.invocations,
+        findUnclaimedByFlow: async () => [
+          mockInvocation({ id: "inv-1" }),
+          mockInvocation({ id: "inv-2" }),
+        ],
+        claim: async (id: string) => {
+          callCount++;
+          if (callCount === 1) throw new Error("DB error");
+          return mockInvocation({ id, claimedBy: "coder", claimedAt: new Date() });
+        },
+      } as any,
+    };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(testDeps, "flow.claim", { role: "coder" });
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(data.invocation_id).toBe("inv-2");
+    errorSpy.mockRestore();
+  });
+
+  it("flow.claim releases invocation when claimById returns null (race)", async () => {
+    const releaseClaimMock = vi.fn().mockResolvedValue(undefined);
+    const testDeps: McpServerDeps = {
+      ...deps,
+      flows: {
+        ...deps.flows,
+        list: async () => [mockFlow({ discipline: "coder" })],
+        listAll: async () => [mockFlow({ discipline: "coder" })],
+        getByName: async (name: string) => (name === "test-flow" ? mockFlow({ discipline: "coder" }) : null),
+      } as any,
+      entities: {
+        ...deps.entities,
+        claimById: async () => null,
+        get: async () => mockEntity(),
+        hasAnyInFlowAndState: async () => true,
+      } as any,
+      invocations: {
+        ...deps.invocations,
+        findUnclaimedByFlow: async () => [mockInvocation({ id: "inv-1" })],
+        claim: async (id: string) => mockInvocation({ id, claimedBy: "coder", claimedAt: new Date() }),
+        releaseClaim: releaseClaimMock,
+        findByEntity: async () => [],
+      } as any,
+    };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    await callToolHandler(testDeps, "flow.claim", { role: "coder" });
+    expect(releaseClaimMock).toHaveBeenCalledWith("inv-1");
+  });
+
+  it("flow.report sets affinity on passive completion with worker_id", async () => {
+    const setAffinityMock = vi.fn().mockResolvedValue(undefined);
+    const testDeps: McpServerDeps = {
+      ...deps,
+      entities: {
+        ...deps.entities,
+        get: async () => mockEntity({ flowId: "flow-1" }),
+        setAffinity: setAffinityMock,
+      } as any,
+      flows: {
+        ...deps.flows,
+        get: async (id: string) => (id === "flow-1" ? mockFlow({ discipline: "engineering", affinityWindowMs: 600000 }) : null),
+      } as any,
+      invocations: {
+        ...deps.invocations,
+        findByEntity: async () => [mockInvocation({ mode: "passive", claimedAt: new Date(), completedAt: null, failedAt: null })],
+        complete: async (id: string, signal: string, artifacts: unknown) =>
+          mockInvocation({ id, signal, completedAt: new Date() }),
+      } as any,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({
+          gated: false,
+          terminal: true,
+          newState: "done",
+          gatesPassed: [],
+        }),
+      } as any,
+    };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(testDeps, "flow.report", {
+      entity_id: "ent-1",
+      signal: "done",
+      worker_id: "worker-42",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(setAffinityMock).toHaveBeenCalledWith(
+      "ent-1",
+      "worker-42",
+      "engineering",
+      expect.any(Date),
+    );
+  });
+
+  it("flow.report affinity set failure is silently caught", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const testDeps: McpServerDeps = {
+      ...deps,
+      entities: {
+        ...deps.entities,
+        get: async () => mockEntity({ flowId: "flow-1" }),
+        setAffinity: async () => { throw new Error("affinity DB error"); },
+      } as any,
+      flows: {
+        ...deps.flows,
+        get: async (id: string) => (id === "flow-1" ? mockFlow({ discipline: "engineering" }) : null),
+      } as any,
+      invocations: {
+        ...deps.invocations,
+        findByEntity: async () => [mockInvocation({ mode: "passive", claimedAt: new Date(), completedAt: null, failedAt: null })],
+        complete: async (id: string, signal: string, artifacts: unknown) =>
+          mockInvocation({ id, signal, completedAt: new Date() }),
+      } as any,
+      engine: {
+        processSignal: vi.fn().mockResolvedValue({
+          gated: false,
+          terminal: true,
+          newState: "done",
+          gatesPassed: [],
+        }),
+      } as any,
+    };
+    const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const result = await callToolHandler(testDeps, "flow.report", {
+      entity_id: "ent-1",
+      signal: "done",
+      worker_id: "worker-42",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to set affinity"),
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
+  });
+});
