@@ -4,6 +4,7 @@ import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
+import { splitShellWords } from "./shell-words.js";
 import { checkSsrf } from "./ssrf-guard.js";
 
 export interface GateEvalResult {
@@ -67,8 +68,16 @@ export async function evaluateGate(
       await gateRepo.record(entity.id, gate.id, false, msg);
       return { passed: false, timedOut: false, output: msg };
     }
-    const [, ...args] = renderedCommand.split(/\s+/);
-    const resolvedPath = validation.resolvedPath ?? renderedCommand.split(/\s+/)[0];
+    let parts: string[];
+    try {
+      parts = splitShellWords(renderedCommand);
+    } catch (err) {
+      const msg = `Shell parse error: ${err instanceof Error ? err.message : String(err)}`;
+      await gateRepo.record(entity.id, gate.id, false, msg);
+      return { passed: false, timedOut: false, output: msg };
+    }
+    const [, ...args] = parts;
+    const resolvedPath = validation.resolvedPath ?? parts[0];
     const result = await runCommand(resolvedPath, args, effectiveTimeout);
     passed = result.exitCode === 0;
     output = result.output;

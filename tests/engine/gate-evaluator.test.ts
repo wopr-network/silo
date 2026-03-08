@@ -18,6 +18,7 @@ vi.mock("../../src/engine/gate-command-validator.js", () => ({
       "echo linear-123": "/usr/bin/echo",
       "exit 1": "/bin/sh",
       "sleep 10": "/usr/bin/sleep",
+      "echo 'hello world'": "/usr/bin/echo",
     };
     return { valid: true, resolvedPath: binaryMap[cmd] ?? null, error: null };
   },
@@ -355,6 +356,19 @@ describe("evaluateGate", () => {
     expect(result.passed).toBe(true);
     // output should be the rendered entity id, not the literal template string
     expect(result.output).toBe("ent-1");
+  });
+
+  it("correctly splits quoted arguments in command gate", async () => {
+    const gate = makeGate({ type: "command", command: "echo 'hello world'" });
+    const entity = makeEntity();
+    const gateRepo: Pick<IGateRepository, "record"> = {
+      record: vi.fn().mockResolvedValue({}),
+    };
+
+    const result = await evaluateGate(gate, entity, gateRepo as IGateRepository);
+    expect(result.passed).toBe(true);
+    // With proper shell-word parsing, "hello world" is a single arg to echo
+    expect(result.output).toBe("hello world");
   });
 
   it("throws for unknown gate types", async () => {

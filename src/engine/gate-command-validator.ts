@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { splitShellWords } from "./shell-words.js";
 
 export interface GateCommandValidation {
   valid: boolean;
@@ -18,7 +19,11 @@ export function validateGateCommand(command: string): GateCommandValidation {
     return { valid: false, resolvedPath: null, error: "Gate command is empty" };
   }
 
-  const executable = command.split(/\s+/)[0];
+  const parts = splitShellWords(command);
+  if (parts.length === 0) {
+    return { valid: false, resolvedPath: null, error: "Gate command is empty" };
+  }
+  const executable = parts[0];
 
   if (path.isAbsolute(executable)) {
     return { valid: false, resolvedPath: null, error: "Gate command must not use absolute paths" };
