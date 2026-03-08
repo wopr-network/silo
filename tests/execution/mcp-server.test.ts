@@ -1293,14 +1293,14 @@ describe("admin tool handlers — direct callToolHandler", () => {
   // admin.flow.create
   it("admin.flow.create creates flow with matching initialState", async () => {
     const { callToolHandler } = await import("../../src/execution/mcp-server.js");
+    const createSpy = vi.spyOn(deps.flows, "create");
     const result = await callToolHandler(deps, "admin.flow.create", {
       name: "new-flow",
       initialState: "draft",
       states: [{ name: "draft", mode: "passive", promptTemplate: "do work" }, { name: "done", mode: "passive" }],
     });
     expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
-    expect(data.name).toBe("test-flow");
+    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ name: "new-flow", initialState: "draft" }));
   });
 
   it("admin.flow.create rejects when initialState not in states", async () => {

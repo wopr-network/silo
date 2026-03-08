@@ -543,6 +543,7 @@ describe("processInvocation — complete() throws", () => {
     const invocation = makeInvocation();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const processSignalMock = vi.fn();
+    const releaseClaimMock = vi.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
       invocationRepo: {
         findUnclaimedActive: vi.fn().mockResolvedValue([invocation]),
@@ -550,6 +551,7 @@ describe("processInvocation — complete() throws", () => {
         complete: vi.fn().mockRejectedValue(new Error("DB write failed")),
         fail: vi.fn(),
         create: vi.fn(),
+        releaseClaim: releaseClaimMock,
       } as any,
       engine: {
         processSignal: processSignalMock,
@@ -560,6 +562,7 @@ describe("processInvocation — complete() throws", () => {
     await runner.run({ once: true });
 
     expect(processSignalMock).not.toHaveBeenCalled();
+    expect(releaseClaimMock).toHaveBeenCalledWith(invocation.id);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("complete() failed"),
       expect.any(Error),
