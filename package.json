@@ -2,10 +2,10 @@
   "name": "@wopr-network/defcon",
   "version": "0.2.2",
   "type": "module",
+  "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@9.15.4",
   "main": "./dist/src/main.js",
   "bin": {
     "defcon": "./dist/src/execution/cli.js"
