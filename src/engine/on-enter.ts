@@ -24,8 +24,20 @@ export async function executeOnEnter(
   // Render command via Handlebars
   const hbs = getHandlebars();
   let renderedCommand: string;
+  // Merge artifact refs into entity.refs so onEnter command templates like
+  // {{entity.refs.github.repo}} resolve correctly for REST-created entities.
+  const artifactRefs =
+    entity.artifacts !== null &&
+    typeof entity.artifacts === "object" &&
+    "refs" in entity.artifacts &&
+    entity.artifacts.refs !== null &&
+    typeof entity.artifacts.refs === "object"
+      ? (entity.artifacts.refs as Record<string, unknown>)
+      : {};
+  const entityForContext = { ...entity, refs: { ...artifactRefs, ...(entity.refs ?? {}) } };
+
   try {
-    renderedCommand = hbs.compile(onEnter.command)({ entity });
+    renderedCommand = hbs.compile(onEnter.command)({ entity: entityForContext });
   } catch (err) {
     const error = `onEnter template error: ${err instanceof Error ? err.message : String(err)}`;
     await entityRepo.updateArtifacts(entity.id, {
