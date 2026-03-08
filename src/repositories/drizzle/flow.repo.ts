@@ -70,6 +70,7 @@ function rowToFlow(r: typeof flowDefinitions.$inferSelect, states: State[], tran
     discipline: r.discipline ?? null,
     defaultModelTier: r.defaultModelTier ?? null,
     timeoutPrompt: r.timeoutPrompt ?? null,
+    paused: !!r.paused,
     createdAt: toDate(r.createdAt),
     updatedAt: toDate(r.updatedAt),
     states,
@@ -114,6 +115,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       discipline: input.discipline ?? null,
       defaultModelTier: input.defaultModelTier ?? null,
       timeoutPrompt: input.timeoutPrompt ?? null,
+      paused: input.paused ? 1 : 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -161,6 +163,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.discipline !== undefined) updateValues.discipline = changes.discipline;
     if (changes.defaultModelTier !== undefined) updateValues.defaultModelTier = changes.defaultModelTier;
     if (changes.timeoutPrompt !== undefined) updateValues.timeoutPrompt = changes.timeoutPrompt;
+    if (changes.paused !== undefined) updateValues.paused = changes.paused ? 1 : 0;
 
     this.db.update(flowDefinitions).set(updateValues).where(eq(flowDefinitions.id, id)).run();
 

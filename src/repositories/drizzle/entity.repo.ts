@@ -214,4 +214,22 @@ export class DrizzleEntityRepository implements IEntityRepository {
       .all();
     return rows.map((r) => r.id);
   }
+
+  async cancelEntity(entityId: string): Promise<void> {
+    await this.db
+      .update(entities)
+      .set({ state: "cancelled", claimedBy: null, claimedAt: null, updatedAt: Date.now() })
+      .where(eq(entities.id, entityId));
+  }
+
+  async resetEntity(entityId: string, targetState: string): Promise<Entity> {
+    const now = Date.now();
+    await this.db
+      .update(entities)
+      .set({ state: targetState, claimedBy: null, claimedAt: null, updatedAt: now })
+      .where(eq(entities.id, entityId));
+    const rows = await this.db.select().from(entities).where(eq(entities.id, entityId)).limit(1);
+    if (rows.length === 0) throw new NotFoundError(`Entity not found: ${entityId}`);
+    return this.toEntity(rows[0]);
+  }
 }

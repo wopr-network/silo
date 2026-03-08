@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { InternalError } from "../../errors.js";
 import type { CreateGateInput, Gate, GateResult, IGateRepository } from "../interfaces.js";
@@ -109,5 +109,12 @@ export class DrizzleGateRepository implements IGateRepository {
       .orderBy(asc(gateResults.evaluatedAt), sql`rowid`)
       .all();
     return rows.map(toGateResult);
+  }
+
+  async clearResult(entityId: string, gateId: string): Promise<void> {
+    this.db
+      .delete(gateResults)
+      .where(and(eq(gateResults.entityId, entityId), eq(gateResults.gateId, gateId)))
+      .run();
   }
 }

@@ -73,6 +73,7 @@ export class Engine {
   readonly adapters: Map<string, unknown>;
   private eventEmitter: IEventBusAdapter;
   private readonly logger: Logger;
+  private drainingWorkers = new Set<string>();
 
   constructor(deps: EngineDeps) {
     this.entityRepo = deps.entityRepo;
@@ -83,6 +84,22 @@ export class Engine {
     this.adapters = deps.adapters;
     this.eventEmitter = deps.eventEmitter;
     this.logger = deps.logger ?? consoleLogger;
+  }
+
+  drainWorker(workerId: string): void {
+    this.drainingWorkers.add(workerId);
+  }
+
+  undrainWorker(workerId: string): void {
+    this.drainingWorkers.delete(workerId);
+  }
+
+  isDraining(workerId: string): boolean {
+    return this.drainingWorkers.has(workerId);
+  }
+
+  listDrainingWorkers(): string[] {
+    return Array.from(this.drainingWorkers);
   }
 
   async processSignal(
@@ -403,6 +420,11 @@ export class Engine {
     flowName?: string,
     worker_id?: string,
   ): Promise<ClaimWorkResult | "all_claimed" | null> {
+    // Skip draining workers entirely
+    if (worker_id && this.drainingWorkers.has(worker_id)) {
+      return "all_claimed";
+    }
+
     // 1. Find candidate flows filtered by discipline
     let flows: Flow[];
     if (flowName) {
@@ -413,6 +435,9 @@ export class Engine {
       const allFlows = await this.flowRepo.listAll();
       flows = allFlows.filter((f) => f.discipline === null || f.discipline === role);
     }
+
+    // Filter out paused flows
+    flows = flows.filter((f) => !f.paused);
 
     if (flows.length === 0) return null;
 

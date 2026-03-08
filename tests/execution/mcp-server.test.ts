@@ -312,22 +312,29 @@ describe("MCP tool handlers", () => {
     return result;
   }
 
-  it("lists all 20 tools", async () => {
+  it("lists all 27 tools", async () => {
     const result = await listTools();
-    expect(result.tools).toHaveLength(20);
+    expect(result.tools).toHaveLength(27);
     const names = result.tools.map((t: { name: string }) => t.name).sort();
     expect(names).toEqual([
+      "admin.entity.cancel",
       "admin.entity.create",
+      "admin.entity.reset",
       "admin.flow.create",
+      "admin.flow.pause",
       "admin.flow.restore",
+      "admin.flow.resume",
       "admin.flow.snapshot",
       "admin.flow.update",
       "admin.gate.attach",
       "admin.gate.create",
+      "admin.gate.rerun",
       "admin.state.create",
       "admin.state.update",
       "admin.transition.create",
       "admin.transition.update",
+      "admin.worker.drain",
+      "admin.worker.undrain",
       "flow.claim",
       "flow.fail",
       "flow.get_prompt",

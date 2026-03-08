@@ -140,6 +140,7 @@ export interface Flow {
   discipline: string | null;
   defaultModelTier: string | null;
   timeoutPrompt: string | null;
+  paused: boolean;
   createdAt: Date | null;
   updatedAt: Date | null;
   states: State[];
@@ -171,6 +172,7 @@ export interface CreateFlowInput {
   discipline?: string;
   defaultModelTier?: string;
   timeoutPrompt?: string;
+  paused?: boolean;
 }
 
 /** Input for adding a state to a flow */
@@ -249,6 +251,12 @@ export interface IEntityRepository {
   /** Atomically append a spawned child entry to the parent entity's artifacts.spawnedChildren array.
    *  Reads the current array and writes back in a single transaction to prevent TOCTOU races. */
   appendSpawnedChild(parentId: string, entry: { childId: string; childFlow: string; spawnedAt: string }): Promise<void>;
+
+  /** Move entity to 'cancelled' terminal state and clear claimedBy/claimedAt. */
+  cancelEntity(entityId: string): Promise<void>;
+
+  /** Move entity to targetState and clear claimedBy/claimedAt. Returns the updated entity. */
+  resetEntity(entityId: string, targetState: string): Promise<Entity>;
 }
 
 /** Fields that can be updated on a flow's top-level definition */
@@ -393,4 +401,7 @@ export interface IGateRepository {
       Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt">
     >,
   ): Promise<Gate>;
+
+  /** Delete the gate result for a specific entity+gate combination. */
+  clearResult(entityId: string, gateId: string): Promise<void>;
 }

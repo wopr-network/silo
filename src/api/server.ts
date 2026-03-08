@@ -23,6 +23,21 @@ export interface HttpServerDeps {
   logger?: Logger;
 }
 
+function requireAdminToken(deps: HttpServerDeps, req: ParsedRequest): ApiResponse | null {
+  const configuredToken = deps.adminToken?.trim() || undefined;
+  if (!configuredToken) return null; // open mode
+  const callerToken = extractBearerToken(req.authorization);
+  if (!callerToken) {
+    return { status: 401, body: { error: "Unauthorized: admin endpoints require authentication." } };
+  }
+  const hashA = createHash("sha256").update(configuredToken.trim()).digest();
+  const hashB = createHash("sha256").update(callerToken.trim()).digest();
+  if (!timingSafeEqual(hashA, hashB)) {
+    return { status: 401, body: { error: "Unauthorized: admin endpoints require authentication." } };
+  }
+  return null;
+}
+
 function requireWorkerToken(deps: HttpServerDeps, req: ParsedRequest): ApiResponse | null {
   const configuredToken = deps.workerToken?.trim() || undefined; // treat "" and whitespace-only as unset
   if (!configuredToken) return null; // open mode
@@ -222,6 +237,102 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
 
   router.add("DELETE", "/api/flows/:id", async () => {
     return { status: 501, body: { error: "Flow deletion not implemented" } };
+  });
+
+  // --- Admin: Pause/Resume Flow ---
+  router.add("POST", "/api/admin/flows/:flow/pause", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.flow.pause",
+      { flow_name: req.params.flow },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  router.add("POST", "/api/admin/flows/:flow/resume", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.flow.resume",
+      { flow_name: req.params.flow },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  // --- Admin: Cancel Entity ---
+  router.add("POST", "/api/admin/entities/:id/cancel", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.entity.cancel",
+      { entity_id: req.params.id },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  // --- Admin: Reset Entity ---
+  router.add("POST", "/api/admin/entities/:id/reset", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.entity.reset",
+      { entity_id: req.params.id, target_state: req.body?.target_state as string },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  // --- Admin: Drain/Undrain Worker ---
+  router.add("POST", "/api/admin/workers/:workerId/drain", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.worker.drain",
+      { worker_id: req.params.workerId },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  router.add("POST", "/api/admin/workers/:workerId/undrain", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.worker.undrain",
+      { worker_id: req.params.workerId },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
+  });
+
+  // --- Admin: Rerun Gate ---
+  router.add("POST", "/api/admin/entities/:id/gates/:gateName/rerun", async (req) => {
+    const authErr = requireAdminToken(deps, req);
+    if (authErr) return authErr;
+    const callerToken = extractBearerToken(req.authorization);
+    const result = await callToolHandler(
+      deps.mcpDeps,
+      "admin.gate.rerun",
+      { entity_id: req.params.id, gate_name: req.params.gateName },
+      { adminToken: deps.adminToken, callerToken },
+    );
+    return mcpResultToApi(result);
   });
 
   // --- HTTP server ---

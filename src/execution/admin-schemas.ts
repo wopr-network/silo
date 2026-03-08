@@ -135,3 +135,25 @@ export const AdminFlowRestoreSchema = z.object({
   flow_name: z.string().min(1),
   version: z.number().int().min(1),
 });
+
+export const AdminFlowPauseSchema = z.object({
+  flow_name: z.string().min(1),
+});
+
+export const AdminEntityCancelSchema = z.object({
+  entity_id: z.string().min(1),
+});
+
+export const AdminEntityResetSchema = z.object({
+  entity_id: z.string().min(1),
+  target_state: z.string().min(1),
+});
+
+export const AdminWorkerDrainSchema = z.object({
+  worker_id: z.string().min(1),
+});
+
+export const AdminGateRerunSchema = z.object({
+  entity_id: z.string().min(1),
+  gate_name: z.string().min(1),
+});

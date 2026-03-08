@@ -17,16 +17,21 @@ import type {
   ITransitionLogRepository,
 } from "../repositories/interfaces.js";
 import {
+  AdminEntityCancelSchema,
+  AdminEntityResetSchema,
   AdminFlowCreateSchema,
+  AdminFlowPauseSchema,
   AdminFlowRestoreSchema,
   AdminFlowSnapshotSchema,
   AdminFlowUpdateSchema,
   AdminGateAttachSchema,
   AdminGateCreateSchema,
+  AdminGateRerunSchema,
   AdminStateCreateSchema,
   AdminStateUpdateSchema,
   AdminTransitionCreateSchema,
   AdminTransitionUpdateSchema,
+  AdminWorkerDrainSchema,
 } from "./admin-schemas.js";
 import {
   FlowClaimSchema,
@@ -398,6 +403,49 @@ const TOOL_DEFINITIONS = [
       required: ["flow"],
     },
   },
+  {
+    name: "admin.flow.pause",
+    description: "Pause a flow — claimWork() will skip paused flows until resumed.",
+    inputSchema: { type: "object" as const, properties: { flow_name: { type: "string" } }, required: ["flow_name"] },
+  },
+  {
+    name: "admin.flow.resume",
+    description: "Resume a previously paused flow.",
+    inputSchema: { type: "object" as const, properties: { flow_name: { type: "string" } }, required: ["flow_name"] },
+  },
+  {
+    name: "admin.entity.cancel",
+    description: "Cancel an entity — fails active invocation, moves to 'cancelled' terminal state.",
+    inputSchema: { type: "object" as const, properties: { entity_id: { type: "string" } }, required: ["entity_id"] },
+  },
+  {
+    name: "admin.entity.reset",
+    description: "Reset an entity to a target state — clears claimedBy.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { entity_id: { type: "string" }, target_state: { type: "string" } },
+      required: ["entity_id", "target_state"],
+    },
+  },
+  {
+    name: "admin.worker.drain",
+    description: "Mark a worker as draining — claimWork() will skip it.",
+    inputSchema: { type: "object" as const, properties: { worker_id: { type: "string" } }, required: ["worker_id"] },
+  },
+  {
+    name: "admin.worker.undrain",
+    description: "Remove draining flag from a worker.",
+    inputSchema: { type: "object" as const, properties: { worker_id: { type: "string" } }, required: ["worker_id"] },
+  },
+  {
+    name: "admin.gate.rerun",
+    description: "Clear a gate result for an entity and release it so the gate can be re-evaluated.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { entity_id: { type: "string" }, gate_name: { type: "string" } },
+      required: ["entity_id", "gate_name"],
+    },
+  },
 ];
 
 export function createMcpServer(deps: McpServerDeps, opts?: McpServerOpts): Server {
@@ -486,6 +534,20 @@ export async function callToolHandler(
         return await handleAdminFlowRestore(deps, safeArgs);
       case "admin.entity.create":
         return await handleAdminEntityCreate(deps, safeArgs);
+      case "admin.flow.pause":
+        return await handleAdminFlowPause(deps, safeArgs);
+      case "admin.flow.resume":
+        return await handleAdminFlowResume(deps, safeArgs);
+      case "admin.entity.cancel":
+        return await handleAdminEntityCancel(deps, safeArgs);
+      case "admin.entity.reset":
+        return await handleAdminEntityReset(deps, safeArgs);
+      case "admin.worker.drain":
+        return await handleAdminWorkerDrain(deps, safeArgs);
+      case "admin.worker.undrain":
+        return await handleAdminWorkerUndrain(deps, safeArgs);
+      case "admin.gate.rerun":
+        return await handleAdminGateRerun(deps, safeArgs);
       default:
         return errorResult(`Unknown tool: ${name}`);
     }
@@ -831,6 +893,96 @@ async function handleAdminEntityCreate(deps: McpServerDeps, args: Record<string,
     result.invocation_id = activeInvocation.id;
   }
   return jsonResult(result);
+}
+
+async function handleAdminFlowPause(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminFlowPauseSchema, args);
+  if (!v.ok) return v.result;
+  const flow = await deps.flows.getByName(v.data.flow_name);
+  if (!flow) return errorResult(`Flow not found: ${v.data.flow_name}`);
+  await deps.flows.update(flow.id, { paused: true });
+  emitDefinitionChanged(deps.eventRepo, flow.id, "admin.flow.pause", { name: v.data.flow_name });
+  return jsonResult({ paused: true, flow: v.data.flow_name });
+}
+
+async function handleAdminFlowResume(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminFlowPauseSchema, args);
+  if (!v.ok) return v.result;
+  const flow = await deps.flows.getByName(v.data.flow_name);
+  if (!flow) return errorResult(`Flow not found: ${v.data.flow_name}`);
+  await deps.flows.update(flow.id, { paused: false });
+  emitDefinitionChanged(deps.eventRepo, flow.id, "admin.flow.resume", { name: v.data.flow_name });
+  return jsonResult({ paused: false, flow: v.data.flow_name });
+}
+
+async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminEntityCancelSchema, args);
+  if (!v.ok) return v.result;
+  const entity = await deps.entities.get(v.data.entity_id);
+  if (!entity) return errorResult(`Entity not found: ${v.data.entity_id}`);
+  const invocations = await deps.invocations.findByEntity(v.data.entity_id);
+  for (const inv of invocations) {
+    if (inv.completedAt === null && inv.failedAt === null) {
+      await deps.invocations.fail(inv.id, "Cancelled by admin");
+    }
+  }
+  await deps.entities.cancelEntity(v.data.entity_id);
+  return jsonResult({ cancelled: true, entity_id: v.data.entity_id });
+}
+
+async function handleAdminEntityReset(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminEntityResetSchema, args);
+  if (!v.ok) return v.result;
+  const entity = await deps.entities.get(v.data.entity_id);
+  if (!entity) return errorResult(`Entity not found: ${v.data.entity_id}`);
+  const flow = await deps.flows.get(entity.flowId);
+  if (!flow) return errorResult(`Flow not found for entity: ${v.data.entity_id}`);
+  const targetState = flow.states.find((s) => s.name === v.data.target_state);
+  if (!targetState) return errorResult(`State '${v.data.target_state}' not found in flow '${flow.name}'`);
+  const invocations = await deps.invocations.findByEntity(v.data.entity_id);
+  for (const inv of invocations) {
+    if (inv.completedAt === null && inv.failedAt === null) {
+      await deps.invocations.fail(inv.id, "Reset by admin");
+    }
+  }
+  const updated = await deps.entities.resetEntity(v.data.entity_id, v.data.target_state);
+  return jsonResult({ reset: true, entity_id: v.data.entity_id, state: updated.state });
+}
+
+async function handleAdminWorkerDrain(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminWorkerDrainSchema, args);
+  if (!v.ok) return v.result;
+  if (!deps.engine) return errorResult("Engine not available");
+  deps.engine.drainWorker(v.data.worker_id);
+  return jsonResult({ draining: true, worker_id: v.data.worker_id });
+}
+
+async function handleAdminWorkerUndrain(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminWorkerDrainSchema, args);
+  if (!v.ok) return v.result;
+  if (!deps.engine) return errorResult("Engine not available");
+  deps.engine.undrainWorker(v.data.worker_id);
+  return jsonResult({ draining: false, worker_id: v.data.worker_id });
+}
+
+async function handleAdminGateRerun(deps: McpServerDeps, args: Record<string, unknown>) {
+  const v = validateInput(AdminGateRerunSchema, args);
+  if (!v.ok) return v.result;
+  const entity = await deps.entities.get(v.data.entity_id);
+  if (!entity) return errorResult(`Entity not found: ${v.data.entity_id}`);
+  const gate = await deps.gates.getByName(v.data.gate_name);
+  if (!gate) return errorResult(`Gate not found: ${v.data.gate_name}`);
+  await deps.gates.clearResult(v.data.entity_id, gate.id);
+  const invocations = await deps.invocations.findByEntity(v.data.entity_id);
+  for (const inv of invocations) {
+    if (inv.completedAt === null && inv.failedAt === null) {
+      await deps.invocations.fail(inv.id, "Gate rerun by admin");
+    }
+  }
+  if (entity.claimedBy) {
+    await deps.entities.release(entity.id, entity.claimedBy);
+  }
+  return jsonResult({ rerun: true, entity_id: v.data.entity_id, gate: v.data.gate_name });
 }
 
 /** Start the MCP server on stdio transport. */
