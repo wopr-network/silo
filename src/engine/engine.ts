@@ -393,7 +393,8 @@ export class Engine {
     let flows: Flow[];
     if (flowName) {
       const flow = await this.flowRepo.getByName(flowName);
-      flows = flow && (flow.discipline === null || flow.discipline === role) ? [flow] : [];
+      if (!flow) throw new Error(`Flow "${flowName}" not found`);
+      flows = flow.discipline === null || flow.discipline === role ? [flow] : [];
     } else {
       const allFlows = await this.flowRepo.listAll();
       flows = allFlows.filter((f) => f.discipline === null || f.discipline === role);
@@ -404,11 +405,15 @@ export class Engine {
     // 2. Gather all unclaimed invocations across matching flows
     type Candidate = { invocation: Invocation; flow: Flow };
     const candidates: Candidate[] = [];
+    const affinityInvocationIds = new Set<string>();
     for (const flow of flows) {
-      // Affinity candidates first (if worker_id provided)
+      // Affinity candidates first (if worker_id provided); capture IDs for step 4
       if (worker_id) {
         const affinityUnclaimed = await this.invocationRepo.findUnclaimedWithAffinity(flow.id, role, worker_id);
-        for (const inv of affinityUnclaimed) candidates.push({ invocation: inv, flow });
+        for (const inv of affinityUnclaimed) {
+          candidates.push({ invocation: inv, flow });
+          affinityInvocationIds.add(inv.id);
+        }
       }
       const unclaimed = await this.invocationRepo.findUnclaimedByFlow(flow.id);
       for (const inv of unclaimed) candidates.push({ invocation: inv, flow });
@@ -424,14 +429,11 @@ export class Engine {
       }),
     );
 
-    // 4. Build affinity set for priority sorting
+    // 4. Build affinity set for priority sorting using IDs already collected in step 2 (no re-query)
     const affinitySet = new Set<string>();
     if (worker_id) {
       for (const c of candidates) {
-        const entity = entityMap.get(c.invocation.entityId);
-        if (!entity) continue;
-        const affinityUnclaimed = await this.invocationRepo.findUnclaimedWithAffinity(c.flow.id, role, worker_id);
-        if (affinityUnclaimed.some((a) => a.id === c.invocation.id)) {
+        if (affinityInvocationIds.has(c.invocation.id)) {
           affinitySet.add(c.invocation.entityId);
         }
       }
@@ -467,7 +469,8 @@ export class Engine {
     for (const { invocation: pending, flow } of deduped) {
       const entity = entityMap.get(pending.entityId);
       if (!entity) continue;
-      const claimed = await this.entityRepo.claimById(entity.id, worker_id ?? `agent:${role}`);
+      const entityClaimToken = worker_id ?? `agent:${role}`;
+      const claimed = await this.entityRepo.claimById(entity.id, entityClaimToken);
       if (!claimed) continue;
 
       let claimedInvocation: Invocation | null;
@@ -476,7 +479,7 @@ export class Engine {
       } catch (err) {
         console.error(`invocationRepo.claim() failed for invocation ${pending.id}:`, err);
         try {
-          await this.entityRepo.release(claimed.id, `agent:${role}`);
+          await this.entityRepo.release(claimed.id, entityClaimToken);
         } catch (releaseErr) {
           console.error(`release() failed for entity ${claimed.id}:`, releaseErr);
         }
@@ -484,7 +487,7 @@ export class Engine {
       }
       if (!claimedInvocation) {
         try {
-          await this.entityRepo.release(claimed.id, `agent:${role}`);
+          await this.entityRepo.release(claimed.id, entityClaimToken);
         } catch (err) {
           console.error(`release() failed for entity ${claimed.id}:`, err);
         }

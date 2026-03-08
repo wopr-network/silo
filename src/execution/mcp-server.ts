@@ -535,7 +535,13 @@ async function handleFlowClaim(deps: McpServerDeps, args: Record<string, unknown
     return errorResult("Engine not available — MCP server started without engine dependency");
   }
 
-  const result = await deps.engine.claimWork(role, flowName, worker_id);
+  let result: Awaited<ReturnType<typeof deps.engine.claimWork>>;
+  try {
+    result = await deps.engine.claimWork(role, flowName, worker_id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResult(message);
+  }
   if (!result) {
     return noWorkResult(RETRY_LONG_MS, role);
   }
