@@ -1,6 +1,6 @@
 {
   "name": "@wopr-network/defcon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
@@ -24,7 +24,8 @@
     "gates"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
+    "prepublishOnly": "pnpm build",
     "dev": "tsx src/main.ts",
     "lint": "biome check src/",
     "lint:fix": "biome check --fix src/",
