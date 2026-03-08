@@ -141,9 +141,8 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
     const entity = entityMap.get(invocation.entityId);
 
     // Finding 3: If entity is not in the entityMap, the invocation is orphaned.
-    // Release the invocation and skip to avoid dead-ending the work item.
+    // Skip it — do not claim it, as that would permanently lock it.
     if (!entity) {
-      await deps.invocations.claim(invocation.id, claimerId).catch(() => {});
       continue;
     }
 
