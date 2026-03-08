@@ -274,6 +274,7 @@ describe("worker affinity — claim priority", () => {
 
   it("discipline boundary handoff records new affinity worker", async () => {
     const entity = makeEntity({
+      state: "deploy",
       affinityWorkerId: "wkr-eng-1",
       affinityRole: "engineering",
       affinityExpiresAt: new Date(Date.now() + 300000),

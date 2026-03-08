@@ -437,6 +437,8 @@ describe("Engine", () => {
 
       // findUnclaimedByFlow returns a pending invocation
       (mocks.invocationRepo.findUnclaimedByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([unclaimedInvocation]);
+      // entityRepo.get returns entity with matching state so the guard passes
+      (mocks.entityRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(makeEntity({ state: "coding" }));
       // claimById succeeds (entity claim for invocation path)
       (mocks.entityRepo.claimById as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(claimedEntity)
@@ -476,6 +478,8 @@ describe("Engine", () => {
       };
 
       (mocks.invocationRepo.findUnclaimedByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([unclaimedInvocation]);
+      // entityRepo.get returns entity with matching state so the guard passes
+      (mocks.entityRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(makeEntity({ state: "coding" }));
       (mocks.entityRepo.claimById as ReturnType<typeof vi.fn>).mockResolvedValue(claimedEntity);
       (mocks.invocationRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...unclaimedInvocation, claimedBy: "wkr_123", claimedAt: new Date(),
@@ -615,6 +619,8 @@ describe("Engine", () => {
       };
       const claimedEntity = makeEntity({ state: "coding", claimedBy: "agent:coder" });
       (mocks.invocationRepo.findUnclaimedByFlow as ReturnType<typeof vi.fn>).mockResolvedValue([pendingInvocation]);
+      // entityRepo.get returns entity with matching state so the guard passes
+      (mocks.entityRepo.get as ReturnType<typeof vi.fn>).mockResolvedValue(makeEntity({ state: "coding" }));
       (mocks.entityRepo.claimById as ReturnType<typeof vi.fn>).mockResolvedValue(claimedEntity);
       (mocks.invocationRepo.claim as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...pendingInvocation, claimedBy: "agent:coder",

@@ -473,6 +473,9 @@ export class Engine {
     for (const { invocation: pending, flow } of deduped) {
       const entity = entityMap.get(pending.entityId);
       if (!entity) continue;
+      // Guard: entity state must still match the invocation's stage — if another worker
+      // transitioned the entity between candidate fetch and now, skip this candidate.
+      if (entity.state !== pending.stage) continue;
       const entityClaimToken = worker_id ?? `agent:${role}`;
       const claimed = await this.entityRepo.claimById(entity.id, entityClaimToken);
       if (!claimed) continue;
@@ -519,7 +522,7 @@ export class Engine {
         type: "entity.claimed",
         entityId: claimed.id,
         flowId: flow.id,
-        agentId: `agent:${role}`,
+        agentId: worker_id ?? `agent:${role}`,
         emittedAt: new Date(),
       });
       return {
