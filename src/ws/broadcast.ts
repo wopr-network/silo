@@ -118,10 +118,10 @@ export class WebSocketBroadcaster implements IEventBusAdapter {
     return this.wss.clients.size;
   }
 
-  close(): void {
+  close(): Promise<void> {
     for (const client of this.wss.clients) {
-      client.close();
+      client.terminate();
     }
-    this.wss.close();
+    return new Promise((resolve) => this.wss.close(() => resolve()));
   }
 }

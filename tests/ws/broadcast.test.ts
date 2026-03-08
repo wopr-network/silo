@@ -41,11 +41,39 @@ function makeEngine() {
 	return { engine, eventEmitter, sqlite };
 }
 
-function connectWs(port: number, token?: string): Promise<WebSocket> {
+interface WsClient {
+	ws: WebSocket;
+	messages: Record<string, unknown>[];
+	waitForMessages(count: number): Promise<void>;
+}
+
+function connectWs(port: number, token?: string): Promise<WsClient> {
 	const url = token ? `ws://127.0.0.1:${port}/ws?token=${token}` : `ws://127.0.0.1:${port}/ws`;
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(url);
-		ws.on("open", () => resolve(ws));
+		const messages: Record<string, unknown>[] = [];
+		const waiters: Array<{ count: number; resolve: () => void }> = [];
+
+		ws.on("message", (data) => {
+			messages.push(JSON.parse(data.toString()));
+			for (let i = waiters.length - 1; i >= 0; i--) {
+				if (messages.length >= waiters[i].count) {
+					const [waiter] = waiters.splice(i, 1);
+					waiter.resolve();
+				}
+			}
+		});
+
+		const client: WsClient = {
+			ws,
+			messages,
+			waitForMessages(count: number): Promise<void> {
+				if (messages.length >= count) return Promise.resolve();
+				return new Promise((res) => waiters.push({ count, resolve: res }));
+			},
+		};
+
+		ws.on("open", () => resolve(client));
 		ws.on("error", reject);
 	});
 }
@@ -71,7 +99,7 @@ describe("WebSocketBroadcaster", () => {
 
 	afterEach(async () => {
 		for (const close of closers) close();
-		broadcaster.close();
+		await broadcaster.close();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 	});
 
@@ -84,33 +112,29 @@ describe("WebSocketBroadcaster", () => {
 	});
 
 	it("accepts connection with valid query token", async () => {
-		const ws = await connectWs(port, ADMIN_TOKEN);
+		const { ws } = await connectWs(port, ADMIN_TOKEN);
 		closers.push(() => ws.close());
 		expect(ws.readyState).toBe(WebSocket.OPEN);
 	});
 
 	it("sends snapshot on connect", async () => {
-		const ws = await connectWs(port, ADMIN_TOKEN);
+		const { ws, messages, waitForMessages } = await connectWs(port, ADMIN_TOKEN);
 		closers.push(() => ws.close());
-		const msg = await new Promise<Record<string, unknown>>((resolve) => {
-			ws.on("message", (data) => resolve(JSON.parse(data.toString())));
-		});
+
+		await waitForMessages(1);
+
+		const msg = messages[0];
 		expect(msg.type).toBe("snapshot");
 		expect(msg.payload).toBeDefined();
 		expect(msg.timestamp).toBeDefined();
 	});
 
 	it("broadcasts engine events to connected clients", async () => {
-		const ws = await connectWs(port, ADMIN_TOKEN);
+		const { ws, messages, waitForMessages } = await connectWs(port, ADMIN_TOKEN);
 		closers.push(() => ws.close());
-		// Consume snapshot first
-		await new Promise<void>((resolve) => {
-			ws.on("message", () => resolve());
-		});
 
-		const eventPromise = new Promise<Record<string, unknown>>((resolve) => {
-			ws.on("message", (data) => resolve(JSON.parse(data.toString())));
-		});
+		// Wait for snapshot
+		await waitForMessages(1);
 
 		const event: EngineEvent = {
 			type: "entity.created",
@@ -121,17 +145,18 @@ describe("WebSocketBroadcaster", () => {
 		};
 		await broadcaster.emit(event);
 
-		const msg = await eventPromise;
+		// Wait for broadcast event
+		await waitForMessages(2);
+
+		const msg = messages[1];
 		expect(msg.type).toBe("entity.created");
 		expect((msg.payload as Record<string, unknown>).entityId).toBe("test-entity-1");
 	});
 
 	it("does not send to disconnected clients", async () => {
-		const ws = await connectWs(port, ADMIN_TOKEN);
-		// Consume snapshot
-		await new Promise<void>((resolve) => {
-			ws.on("message", () => resolve());
-		});
+		const { ws, waitForMessages } = await connectWs(port, ADMIN_TOKEN);
+		// Wait for snapshot
+		await waitForMessages(1);
 		// Close and wait for server-side close acknowledgement
 		await new Promise<void>((resolve) => {
 			ws.on("close", () => resolve());
