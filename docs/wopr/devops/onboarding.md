@@ -8,7 +8,7 @@
 
 DEFCON is the flow engine. It persists entity state in SQLite, runs `onEnter` hooks when entities enter new states, evaluates gates on transitions, and serves a REST API for workers to claim and report on work.
 
-DEFCON is stateless in memory — restart it and it picks up from the database exactly where it left off. Workers (NORAD) connect to it over HTTP.
+DEFCON is stateless in memory — restart it and it picks up from the database exactly where it left off. Workers (RADAR) connect to it over HTTP.
 
 ---
 
