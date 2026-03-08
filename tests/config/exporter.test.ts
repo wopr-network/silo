@@ -74,7 +74,7 @@ describe("exportSeed", () => {
   });
 
   it("exports empty DB as minimal valid structure", async () => {
-    const { db, sqlite, flowRepo, gateRepo } = setupDb();
+    const { sqlite, flowRepo, gateRepo } = setupDb();
 
     const exported = await exportSeed(flowRepo, gateRepo);
 
