@@ -1,3 +1,4 @@
+import { NotFoundError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
 import type { Entity, IEntityRepository, IFlowRepository, Transition } from "../repositories/interfaces.js";
@@ -17,7 +18,7 @@ export async function executeSpawn(
   if (!transition.spawnFlow) return null;
 
   const flow = await flowRepo.getByName(transition.spawnFlow);
-  if (!flow) throw new Error(`Spawn flow "${transition.spawnFlow}" not found`);
+  if (!flow) throw new NotFoundError(`Spawn flow "${transition.spawnFlow}" not found`);
 
   const childEntity = await entityRepo.create(flow.id, flow.initialState, parentEntity.refs ?? undefined);
 

@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { NotFoundError } from "../../errors.js";
 import type {
   CreateFlowInput,
   CreateStateInput,
@@ -144,7 +145,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
   async update(id: string, changes: UpdateFlowInput): Promise<Flow> {
     const now = Date.now();
     const current = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.id, id)).all();
-    if (current.length === 0) throw new Error(`Flow not found: ${id}`);
+    if (current.length === 0) throw new NotFoundError(`Flow not found: ${id}`);
 
     const updateValues: Record<string, unknown> = { updatedAt: now };
     if (changes.name !== undefined) updateValues.name = changes.name;
@@ -189,7 +190,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
 
   async updateState(stateId: string, changes: UpdateStateInput): Promise<State> {
     const existing = this.db.select().from(stateDefinitions).where(eq(stateDefinitions.id, stateId)).all();
-    if (existing.length === 0) throw new Error(`State not found: ${stateId}`);
+    if (existing.length === 0) throw new NotFoundError(`State not found: ${stateId}`);
 
     const updateValues: Record<string, unknown> = {};
     if (changes.name !== undefined) updateValues.name = changes.name;
@@ -234,7 +235,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
 
   async updateTransition(transitionId: string, changes: UpdateTransitionInput): Promise<Transition> {
     const existing = this.db.select().from(transitionRules).where(eq(transitionRules.id, transitionId)).all();
-    if (existing.length === 0) throw new Error(`Transition not found: ${transitionId}`);
+    if (existing.length === 0) throw new NotFoundError(`Transition not found: ${transitionId}`);
 
     const updateValues: Record<string, unknown> = {};
     if (changes.fromState !== undefined) updateValues.fromState = changes.fromState;
@@ -258,7 +259,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
 
   async snapshot(flowId: string): Promise<FlowVersion> {
     const flow = await this.get(flowId);
-    if (!flow) throw new Error(`Flow not found: ${flowId}`);
+    if (!flow) throw new NotFoundError(`Flow not found: ${flowId}`);
 
     const now = Date.now();
     const id = crypto.randomUUID();
@@ -320,7 +321,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       .from(flowVersions)
       .where(and(eq(flowVersions.flowId, flowId), eq(flowVersions.version, version)))
       .all();
-    if (versionRows.length === 0) throw new Error(`Version ${version} not found for flow ${flowId}`);
+    if (versionRows.length === 0) throw new NotFoundError(`Version ${version} not found for flow ${flowId}`);
 
     const snap = versionRows[0].snapshot as {
       name: string;

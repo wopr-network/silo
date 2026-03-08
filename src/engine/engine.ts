@@ -1,3 +1,4 @@
+import { NotFoundError, ValidationError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
 import type {
@@ -89,22 +90,22 @@ export class Engine {
   ): Promise<ProcessSignalResult> {
     // 1. Load entity
     const entity = await this.entityRepo.get(entityId);
-    if (!entity) throw new Error(`Entity "${entityId}" not found`);
+    if (!entity) throw new NotFoundError(`Entity "${entityId}" not found`);
 
     // 2. Load flow
     const flow = await this.flowRepo.get(entity.flowId);
-    if (!flow) throw new Error(`Flow "${entity.flowId}" not found`);
+    if (!flow) throw new NotFoundError(`Flow "${entity.flowId}" not found`);
 
     // 3. Find transition
     const transition = findTransition(flow, entity.state, signal, { entity }, true, this.logger);
     if (!transition)
-      throw new Error(`No transition from "${entity.state}" on signal "${signal}" in flow "${flow.name}"`);
+      throw new ValidationError(`No transition from "${entity.state}" on signal "${signal}" in flow "${flow.name}"`);
 
     // 4. Evaluate gate if present
     const gatesPassed: string[] = [];
     if (transition.gateId) {
       const gate = await this.gateRepo.get(transition.gateId);
-      if (!gate) throw new Error(`Gate "${transition.gateId}" not found`);
+      if (!gate) throw new NotFoundError(`Gate "${transition.gateId}" not found`);
 
       const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
       if (!gateResult.passed) {
@@ -321,7 +322,7 @@ export class Engine {
     refs?: Record<string, { adapter: string; id: string; [key: string]: unknown }>,
   ): Promise<Entity> {
     const flow = await this.flowRepo.getByName(flowName);
-    if (!flow) throw new Error(`Flow "${flowName}" not found`);
+    if (!flow) throw new NotFoundError(`Flow "${flowName}" not found`);
 
     const entity = await this.entityRepo.create(flow.id, flow.initialState, refs);
 
@@ -345,7 +346,7 @@ export class Engine {
           error: onEnterResult.error,
           emittedAt: new Date(),
         });
-        throw new Error(`onEnter failed for entity ${entity.id}: ${onEnterResult.error}`);
+        throw new ValidationError(`onEnter failed for entity ${entity.id}: ${onEnterResult.error}`);
       }
       if (onEnterResult.artifacts) {
         await this.eventEmitter.emit({

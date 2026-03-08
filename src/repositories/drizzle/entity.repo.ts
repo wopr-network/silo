@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, lt, not } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { NotFoundError } from "../../errors.js";
 import type { Artifacts, Entity, IEntityRepository, Refs } from "../interfaces.js";
 import type * as schema from "./schema.js";
 import { entities } from "./schema.js";
@@ -83,7 +84,7 @@ export class DrizzleEntityRepository implements IEntityRepository {
   ): Promise<Entity> {
     return this.db.transaction((tx) => {
       const rows = tx.select().from(entities).where(eq(entities.id, id)).limit(1).all();
-      if (rows.length === 0) throw new Error(`Entity not found: ${id}`);
+      if (rows.length === 0) throw new NotFoundError(`Entity not found: ${id}`);
       const row = rows[0];
       const now = Date.now();
       const mergedArtifacts = artifacts
@@ -106,7 +107,7 @@ export class DrizzleEntityRepository implements IEntityRepository {
 
   async updateArtifacts(id: string, artifacts: Partial<Artifacts>): Promise<void> {
     const rows = await this.db.select().from(entities).where(eq(entities.id, id)).limit(1);
-    if (rows.length === 0) throw new Error(`Entity not found: ${id}`);
+    if (rows.length === 0) throw new NotFoundError(`Entity not found: ${id}`);
     const existing = (rows[0].artifacts as Record<string, unknown>) ?? {};
     await this.db
       .update(entities)
@@ -164,7 +165,7 @@ export class DrizzleEntityRepository implements IEntityRepository {
   ): Promise<void> {
     this.db.transaction((tx) => {
       const rows = tx.select().from(entities).where(eq(entities.id, parentId)).limit(1).all();
-      if (rows.length === 0) throw new Error(`Entity ${parentId} not found`);
+      if (rows.length === 0) throw new NotFoundError(`Entity ${parentId} not found`);
       const row = rows[0];
       const artifacts = (row.artifacts as Record<string, unknown>) ?? {};
       const existing = (Array.isArray(artifacts.spawnedChildren) ? artifacts.spawnedChildren : []) as Array<{

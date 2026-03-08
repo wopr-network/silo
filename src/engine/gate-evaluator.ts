@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { GateError, NotFoundError, ValidationError } from "../errors.js";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
 import { checkSsrf } from "./ssrf-guard.js";
@@ -164,7 +165,7 @@ export async function evaluateGate(
       }
     }
   } else {
-    throw new Error(`Unknown gate type: ${gate.type}`);
+    throw new GateError(`Unknown gate type: ${gate.type}`);
   }
 
   await gateRepo.record(entity.id, gate.id, passed, output);
@@ -179,7 +180,7 @@ async function runFunction(
 ): Promise<{ passed: boolean; output: string; timedOut: boolean }> {
   const lastColon = functionRef.lastIndexOf(":");
   if (lastColon === -1) {
-    throw new Error(`Invalid functionRef "${functionRef}" — expected "path:exportName"`);
+    throw new ValidationError(`Invalid functionRef "${functionRef}" — expected "path:exportName"`);
   }
   const modulePath = functionRef.slice(0, lastColon);
   const exportName = functionRef.slice(lastColon + 1);
@@ -196,14 +197,14 @@ async function runFunction(
     realPath = absPath;
   }
   if (!realPath.startsWith(GATES_DIR)) {
-    throw new Error("functionRef must resolve to a path inside the gates/ directory");
+    throw new ValidationError("functionRef must resolve to a path inside the gates/ directory");
   }
   const moduleUrl = pathToFileURL(realPath).href;
 
   const mod = await import(moduleUrl);
   const fn = mod[exportName];
   if (typeof fn !== "function") {
-    throw new Error(`Gate function "${exportName}" not found in ${modulePath}`);
+    throw new NotFoundError(`Gate function "${exportName}" not found in ${modulePath}`);
   }
 
   const timeout = effectiveTimeout;

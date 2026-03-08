@@ -1,4 +1,5 @@
 import type { Engine, ProcessSignalResult } from "../engine/engine.js";
+import { NotFoundError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
 import type {
@@ -64,7 +65,7 @@ export class ActiveRunner {
     let flowId: string | undefined;
     if (flowName) {
       const flow = await this.flowRepo.getByName(flowName);
-      if (!flow) throw new Error(`Flow "${flowName}" not found`);
+      if (!flow) throw new NotFoundError(`Flow "${flowName}" not found`);
       flowId = flow.id;
     }
     while (true) {
