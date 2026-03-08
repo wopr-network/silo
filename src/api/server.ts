@@ -19,7 +19,7 @@ export interface HttpServerDeps {
   mcpDeps: McpServerDeps;
   adminToken?: string;
   workerToken?: string;
-  corsOrigin?: string; // explicit CORS origin, or undefined for loopback default
+  corsOrigins?: string[]; // explicit CORS origins, or undefined for loopback default
   logger?: Logger;
 }
 
@@ -344,8 +344,8 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
         /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
         /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin) ||
         /^https?:\/\/\[::1\](:\d+)?$/.test(origin);
-      const corsAllowed = deps.corsOrigin
-        ? origin === deps.corsOrigin // explicit origin: exact match only
+      const corsAllowed = deps.corsOrigins
+        ? deps.corsOrigins.includes(origin) // explicit origins: set membership check
         : isLoopbackOrigin; // loopback mode: only reflect loopback origins
       if (corsAllowed) {
         res.setHeader("Vary", "Origin");

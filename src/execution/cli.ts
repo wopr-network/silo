@@ -287,7 +287,7 @@ program
         mcpDeps: deps,
         adminToken,
         workerToken,
-        corsOrigin: restCorsResult.origin ?? undefined,
+        corsOrigins: restCorsResult.origins ?? undefined,
       });
       if (adminToken) {
         const wsBroadcaster = new WebSocketBroadcaster({
@@ -324,18 +324,14 @@ program
         sqlite.close();
         process.exit(1);
       }
-      const allowedOriginPattern: RegExp | string | null = corsResult.origin
-        ? corsResult.origin // exact string match
-        : /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/; // loopback default
+      const allowedOriginSet: Set<string> | null = corsResult.origins ? new Set(corsResult.origins) : null;
+      const loopbackPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
       const httpServer = http.createServer(async (req, res) => {
         // CORS: restrict to localhost origins when bound to loopback; require DEFCON_CORS_ORIGIN when bound to non-loopback
         const origin = req.headers.origin;
         if (origin) {
-          const originAllowed =
-            typeof allowedOriginPattern === "string"
-              ? origin === allowedOriginPattern
-              : allowedOriginPattern.test(origin);
+          const originAllowed = allowedOriginSet ? allowedOriginSet.has(origin) : loopbackPattern.test(origin);
           if (originAllowed) {
             res.setHeader("Vary", "Origin");
             res.setHeader("Access-Control-Allow-Origin", origin);

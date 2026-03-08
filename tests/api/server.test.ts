@@ -301,7 +301,7 @@ describe("HTTP Server - explicit CORS origin", () => {
 
   beforeAll(async () => {
     deps = makeTestDeps();
-    deps.corsOrigin = "https://app.example.com";
+    deps.corsOrigins = ["https://app.example.com"];
     server = createHttpServer(deps);
     port = await listen(server);
   });

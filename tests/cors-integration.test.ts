@@ -6,14 +6,22 @@ describe("CORS origin enforcement (integration)", () => {
     expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: undefined })).toThrow(/DEFCON_CORS_ORIGIN must be set/);
   });
 
-  it("non-loopback host with env var succeeds", () => {
+  it("non-loopback host with single origin env var succeeds", () => {
     const result = resolveCorsOrigin({ host: "0.0.0.0", corsEnv: "https://app.example.com" });
-    expect(result.origin).toBe("https://app.example.com");
+    expect(result.origins).toEqual(["https://app.example.com"]);
+  });
+
+  it("non-loopback host with comma-separated origins succeeds", () => {
+    const result = resolveCorsOrigin({
+      host: "0.0.0.0",
+      corsEnv: "https://app.example.com,http://localhost:3000",
+    });
+    expect(result.origins).toEqual(["https://app.example.com", "http://localhost:3000"]);
   });
 
   it("loopback host without env var returns null (default pattern)", () => {
     const result = resolveCorsOrigin({ host: "127.0.0.1", corsEnv: undefined });
-    expect(result.origin).toBeNull();
+    expect(result.origins).toBeNull();
   });
 
   it("error message mentions the bound host", () => {
