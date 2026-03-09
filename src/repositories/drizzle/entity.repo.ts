@@ -123,6 +123,18 @@ export class DrizzleEntityRepository implements IEntityRepository {
       .where(eq(entities.id, id));
   }
 
+  async removeArtifactKeys(id: string, keys: string[]): Promise<void> {
+    if (keys.length === 0) return;
+    const rows = await this.db.select().from(entities).where(eq(entities.id, id)).limit(1);
+    if (rows.length === 0) throw new NotFoundError(`Entity not found: ${id}`);
+    const existing = (rows[0].artifacts as Record<string, unknown>) ?? {};
+    const cleaned = { ...existing };
+    for (const key of keys) {
+      delete cleaned[key];
+    }
+    await this.db.update(entities).set({ artifacts: cleaned, updatedAt: Date.now() }).where(eq(entities.id, id));
+  }
+
   async claim(flowId: string, state: string, agentId: string): Promise<Entity | null> {
     return this.db.transaction((tx) => {
       const rows = tx

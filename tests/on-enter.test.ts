@@ -48,6 +48,7 @@ function makeEntityRepo(): IEntityRepository & { updatedArtifacts: Record<string
     setAffinity: vi.fn(),
     clearExpiredAffinity: vi.fn(),
     appendSpawnedChild: vi.fn(),
+    removeArtifactKeys: vi.fn().mockResolvedValue(undefined),
   };
   return repo as unknown as IEntityRepository & { updatedArtifacts: Record<string, unknown>[] };
 }
@@ -270,7 +271,7 @@ describe("Engine onEnter integration", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.completed" }));
   });
 
-  it("onEnter skipped on re-entry when artifacts present", async () => {
+  it("onEnter re-runs on re-entry (stale artifacts are cleared)", async () => {
     const flow = await flowRepo.create({ name: "test-flow2", initialState: "triage" });
     await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
     await flowRepo.addState(flow.id, {
@@ -293,8 +294,9 @@ describe("Engine onEnter integration", () => {
     events.length = 0;
     await engine.processSignal(entity.id, "fix");
 
-    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.skipped" }));
-    expect(events.some((e) => e.type === "onEnter.completed")).toBe(false);
+    // On re-entry, stale keys are cleared so the hook re-runs (onEnter.completed, not onEnter.skipped)
+    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.completed" }));
+    expect(events.some((e) => e.type === "onEnter.skipped")).toBe(false);
   });
 
   it("onEnter failure gates the entity", async () => {
@@ -383,5 +385,122 @@ describe("Engine onEnter integration", () => {
     });
 
     await expect(engine.createEntity("test-flow5")).rejects.toThrow("onEnter failed");
+  });
+
+  it("removeArtifactKeys deletes specified keys and preserves others", async () => {
+    const flow = await flowRepo.create({ name: "test-rmkeys", initialState: "init" });
+    await flowRepo.addState(flow.id, { name: "init", agentRole: "worker", promptTemplate: "go" });
+    const entity = await engine.createEntity("test-rmkeys");
+
+    await entityRepo.updateArtifacts(entity.id, {
+      prDiff: "old-diff",
+      prComments: "old-comments",
+      prUrl: "https://github.com/org/repo/pull/1",
+      prNumber: 1,
+    });
+
+    await entityRepo.removeArtifactKeys(entity.id, ["prDiff", "prComments"]);
+
+    const updated = await entityRepo.get(entity.id);
+    expect(updated?.artifacts).not.toHaveProperty("prDiff");
+    expect(updated?.artifacts).not.toHaveProperty("prComments");
+    expect(updated?.artifacts).toHaveProperty("prUrl", "https://github.com/org/repo/pull/1");
+    expect(updated?.artifacts).toHaveProperty("prNumber", 1);
+  });
+
+  it("removeArtifactKeys is a no-op when entity has null artifacts", async () => {
+    const flow = await flowRepo.create({ name: "test-rmkeys-null", initialState: "init" });
+    await flowRepo.addState(flow.id, { name: "init", agentRole: "worker", promptTemplate: "go" });
+    const entity = await engine.createEntity("test-rmkeys-null");
+
+    // Should not throw
+    await entityRepo.removeArtifactKeys(entity.id, ["nonexistent"]);
+
+    const updated = await entityRepo.get(entity.id);
+    expect(updated).toBeTruthy();
+  });
+
+  it("onEnter re-runs on re-entry after artifact keys are cleared", async () => {
+    const flow = await flowRepo.create({ name: "test-reentry", initialState: "triage" });
+    await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
+    await flowRepo.addState(flow.id, {
+      name: "reviewing",
+      agentRole: "reviewer",
+      promptTemplate: "review {{entity.artifacts.prDiff}}",
+      onEnter: {
+        command: `echo '{"prDiff":"the-diff","prComments":"the-comments"}'`,
+        artifacts: ["prDiff", "prComments"],
+      },
+    });
+    await flowRepo.addState(flow.id, { name: "fixing", agentRole: "coder", promptTemplate: "fix" });
+    await flowRepo.addTransition(flow.id, { fromState: "triage", toState: "reviewing", trigger: "ready" });
+    await flowRepo.addTransition(flow.id, { fromState: "reviewing", toState: "fixing", trigger: "needs_fix" });
+    await flowRepo.addTransition(flow.id, { fromState: "fixing", toState: "reviewing", trigger: "fixed" });
+
+    const entity = await engine.createEntity("test-reentry");
+
+    // First entry into reviewing — onEnter runs
+    const r1 = await engine.processSignal(entity.id, "ready");
+    expect(r1.newState).toBe("reviewing");
+    const e1 = await entityRepo.get(entity.id);
+    expect(e1?.artifacts).toHaveProperty("prDiff");
+    expect(e1?.artifacts).toHaveProperty("prComments");
+
+    // Transition to fixing, then back to reviewing
+    await engine.processSignal(entity.id, "needs_fix");
+    const r2 = await engine.processSignal(entity.id, "fixed");
+    expect(r2.newState).toBe("reviewing");
+
+    // onEnter must have re-run (not skipped)
+    const e2 = await entityRepo.get(entity.id);
+    expect(e2?.artifacts).toHaveProperty("prDiff");
+    expect(e2?.artifacts).toHaveProperty("prComments");
+
+    // Verify onEnter.completed fired (not onEnter.skipped)
+    const completedEvents = events.filter(
+      (e) => e.type === "onEnter.completed" && (e as Record<string, unknown>)["state"] === "reviewing",
+    );
+    expect(completedEvents.length).toBe(2);
+  });
+
+  it("artifacts from other states are NOT cleared on re-entry", async () => {
+    const flow = await flowRepo.create({ name: "test-reentry-preserve", initialState: "provisioning" });
+    await flowRepo.addState(flow.id, {
+      name: "provisioning",
+      agentRole: "provisioner",
+      promptTemplate: "provision",
+      onEnter: {
+        command: `echo '{"worktreePath":"/tmp/wt","branch":"fix-1"}'`,
+        artifacts: ["worktreePath", "branch"],
+      },
+    });
+    await flowRepo.addState(flow.id, {
+      name: "reviewing",
+      agentRole: "reviewer",
+      promptTemplate: "review",
+      onEnter: {
+        command: `echo '{"prDiff":"the-diff","prComments":"the-comments"}'`,
+        artifacts: ["prDiff", "prComments"],
+      },
+    });
+    await flowRepo.addState(flow.id, { name: "fixing", agentRole: "coder", promptTemplate: "fix" });
+    await flowRepo.addTransition(flow.id, { fromState: "provisioning", toState: "reviewing", trigger: "ready" });
+    await flowRepo.addTransition(flow.id, { fromState: "reviewing", toState: "fixing", trigger: "needs_fix" });
+    await flowRepo.addTransition(flow.id, { fromState: "fixing", toState: "reviewing", trigger: "fixed" });
+
+    const entity = await engine.createEntity("test-reentry-preserve");
+
+    // provisioning → reviewing → fixing → reviewing
+    await engine.processSignal(entity.id, "ready");
+    await engine.processSignal(entity.id, "needs_fix");
+    await engine.processSignal(entity.id, "fixed");
+
+    const final = await entityRepo.get(entity.id);
+    // Provisioning artifacts must survive
+    expect(final?.artifacts).toHaveProperty("worktreePath", "/tmp/wt");
+    expect(final?.artifacts).toHaveProperty("branch", "fix-1");
+    // Reviewing artifacts must be fresh (re-run)
+    expect(final?.artifacts).toHaveProperty("prDiff", "the-diff");
+    expect(final?.artifacts).toHaveProperty("prComments", "the-comments");
   });
 });

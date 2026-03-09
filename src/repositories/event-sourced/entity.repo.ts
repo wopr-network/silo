@@ -70,6 +70,10 @@ export class EventSourcedEntityRepository implements IEntityRepository {
     return this.mutable.updateArtifacts(id, artifacts);
   }
 
+  async removeArtifactKeys(id: string, keys: string[]): Promise<void> {
+    return this.mutable.removeArtifactKeys(id, keys);
+  }
+
   async claim(flowId: string, state: string, agentId: string): Promise<Entity | null> {
     return this.mutable.claim(flowId, state, agentId);
   }

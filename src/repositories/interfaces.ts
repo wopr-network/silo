@@ -260,6 +260,9 @@ export interface IEntityRepository {
    *  ({ ...existing, ...artifacts }) — only the specified keys are updated; unspecified keys are preserved. */
   updateArtifacts(id: string, artifacts: Partial<Artifacts>): Promise<void>;
 
+  /** Remove specific keys from an entity's artifact bag. Keys that don't exist are ignored. */
+  removeArtifactKeys(id: string, keys: string[]): Promise<void>;
+
   /** Atomically claim one unclaimed entity in the given flow+state for the specified agent. Returns null if none available. Uses compare-and-swap (UPDATE WHERE claimedBy IS NULL). */
   claim(flowId: string, state: string, agentId: string): Promise<Entity | null>;
 

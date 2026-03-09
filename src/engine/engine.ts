@@ -246,6 +246,18 @@ export class Engine {
     // 6b. Execute onEnter hook if defined on the new state
     const newStateDef = flow.states.find((s) => s.name === toState);
     if (newStateDef?.onEnter) {
+      // Clear stale onEnter artifact keys so the hook re-runs on state re-entry.
+      // Only the keys belonging to THIS state's onEnter are removed; other artifacts are preserved.
+      const keysToRemove = [...newStateDef.onEnter.artifacts, "onEnter_error"];
+      const currentArtifacts = updated.artifacts ?? {};
+      const hasStaleKeys = keysToRemove.some((k) => currentArtifacts[k] !== undefined);
+      if (hasStaleKeys) {
+        await this.entityRepo.removeArtifactKeys(entityId, keysToRemove);
+        // Refresh in-memory entity so executeOnEnter sees cleared artifacts
+        const refreshed = await this.entityRepo.get(entityId);
+        if (refreshed) updated = refreshed;
+      }
+
       const onEnterResult = await executeOnEnter(newStateDef.onEnter, updated, this.entityRepo);
       if (onEnterResult.skipped) {
         await emitter.emit({

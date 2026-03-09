@@ -34,9 +34,15 @@ The command must write a JSON object to stdout containing at minimum the keys li
 
 ---
 
-## Idempotency
+## Idempotency & Re-entry
 
-onEnter is skipped if all named `artifacts` already exist on the entity. This means re-entering a state (e.g., after a gate failure) does not re-run setup. The worktree is created once and reused.
+On first entry, onEnter runs if not all named `artifacts` are present on the entity. On re-entry (entity transitions back into a state it has been in before), the engine **clears the target state's onEnter artifact keys** before evaluating idempotency. This forces the hook to re-run and fetch fresh context.
+
+Only the artifact keys listed in the state's `onEnter.artifacts` array are cleared — artifacts from other states are preserved. The `onEnter_error` key is also cleared so a prior failure doesn't persist into the new attempt.
+
+This matters for correction cycles: when an entity goes `reviewing → fixing → reviewing`, the reviewer gets a fresh `prDiff` and fresh `prComments` from the re-run hook, not stale data from the first review.
+
+For artifacts that should never be re-fetched (e.g., `worktreePath` from `provisioning`), the clearing is scoped to the entering state's own keys. The `provisioning` state's artifacts survive a `reviewing` re-entry because they are not listed in `reviewing`'s `onEnter.artifacts`.
 
 ---
 

@@ -66,6 +66,7 @@ describe("repository interfaces compile", () => {
     expectTypeOf<IEntityRepository>().toHaveProperty("hasAnyInFlowAndState");
     expectTypeOf<IEntityRepository>().toHaveProperty("transition");
     expectTypeOf<IEntityRepository>().toHaveProperty("updateArtifacts");
+    expectTypeOf<IEntityRepository>().toHaveProperty("removeArtifactKeys");
     expectTypeOf<IEntityRepository>().toHaveProperty("claim");
     expectTypeOf<IEntityRepository>().toHaveProperty("reapExpired");
   });
