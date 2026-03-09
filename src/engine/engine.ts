@@ -161,6 +161,10 @@ export class Engine {
     const entity = await this.entityRepo.get(entityId);
     if (!entity) throw new NotFoundError(`Entity "${entityId}" not found`);
 
+    if (entity.state === "cancelled") {
+      throw new ValidationError(`Entity "${entityId}" is cancelled and cannot be transitioned`);
+    }
+
     // 2. Load flow at entity's pinned version
     const flow = await this.flowRepo.getAtVersion(entity.flowId, entity.flowVersion);
     if (!flow) throw new NotFoundError(`Flow "${entity.flowId}" version ${entity.flowVersion} not found`);
@@ -623,6 +627,7 @@ export class Engine {
     for (const { invocation: pending, flow } of deduped) {
       const entity = entityMap.get(pending.entityId);
       if (!entity) continue;
+      if (entity.state === "cancelled") continue;
       // Guard: entity state must still match the invocation's stage — if another worker
       // transitioned the entity between candidate fetch and now, skip this candidate.
       if (entity.state !== pending.stage) continue;
@@ -703,6 +708,11 @@ export class Engine {
       for (const state of claimableStates) {
         const claimed = await this.entityRepo.claim(flow.id, state.name, worker_id ?? `agent:${role}`);
         if (!claimed) continue;
+
+        if (claimed.state === "cancelled") {
+          await this.entityRepo.release(claimed.id, worker_id ?? `agent:${role}`);
+          continue;
+        }
 
         const claimedVersionedFlow = await this.flowRepo.getAtVersion(claimed.flowId, claimed.flowVersion);
         const claimedEffectiveFlow = claimedVersionedFlow ?? flow;

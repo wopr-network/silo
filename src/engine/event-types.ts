@@ -12,6 +12,15 @@ export type EngineEvent =
     }
   | { type: "entity.claimed"; entityId: string; flowId: string; agentId: string; emittedAt: Date }
   | { type: "entity.released"; entityId: string; flowId: string; emittedAt: Date }
+  | {
+      type: "entity.cancelled";
+      entityId: string;
+      flowId: string;
+      cancelledBy: string;
+      reason: string | null;
+      cascade: boolean;
+      emittedAt: Date;
+    }
   | { type: "invocation.created"; entityId: string; invocationId: string; stage: string; emittedAt: Date }
   | { type: "invocation.claimed"; entityId: string; invocationId: string; agentId: string; emittedAt: Date }
   | { type: "invocation.completed"; entityId: string; invocationId: string; signal: string; emittedAt: Date }

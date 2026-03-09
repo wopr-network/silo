@@ -224,6 +224,7 @@ program
       transitions: transitionLogRepo,
       eventRepo: new DrizzleEventRepository(db),
       engine,
+      withTransaction: (fn) => withTransaction(sqlite, fn),
     };
 
     const reaperInterval = parseInt(opts.reaperInterval, 10);

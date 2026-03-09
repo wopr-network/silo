@@ -142,6 +142,8 @@ export const AdminFlowPauseSchema = z.object({
 
 export const AdminEntityCancelSchema = z.object({
   entity_id: z.string().min(1),
+  cascade: z.boolean().optional().default(false),
+  reason: z.string().optional(),
 });
 
 export const AdminEntityResetSchema = z.object({

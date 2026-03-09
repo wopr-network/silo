@@ -113,11 +113,13 @@ export const entities = sqliteTable(
     affinityWorkerId: text("affinity_worker_id"),
     affinityRole: text("affinity_role"),
     affinityExpiresAt: integer("affinity_expires_at"),
+    parentEntityId: text("parent_entity_id"),
   },
   (table) => ({
     flowStateIdx: index("entities_flow_state_idx").on(table.flowId, table.state),
     claimIdx: index("entities_claim_idx").on(table.flowId, table.state, table.claimedBy),
     affinityIdx: index("entities_affinity_idx").on(table.affinityWorkerId, table.affinityRole, table.affinityExpiresAt),
+    parentIdx: index("entities_parent_idx").on(table.parentEntityId),
   }),
 );
 

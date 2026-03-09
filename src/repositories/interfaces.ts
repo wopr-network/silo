@@ -38,6 +38,7 @@ export interface Entity {
   affinityWorkerId: string | null;
   affinityRole: string | null;
   affinityExpiresAt: Date | null;
+  parentEntityId: string | null;
 }
 
 /** A single agent invocation tied to an entity */
@@ -235,7 +236,13 @@ export interface CreateGateInput {
 /** Data-access contract for entity lifecycle operations. */
 export interface IEntityRepository {
   /** Create a new entity in the given flow's initial state. */
-  create(flowId: string, initialState: string, refs?: Refs, flowVersion?: number): Promise<Entity>;
+  create(
+    flowId: string,
+    initialState: string,
+    refs?: Refs,
+    flowVersion?: number,
+    parentEntityId?: string,
+  ): Promise<Entity>;
 
   /** Get an entity by ID, or null if not found. */
   get(id: string): Promise<Entity | null>;
@@ -274,6 +281,9 @@ export interface IEntityRepository {
   /** Atomically append a spawned child entry to the parent entity's artifacts.spawnedChildren array.
    *  Reads the current array and writes back in a single transaction to prevent TOCTOU races. */
   appendSpawnedChild(parentId: string, entry: { childId: string; childFlow: string; spawnedAt: string }): Promise<void>;
+
+  /** Find all direct children of a parent entity. */
+  findByParentId(parentEntityId: string): Promise<Entity[]>;
 
   /** Move entity to 'cancelled' terminal state and clear claimedBy/claimedAt. */
   cancelEntity(entityId: string): Promise<void>;

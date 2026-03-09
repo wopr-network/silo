@@ -26,10 +26,17 @@ export class DrizzleEntityRepository implements IEntityRepository {
       affinityWorkerId: row.affinityWorkerId ?? null,
       affinityRole: row.affinityRole ?? null,
       affinityExpiresAt: row.affinityExpiresAt ? new Date(row.affinityExpiresAt) : null,
+      parentEntityId: row.parentEntityId ?? null,
     };
   }
 
-  async create(flowId: string, initialState: string, refs?: Refs, flowVersion?: number): Promise<Entity> {
+  async create(
+    flowId: string,
+    initialState: string,
+    refs?: Refs,
+    flowVersion?: number,
+    parentEntityId?: string,
+  ): Promise<Entity> {
     const now = Date.now();
     const id = crypto.randomUUID();
     const row = {
@@ -46,6 +53,7 @@ export class DrizzleEntityRepository implements IEntityRepository {
       affinityWorkerId: null,
       affinityRole: null,
       affinityExpiresAt: null,
+      parentEntityId: parentEntityId ?? null,
     };
     await this.db.insert(entities).values(row);
     return this.toEntity(row as typeof entities.$inferSelect);
@@ -213,6 +221,11 @@ export class DrizzleEntityRepository implements IEntityRepository {
       .returning({ id: entities.id })
       .all();
     return rows.map((r) => r.id);
+  }
+
+  async findByParentId(parentEntityId: string): Promise<Entity[]> {
+    const rows = await this.db.select().from(entities).where(eq(entities.parentEntityId, parentEntityId));
+    return rows.map((r) => this.toEntity(r));
   }
 
   async cancelEntity(entityId: string): Promise<void> {

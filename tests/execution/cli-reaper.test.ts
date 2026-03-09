@@ -6,7 +6,7 @@ describe("reaper integration", () => {
     const reapExpired = vi.fn().mockResolvedValue([]);
     const reapExpiredEntity = vi.fn().mockResolvedValue(undefined);
     const engine = new Engine({
-      entityRepo: { reapExpired: reapExpiredEntity } as any,
+      entityRepo: { reapExpired: reapExpiredEntity, clearExpiredAffinity: vi.fn().mockResolvedValue([]) } as any,
       flowRepo: {} as any,
       invocationRepo: { reapExpired } as any,
       gateRepo: {} as any,
@@ -27,7 +27,7 @@ describe("reaper lifecycle", () => {
     const reapExpired = vi.fn().mockResolvedValue([]);
     const reapExpiredEntity = vi.fn().mockResolvedValue(undefined);
     const engine = new Engine({
-      entityRepo: { reapExpired: reapExpiredEntity } as any,
+      entityRepo: { reapExpired: reapExpiredEntity, clearExpiredAffinity: vi.fn().mockResolvedValue([]) } as any,
       flowRepo: {} as any,
       invocationRepo: { reapExpired } as any,
       gateRepo: {} as any,
@@ -71,7 +71,7 @@ describe("reaper lifecycle", () => {
 
     vi.useFakeTimers();
     const engine = new Engine({
-      entityRepo: { reapExpired: reapExpiredEntity } as any,
+      entityRepo: { reapExpired: reapExpiredEntity, clearExpiredAffinity: vi.fn().mockResolvedValue([]) } as any,
       flowRepo: {} as any,
       invocationRepo: { reapExpired } as any,
       gateRepo: {} as any,

@@ -39,7 +39,7 @@ describe("executeSpawn", () => {
     expect(result).not.toBeNull();
     expect(result!.id).toBe("ent-2");
     expect(flowRepo.getByName).toHaveBeenCalledWith("deploy-flow");
-    expect(entityRepo.create).toHaveBeenCalledWith("flow-2", "pending", parentEntity.refs);
+    expect(entityRepo.create).toHaveBeenCalledWith("flow-2", "pending", parentEntity.refs, undefined, "ent-1");
   });
 
   it("records the spawned child on the parent entity's artifacts", async () => {

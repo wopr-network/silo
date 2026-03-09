@@ -20,7 +20,13 @@ export async function executeSpawn(
   const flow = await flowRepo.getByName(transition.spawnFlow);
   if (!flow) throw new NotFoundError(`Spawn flow "${transition.spawnFlow}" not found`);
 
-  const childEntity = await entityRepo.create(flow.id, flow.initialState, parentEntity.refs ?? undefined);
+  const childEntity = await entityRepo.create(
+    flow.id,
+    flow.initialState,
+    parentEntity.refs ?? undefined,
+    undefined,
+    parentEntity.id,
+  );
 
   try {
     await entityRepo.appendSpawnedChild(parentEntity.id, {
