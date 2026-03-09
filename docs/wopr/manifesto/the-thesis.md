@@ -49,11 +49,17 @@ RADAR doesn't trust WOPR. It reads the agent's stdout, extracts signal phrases, 
 
 ### NUKES — Agents in Flight
 
-The Docker containers running Claude Code agents. Each nuke is a single agent invocation: an architect writing a spec, a coder implementing it, a reviewer reading a diff, a fixer addressing findings.
+[wopr-network/nuke](https://github.com/wopr-network/nuke)
+
+The Docker containers running Claude agents. Each nuke is a single agent invocation: an architect writing a spec, a coder implementing it, a reviewer reading a diff, a fixer addressing findings.
+
+The NUKE repo contains a shared worker-runtime (HTTP server with `/dispatch` endpoint) and per-discipline Dockerfiles. RADAR POSTs `{prompt, modelTier}` to the nuke's `/dispatch` endpoint. The nuke runs `@anthropic-ai/claude-agent-sdk` `query()` and streams back Server-Sent Events: `session`, `tool_use`, `text`, and finally `result` with the parsed signal and artifacts.
+
+Each discipline gets its own Dockerfile with project-specific tooling. The coder discipline has `git`, `gh`, `pnpm`. A Python shop adds `pip`, `pytest`, `ruff`. A Rust shop adds `cargo`, `clippy`. The runtime is shared — the tooling is yours. **You fork the NUKE** to customize what's installed in your agent containers.
 
 Nukes are expensive. Each one costs tokens — $0.03 to $0.50 depending on model tier and context size. You want as few as possible hitting the target. This is why gates exist: every gate that routes an entity without launching a nuke saves money. The merge-queue gate that checks PR state is a $0.00 shell script making a decision that would cost $0.03 if an agent did it.
 
-Nukes are observable. RADAR tracks every one in flight — when it launched, what it's working on, how long it's been running. NORAD displays them. If a nuke hangs, RADAR reaps it after a timeout.
+Nukes are observable. RADAR tracks every one in flight — when it launched, what it's working on, how long it's been running. Every SSE event from the nuke is recorded in the activity repo: tool calls, text output, results, costs. NORAD displays them in real time. If a nuke hangs, RADAR reaps it after a timeout.
 
 Nukes are ephemeral. They launch, do one job, emit a signal, and die. No accumulated state. No memory between invocations. Everything they produce goes into an external system: a git commit, a Linear comment, a PR review.
 
