@@ -536,9 +536,11 @@ program
   });
 
 // ─── provision-worktree ───
+// TODO(WOP-2014): Remove this subcommand once nuke containers are deployed and stable.
+// Nuke workers provision their own workspace inside the container, making this unnecessary.
 program
   .command("provision-worktree")
-  .description("Provision a git worktree and branch for an issue")
+  .description("[DEPRECATED] Provision a git worktree and branch for an issue (superseded by nuke containers)")
   .argument("<repo>", "GitHub repo (e.g. wopr-network/defcon)")
   .argument("<issue-key>", "Issue key (e.g. WOP-392)")
   .option("--base-path <path>", "Worktree base directory", join(homedir(), "worktrees"))

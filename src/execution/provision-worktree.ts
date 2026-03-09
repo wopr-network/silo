@@ -1,3 +1,8 @@
+/**
+ * @deprecated provision-worktree is superseded by nuke containerized workers (WOP-2014).
+ * Nuke containers provision their own workspace inside the container.
+ * TODO: remove this file once nuke is deployed and stable.
+ */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
