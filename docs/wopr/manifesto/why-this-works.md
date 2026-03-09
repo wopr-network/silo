@@ -1,6 +1,8 @@
 # Why This Works — WOPR's Evidence
 
 > Implements: [method/manifesto/why-this-works.md](../../method/manifesto/why-this-works.md)
+>
+> See also: [The Thesis](the-thesis.md) — the full stack and naming convention
 
 ---
 

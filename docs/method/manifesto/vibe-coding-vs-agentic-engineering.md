@@ -1,5 +1,7 @@
 # Vibe Coding vs Agentic Engineering
 
+> See first: [The Thesis](the-thesis.md) — why you must automate, and what happens when you do it without gates.
+
 A side-by-side comparison of two approaches to AI-assisted software development.
 
 ---

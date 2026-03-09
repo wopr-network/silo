@@ -1,5 +1,7 @@
 # System Architecture Principles
 
+> Builds on: [The Thesis](the-thesis.md) — the launch protocol that these principles implement.
+
 How multi-agent engineering systems cohere.
 
 These six principles are the architectural spine of agentic engineering. They explain what patterns a multi-agent system must have to function as a whole, and why each is non-negotiable. They sit between the philosophy ([why this works](why-this-works.md)) and the implementation details (pipeline stages, agent definitions, reference config).

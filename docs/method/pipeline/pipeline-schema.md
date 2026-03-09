@@ -4,6 +4,16 @@ The state machine definition — how issues flow through stages, what triggers t
 
 ---
 
+## The Flow Definition Is the Artifact
+
+The state machine below is not a configuration file. It is the **primary engineering artifact** — more important than any code the agents produce.
+
+Every state defines a prompt template. Every transition defines a gate. Every gate defines a failure prompt. Every state can define an onEnter hook. Together, these form a **context assembly pipeline** that determines whether agents spend their tokens on reasoning and action, or on figuring out what they're supposed to do.
+
+The flow author is not configuring a workflow. They are engineering the prompts, the verification predicates, and the context contracts that govern every agent invocation. If the flow is well-designed, the agent receives everything it needs at invocation time and spends zero tokens on context gathering. If the flow is poorly designed, agents burn their context windows on tool calls that should have been pre-computed. 90% of the engineering effort is here — in the flow definition.
+
+---
+
 ## The State Machine
 
 Every issue in the pipeline is in exactly one state at any time. Transitions between states are triggered by events and gated by conditions.

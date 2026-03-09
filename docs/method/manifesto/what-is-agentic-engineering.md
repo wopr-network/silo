@@ -1,6 +1,8 @@
 # What is Agentic Engineering?
 
-Agentic engineering is a software development methodology where AI agents perform the work and deterministic gates verify every action. The human's role shifts from writing code to designing gates — the system of checks that ensures every AI output meets the project's standards before it can affect anything.
+> Start here: [The Thesis](the-thesis.md) — why you must give AI the keys, and why the only winning move is to have gates.
+
+Agentic engineering is a software development methodology where AI agents perform the work and deterministic gates verify every action. The human's role shifts from writing code to designing the launch protocol — the flow definitions, gates, context assembly hooks, and prompt templates that govern every agent invocation. The flow definition is the primary engineering artifact. The agents are commodity labor.
 
 ## The Core Distinction
 
@@ -76,3 +78,7 @@ Software built by AI agents without gates is a liability. It might work today. I
 Software built by AI agents WITH gates is an asset. Every merge is verified. Every deploy is tested. Every finding feeds back to prevent recurrence. The system gets more reliable over time, not less.
 
 The question isn't whether AI will write your software — it already does. The question is whether you have gates, or just hope.
+
+---
+
+See [The Thesis](the-thesis.md) for the full argument.

@@ -123,6 +123,8 @@ A gate is a check that runs at a pipeline boundary. It has exactly three outcome
 | Gate failed | `waiting` | Gate's `failure_prompt` — written by the flow author |
 | Gate timed out | `check_back` | Gate's `timeout_prompt` — written by the flow author |
 
+Each outcome is a **prompt engineering decision point**. The flow author is not configuring error messages — they are writing the next agent's specification. The gate knows exactly what went wrong. The failure prompt should tell the next agent exactly what to fix. "The spec was not found" is vague. "You signalled spec_ready but no comment containing '## Implementation Spec' exists on WOP-1234. Post the spec comment to the Linear issue, then signal again." is a targeted correction specification.
+
 The pass case requires no configuration. The next state already has a prompt template. The pipeline renders it and returns it. The flow author has nothing to add — the flow itself defines what work comes next.
 
 The fail and timeout cases are different. The engine knows the gate failed or timed out, but it doesn't know what that means in the context of this specific pipeline. That's what `failure_prompt` and `timeout_prompt` are for: the flow author's instructions to the worker about what just happened and what to do next.
@@ -169,7 +171,7 @@ Set `timeout_ms` to the maximum time you are willing to wait, not an estimate of
 
 ---
 
-## Token Economics
+## Token Economics and the 1:2.8 Ratio
 
 Gates save tokens by preventing wasted work.
 
@@ -180,6 +182,14 @@ When a gate passes, the pipeline hands the worker the next prompt with full cont
 When a gate times out, the `check_back` response can include a `timeout_prompt` — instructions for what the worker should do while waiting. A well-designed timeout prompt turns idle time into useful work: pre-reviewing a diff, writing notes, checking related issues. The worker is never just burning tokens on hold.
 
 The protocol is designed around the insight that **a stopped worker costs nothing, and a fresh worker does better work than an exhausted one**.
+
+### The Correction Cycle Is the Work
+
+For every coder invocation, there are approximately 2.8 reviewer/fixer invocations. This is not a problem to optimize away — it is physics. Emergent complexity, unforeseen bugs, implicit contracts that aren't written down. 70% of the engineering work happens after the code is written.
+
+The worker protocol is designed around this reality. The `reviewing → fixing → reviewing` loop is not a fallback for bad agents — it is the designed path. The gates exist because correction cycles are expected. The question is not whether they happen, but whether they happen inside a controlled loop with deterministic gates or in production at 2am.
+
+This ratio directly informs worker pool design. Four slots don't mean four features in parallel. They mean one feature getting coded while three others cycle through review/fix. The protocol's claim/report contract makes this natural — a worker claims whatever is highest priority, whether that's a fresh coding task or a re-review of a fix.
 
 ---
 

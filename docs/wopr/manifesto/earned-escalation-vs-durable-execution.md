@@ -1,6 +1,8 @@
 # Earned Escalation in the WOPR Stack
 
-See [method principle](../../method/manifesto/earned-escalation-vs-durable-execution.md)
+> Implements: [method/manifesto/earned-escalation-vs-durable-execution.md](../../method/manifesto/earned-escalation-vs-durable-execution.md)
+>
+> See also: [The Thesis](the-thesis.md) — why we built this and what the names mean
 
 ## Why Not Temporal?
 
@@ -22,18 +24,36 @@ Different question. Different tool.
 
 ## The Full Stack
 
-DEFCON is the escalation ladder. But a ladder needs someone to climb it and someone to watch the room.
+DEFCON is the escalation ladder. But a ladder needs someone to climb it, someone to launch the climbers, and someone to watch the room.
 
-**[WOPR](https://github.com/wopr-network/wopr)** is the AI that climbs. It writes code, runs tests, opens PRs — playing the game as hard as it can, trying to reach DEFCON 1. That's its job. That's what you want it to do.
-
-**[NORAD](https://github.com/wopr-network/norad)** is the operations center. It watches the world for events, claims work from DEFCON, dispatches WOPR, and feeds signals back. It manages the floor — how many workers, what they're working on, routing results between the thing that does the work and the thing that decides if the work is good enough.
-
-```text
-NORAD watches -> event arrives -> claims from DEFCON -> dispatches WOPR
-WOPR works -> emits signal -> NORAD reports to DEFCON -> gate checks -> escalate or hold
+```
+WOPR ─── the AI. The machine that plays the game.
+DEFCON ─ the state machine. Prevents escalation without evidence.
+RADAR ── detection and dispatch. Finds work, launches nukes, tracks them.
+NUKES ── the agents in flight. Claude containers doing the actual work.
+NORAD ── the command center. Dashboard. Watches everything. Touches nothing.
+SILO ─── the payload. Flow definitions, gate scripts, agent roles.
 ```
 
-WOPR doesn't know what DEFCON is. DEFCON doesn't know what WOPR is. NORAD connects them. Three systems, three roles, one metaphor that refuses to break down.
+**[WOPR](https://github.com/wopr-network/wopr)** is the AI that plays. It writes code, runs tests, opens PRs — playing the game as hard as it can, trying to earn escalation to the next DEFCON level. That's its job. That's what you want it to do.
+
+**[RADAR](https://github.com/wopr-network/radar)** is detection and dispatch. It scans for work (Linear issues, GitHub events), claims entities from DEFCON, launches nukes (agent containers), parses their signals, and reports results back. RADAR manages the floor — how many workers, what they're working on, routing results between the thing that does the work and the thing that decides if the work is good enough.
+
+**[NORAD](https://github.com/wopr-network/norad)** is the command center. A real-time dashboard showing entity status, activity feeds, worker health, gate results. NORAD watches everything and touches nothing. Humans trust the system because they can see what it's doing.
+
+**NUKES** are the agents in flight. Docker containers running Claude Code. Each one is expensive ($0.03-$0.50 per invocation). You want as few as possible hitting the target. Gates exist to prevent wasted launches.
+
+**SILO** is where the payload is assembled. Flow definitions, gate scripts, onEnter hooks, agent role files, prompt templates. The flow definition in the SILO is the primary engineering artifact — it determines every prompt, every gate, every routing decision.
+
+```text
+SILO defines the payload
+RADAR detects work -> claims from DEFCON -> launches a NUKE
+NUKE works -> emits signal -> RADAR reports to DEFCON
+DEFCON checks gates -> escalate or hold
+NORAD watches the whole thing
+```
+
+WOPR doesn't know what DEFCON is. DEFCON doesn't know what WOPR is. RADAR connects them. NORAD observes. The SILO defines the rules. Five systems, five roles, one metaphor that refuses to break down.
 
 We looked at the movie. We understood the warning. And we said: yeah, but what if WOPR was actually good at its job? What if the game it's playing isn't a simulation — it's real work, with real gates, and if it plays perfectly, we trust the launch?
 

@@ -1,6 +1,8 @@
 # System Architecture Principles — The WOPR Implementation
 
 > Implements: [method/manifesto/system-architecture-principles.md](../../method/manifesto/system-architecture-principles.md)
+>
+> See also: [The Thesis](the-thesis.md) — the full stack and naming convention
 
 ---
 
