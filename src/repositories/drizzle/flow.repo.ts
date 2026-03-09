@@ -202,6 +202,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
         promptTemplate: s.promptTemplate ?? null,
         constraints: s.constraints ?? null,
         onEnter: s.onEnter ?? null,
+        onExit: s.onExit ?? null,
         retryAfterMs: s.retryAfterMs ?? null,
       })),
       transitions: (snap.transitions ?? []).map((t) => ({

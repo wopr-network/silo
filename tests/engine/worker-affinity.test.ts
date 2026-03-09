@@ -152,6 +152,7 @@ function makeFlowRepo(flow: Flow): IFlowRepository {
     list: vi.fn().mockResolvedValue([flow]),
     get: vi.fn().mockResolvedValue(flow),
     getByName: vi.fn().mockResolvedValue(flow),
+    getAtVersion: vi.fn().mockResolvedValue(flow),
     update: vi.fn(),
     addState: vi.fn(),
     updateState: vi.fn(),
