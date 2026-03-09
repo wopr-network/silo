@@ -224,8 +224,8 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
       invocation_id: claimed.id,
       flow: flow.name,
       state: claimed.stage,
-      refs: entity.refs ?? null,
-      artifacts: entity.artifacts ?? null,
+      refs: claimedEntity.refs ?? null,
+      artifacts: claimedEntity.artifacts ?? null,
     });
   }
 
