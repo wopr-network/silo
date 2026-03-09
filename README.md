@@ -204,6 +204,50 @@ npx defcon run --flow my-pipeline
 
 Same flow. Same gates. Same escalation. The only difference is who's turning the crank — your agent or DEFCON's runner. Either way, the work doesn't advance until the evidence says it should.
 
+## The Deeper Truth: Defcon Is a Prompt Engineering State Machine
+
+The manifesto above tells you why gates matter. Here's the insight that changes how you think about everything else.
+
+Defcon is not an orchestration engine that happens to give prompts to agents. **Defcon is a prompt engineering state machine.** Every state is a prompt. Every transition is a context transformation. Every gate is a deterministic filter that decides what prompt the agent gets next — or whether it gets one at all.
+
+The flow definition is the engineering artifact. Not the agent code. Not the model selection. The flow.
+
+### Context Assembly Is the Contract
+
+An agent invocation is expensive. An agent invocation where the agent spends tool calls reading its own issue, checking CI status, or finding the PR it's supposed to review — that is a flow engineering defect. The onEnter hook should have assembled that context before the agent fired.
+
+**Every tool call an agent makes to gather context is a failure of the flow definition to provide it.**
+
+When the architect calls Linear to read the issue description — that's already in `entity.refs.linear.description`. Put it in the prompt template. When the coder calls `gh pr list` — that's a missing onEnter hook. When the reviewer runs `gh pr checks` — the gate already verified this.
+
+The measure of a well-engineered state is: **can the agent complete its job with zero context-gathering tool calls?** Every tool call should be *work* — writing code, posting comments, running tests — never reconnaissance.
+
+### Gates Are Prompt Qualification
+
+A gate doesn't just verify that work is done. A gate verifies that **the next state's context can be assembled completely**.
+
+`review-bots-ready` waiting for CI and bot comments isn't patience. It ensures the reviewer's prompt will contain: green CI, all bot findings, full diff. Without the gate, the reviewer either polls (burning tokens) or reviews without full information (wrong answer, another loop).
+
+The cost of a gate is milliseconds of shell execution. The cost of a skipped gate is a full review/fix cycle — potentially minutes and dollars.
+
+### The 1:2.8 Ratio Is Physics
+
+For every 1 coder invocation, there are approximately 2.8 reviewer/fixer invocations. This is not a pipeline inefficiency. It is the actual shape of software.
+
+The coder produces a first approximation. Reality pushes back: CI failures, static analysis findings, edge cases the spec didn't anticipate, style violations the linter catches. 70% of the engineering work happens after the code is written. You cannot prompt-engineer your way out of this. You cannot pre-load enough context to get one-shot correctness. The iteration is load-bearing.
+
+The design question is not "how do we reduce the review/fix loop." It is: **given that ~2.8 cycles is the physics, how do we make each cycle as cheap and fast as possible?**
+
+Every gate that catches a problem before an agent runs saves a full cycle. Every onEnter hook that assembles complete context means the agent spends its tokens on reasoning instead of discovery. Every failure prompt that tells the agent exactly what went wrong reduces the chance of another loop.
+
+### Flow Engineering Is 90% of the Work
+
+The promise is big: software that ships with 100% overhead reduction. But 90% of the engineering work to get there is flow engineering — designing states, writing hooks, placing gates, and crafting prompts. The agent is the easy part. The agent is a commodity. The flow is the competitive advantage.
+
+A poorly written failure prompt extends the loop. A gate that fires too early sends an under-qualified prompt to the reviewer. A missing onEnter hook makes the agent reconstruct context with tool calls instead of reasoning. The flow definition IS the quality of the system.
+
+---
+
 ## The Engine
 
 A **flow** is a state machine. Entities enter it and move through states. At each state an agent does work. At each boundary a deterministic gate verifies the output. Transitions fire on signals — not parsed natural language, not regex, but typed strings agents emit via tool call. The entire definition lives in a database and can be mutated at runtime.
