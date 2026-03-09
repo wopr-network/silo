@@ -221,6 +221,7 @@ program
       adapters: new Map(),
       eventEmitter,
       withTransaction: (fn) => withTransaction(sqlite, fn),
+      domainEvents: domainEventRepo,
     });
 
     const deps: McpServerDeps = {

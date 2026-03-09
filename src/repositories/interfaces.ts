@@ -445,6 +445,18 @@ export interface IDomainEventRepository {
 
   /** List domain events for an entity, optionally filtered by type, ordered by sequence ascending. */
   list(entityId: string, opts?: { type?: string; limit?: number }): Promise<DomainEvent[]>;
+
+  /** Get the current max sequence number for an entity (0 if no events exist). */
+  getLastSequence(entityId: string): Promise<number>;
+
+  /** Append a domain event only if the entity's current max sequence equals expectedSequence.
+   *  Returns the event on success, or null if another writer won (unique constraint violation). */
+  appendCas(
+    type: string,
+    entityId: string,
+    payload: Record<string, unknown>,
+    expectedSequence: number,
+  ): Promise<DomainEvent | null>;
 }
 
 /** Data-access contract for gate definitions and result recording. */

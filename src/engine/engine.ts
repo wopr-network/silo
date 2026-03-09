@@ -6,6 +6,7 @@ import type {
   EnrichedEntity,
   Entity,
   Flow,
+  IDomainEventRepository,
   IEntityRepository,
   IFlowRepository,
   IGateRepository,
@@ -66,6 +67,8 @@ export interface EngineDeps {
   logger?: Logger;
   /** Optional transaction wrapper from the database layer. When provided, processSignal runs inside a single transaction and events are flushed only after successful commit. */
   withTransaction?: <T>(fn: () => T | Promise<T>) => Promise<T>;
+  /** Optional domain event repository. When provided, claimWork uses CAS on the event log to prevent concurrent claim races. */
+  domainEvents?: IDomainEventRepository;
 }
 
 export class Engine {
@@ -78,6 +81,7 @@ export class Engine {
   private eventEmitter: IEventBusAdapter;
   private readonly logger: Logger;
   private readonly withTransactionFn: (<T>(fn: () => T | Promise<T>) => Promise<T>) | null;
+  private readonly domainEventRepo: IDomainEventRepository | null;
   private drainingWorkers = new Set<string>();
 
   constructor(deps: EngineDeps) {
@@ -90,6 +94,7 @@ export class Engine {
     this.eventEmitter = deps.eventEmitter;
     this.logger = deps.logger ?? consoleLogger;
     this.withTransactionFn = deps.withTransaction ?? null;
+    this.domainEventRepo = deps.domainEvents ?? null;
   }
 
   drainWorker(workerId: string): void {
@@ -632,8 +637,35 @@ export class Engine {
       // transitioned the entity between candidate fetch and now, skip this candidate.
       if (entity.state !== pending.stage) continue;
       const entityClaimToken = worker_id ?? `agent:${role}`;
+
+      // CAS guard: atomically append an invocation.claimed event using optimistic concurrency.
+      // Only one writer wins the unique (entityId, sequence) constraint — losers move to the next candidate.
+      if (this.domainEventRepo) {
+        const lastSeq = await this.domainEventRepo.getLastSequence(entity.id);
+        const casResult = await this.domainEventRepo.appendCas(
+          "invocation.claim_attempted",
+          entity.id,
+          { agentId: entityClaimToken, invocationId: pending.id, stage: pending.stage },
+          lastSeq,
+        );
+        if (!casResult) continue; // Another agent won the race
+      }
+
       const claimed = await this.entityRepo.claimById(entity.id, entityClaimToken);
-      if (!claimed) continue;
+      if (!claimed) {
+        // claimById failed after CAS success — record rollback event for observability
+        if (this.domainEventRepo) {
+          try {
+            await this.domainEventRepo.append("invocation.claim_released", entity.id, {
+              agentId: entityClaimToken,
+              reason: "claimById_failed",
+            });
+          } catch (err) {
+            this.logger.warn("[engine] CAS claim rollback event failed", { err });
+          }
+        }
+        continue;
+      }
 
       // Post-claim state validation — entity may have transitioned between guard check and claim
       if (claimed.state !== pending.stage) {
