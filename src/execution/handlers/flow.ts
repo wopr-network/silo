@@ -213,14 +213,12 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
     }
 
     return jsonResult({
-      worker_id: worker_id,
-      entity_id: claimed.entityId,
+      entity_id: entity.id,
       invocation_id: claimed.id,
       flow: flow?.name ?? null,
-      stage: claimed.stage,
-      agent_role: claimed.agentRole || null,
-      prompt: claimed.prompt,
-      context: claimed.context,
+      state: claimed.stage,
+      refs: entity.refs ?? null,
+      artifacts: entity.artifacts ?? null,
     });
   }
 

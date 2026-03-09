@@ -130,6 +130,7 @@ async function parseSeedAndLoad(
           onEnter: s.onEnter,
           onExit: s.onExit,
           retryAfterMs: s.retryAfterMs,
+          meta: s.meta,
         });
       }
 

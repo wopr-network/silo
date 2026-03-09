@@ -343,12 +343,14 @@ describe("Engine integration (in-memory SQLite)", () => {
     const claimData = JSON.parse(claimResult.content[0].text) as {
       entity_id: string;
       invocation_id: string;
-      prompt: string;
+      state: string;
+      refs: Record<string, unknown> | null;
+      artifacts: Record<string, unknown> | null;
     } | null;
     expect(claimData).not.toBeNull();
     expect(claimData!.entity_id).toBe(entity.id);
     expect(typeof claimData!.invocation_id).toBe("string");
-    expect(claimData!.prompt).toContain(entity.id);
+    expect(claimData!.state).toBe("coding");
 
     const promptResult = await callToolHandler(mcpDeps, "flow.get_prompt", { entity_id: entity.id });
     expect(promptResult.isError).toBeUndefined();

@@ -356,7 +356,9 @@ describe("MCP tool handlers", () => {
     const data = JSON.parse(content[0].text);
     expect(data).toHaveProperty("entity_id");
     expect(data).toHaveProperty("invocation_id");
-    expect(data).toHaveProperty("prompt");
+    expect(data).toHaveProperty("state");
+    expect(data).toHaveProperty("refs");
+    expect(data).toHaveProperty("artifacts");
   });
 
   it("flow.claim returns structured check_back when no work available (empty backlog)", async () => {
@@ -930,7 +932,9 @@ describe("MCP integration: claim -> report -> verify", () => {
       (claimResult.content as Array<{ text: string }>)[0].text,
     );
     expect(claimData).toHaveProperty("entity_id");
-    expect(claimData).toHaveProperty("prompt");
+    expect(claimData).toHaveProperty("state");
+    expect(claimData).toHaveProperty("refs");
+    expect(claimData).toHaveProperty("artifacts");
 
     // Step 2: Report completion
     const reportResult = await client.callTool({

@@ -208,10 +208,13 @@ describe("E2E: full-stack defcon flow", { timeout: 15000 }, () => {
 			const claimData = (await claimRes.json()) as {
 				entity_id: string;
 				invocation_id: string;
-				prompt: string;
+				state: string;
+				refs: Record<string, unknown> | null;
+				artifacts: Record<string, unknown> | null;
 			};
 			expect(claimData.entity_id).toBe(entity.id);
-			expect(claimData.prompt).toContain(entity.id);
+			expect(typeof claimData.invocation_id).toBe("string");
+			expect(claimData.state).toBe("coding");
 
 			// 4. Report "submit" via REST — gate (test-pass.sh) will pass → reviewing
 			const submitRes = await fetch(
