@@ -215,6 +215,27 @@ describe("merge-blocked stuck detection", () => {
     expect(mergeBlockedUpdate).toBeUndefined();
   });
 
+  it("does not override toState and logs warning when threshold reached but no stuck state", async () => {
+    const flow = makeMergeFlow();
+    // Remove the stuck state from the flow
+    flow.states = flow.states.filter((s) => s.name !== "stuck");
+    const entity = makeEntity({
+      state: "merging",
+      artifacts: { merge_blocked_count: 2 },
+    });
+    const repos = makeMockRepos(flow, entity);
+    const warnMock = vi.fn();
+    const mockLogger = { info: vi.fn(), warn: warnMock, error: vi.fn(), debug: vi.fn() };
+    const engine = new Engine({ ...repos, adapters: new Map(), logger: mockLogger });
+
+    const result = await engine.processSignal("ent-1", "blocked");
+
+    // toState should NOT be overridden to "stuck" — no stuck state exists
+    expect(result.newState).not.toBe("stuck");
+    // logger.warn should be called with the no-stuck-state message
+    expect(warnMock).toHaveBeenCalledWith(expect.stringContaining("no stuck state"));
+  });
+
   it("stores stuck message in artifacts when transitioning to stuck", async () => {
     const flow = makeMergeFlow();
     const entity = makeEntity({

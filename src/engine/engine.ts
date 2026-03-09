@@ -215,6 +215,10 @@ export class Engine {
             merge_blocked_message: MERGE_BLOCKED_STUCK_MESSAGE,
           });
           this.logger.warn(`[engine] Entity ${entityId} merge-blocked ${newCount} times, transitioning to stuck`);
+        } else {
+          this.logger.warn(
+            `merge_blocked_count >= threshold but no stuck state in flow ${flow.name} — entity ${entityId} will continue looping`,
+          );
         }
       }
     }
