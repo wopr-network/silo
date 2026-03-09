@@ -57,11 +57,17 @@ export const StateDefinitionSchema = z.object({
 });
 
 // Gate: discriminated union on `type`
+const GateOutcomeSchema = z.object({
+  proceed: z.boolean().optional(),
+  toState: z.string().min(1).optional(),
+});
+
 const BaseGateSchema = z.object({
   name: z.string().min(1),
   timeoutMs: z.number().int().min(1).optional(),
   failurePrompt: z.string().optional(),
   timeoutPrompt: z.string().min(1).optional(),
+  outcomes: z.record(z.string(), GateOutcomeSchema).optional(),
 });
 
 export const CommandGateSchema = BaseGateSchema.extend({

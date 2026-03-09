@@ -1,7 +1,7 @@
 import { NotFoundError } from "../errors.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
-import type { Entity, IEntityRepository, IFlowRepository, Transition } from "../repositories/interfaces.js";
+import type { Entity, IEntityRepository, IFlowRepository } from "../repositories/interfaces.js";
 
 /**
  * If the transition has a spawnFlow, look up that flow and create a new entity in it.
@@ -9,7 +9,7 @@ import type { Entity, IEntityRepository, IFlowRepository, Transition } from "../
  * Returns the spawned entity, or null if no spawn is configured.
  */
 export async function executeSpawn(
-  transition: Transition,
+  transition: { spawnFlow: string | null | undefined },
   parentEntity: Entity,
   flowRepo: IFlowRepository,
   entityRepo: IEntityRepository,

@@ -11,6 +11,10 @@ export interface GateEvalResult {
   passed: boolean;
   timedOut: boolean;
   output: string;
+  /** Named outcome from structured JSON output, if the gate emitted one. */
+  outcome?: string;
+  /** Human-readable message from structured JSON output. */
+  message?: string;
 }
 
 // Anchor path-traversal checks to the project root. realpathSync resolves symlinks
@@ -76,6 +80,33 @@ export async function evaluateGate(
     passed = result.exitCode === 0;
     output = result.output;
     timedOut = result.timedOut;
+
+    // Parse structured JSON outcome from the last non-empty output line.
+    // Gate scripts can emit { outcome: string, message?: string } as their final line
+    // to enable named outcome routing (e.g. "blocked" → toState: "fixing").
+    const lastLine = result.output
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .at(-1);
+    if (lastLine?.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(lastLine) as { outcome?: unknown; message?: unknown };
+        if (typeof parsed.outcome === "string") {
+          const outcomeResult = {
+            passed,
+            timedOut,
+            output: result.output,
+            outcome: parsed.outcome,
+            message: typeof parsed.message === "string" ? parsed.message : undefined,
+          };
+          await gateRepo.record(entity.id, gate.id, passed, result.output);
+          return outcomeResult;
+        }
+      } catch {
+        // Not JSON — treat output as plain text, fall through to normal path
+      }
+    }
   } else if (gate.type === "function") {
     try {
       if (!gate.functionRef) {

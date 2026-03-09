@@ -125,82 +125,23 @@ export class Engine {
     if (!transition)
       throw new ValidationError(`No transition from "${entity.state}" on signal "${signal}" in flow "${flow.name}"`);
 
-    // 4. Evaluate gate if present
-    const gatesPassed: string[] = [];
-    if (transition.gateId) {
-      const gate = await this.gateRepo.get(transition.gateId);
-      if (!gate) throw new NotFoundError(`Gate "${transition.gateId}" not found`);
+    // 4. Evaluate gate — returns a routing decision or a block result to return immediately.
+    const routing = transition.gateId
+      ? await this.resolveGate(transition.gateId, entity, flow)
+      : { kind: "proceed" as const, gatesPassed: [] as string[] };
 
-      const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
-      if (!gateResult.passed) {
-        // Persist gate failure into entity artifacts for retry context
-        const priorFailures = Array.isArray(entity.artifacts?.gate_failures)
-          ? (entity.artifacts.gate_failures as Array<Record<string, unknown>>)
-          : [];
-        await this.entityRepo.updateArtifacts(entityId, {
-          gate_failures: [
-            ...priorFailures,
-            {
-              gateId: gate.id,
-              gateName: gate.name,
-              output: gateResult.output,
-              failedAt: new Date().toISOString(),
-            },
-          ],
-        });
-        if (gateResult.timedOut) {
-          await this.eventEmitter.emit({
-            type: "gate.timedOut",
-            entityId,
-            gateId: gate.id,
-            emittedAt: new Date(),
-          });
-        } else {
-          await this.eventEmitter.emit({
-            type: "gate.failed",
-            entityId,
-            gateId: gate.id,
-            emittedAt: new Date(),
-          });
-        }
-        let resolvedTimeoutPrompt: string | undefined;
-        if (gateResult.timedOut) {
-          const rawTemplate = gate.timeoutPrompt ?? flow.timeoutPrompt ?? DEFAULT_TIMEOUT_PROMPT;
-          try {
-            const hbs = getHandlebars();
-            const template = hbs.compile(rawTemplate);
-            resolvedTimeoutPrompt = template({
-              entity,
-              flow,
-              gate: { name: gate.name, output: gateResult.output },
-            });
-          } catch (err) {
-            this.logger.error("[engine] Failed to render timeoutPrompt template:", err);
-            resolvedTimeoutPrompt = DEFAULT_TIMEOUT_PROMPT;
-          }
-        }
-        return {
-          gated: true,
-          gateTimedOut: gateResult.timedOut,
-          gateOutput: gateResult.output,
-          gateName: gate.name,
-          failurePrompt: gate.failurePrompt ?? undefined,
-          timeoutPrompt: resolvedTimeoutPrompt,
-          gatesPassed,
-          terminal: false,
-        };
-      }
-      gatesPassed.push(gate.name);
-      await this.eventEmitter.emit({
-        type: "gate.passed",
-        entityId,
-        gateId: gate.id,
-        emittedAt: new Date(),
-      });
+    if (routing.kind === "block") {
+      return { gated: true, ...routing, terminal: false };
     }
 
+    // Gate passed or redirected — determine the actual destination.
+    const toState = routing.kind === "redirect" ? routing.toState : transition.toState;
+    const trigger = routing.kind === "redirect" ? routing.trigger : signal;
+    const spawnFlow = routing.kind === "redirect" ? null : transition.spawnFlow;
+    const { gatesPassed } = routing;
+
     // 5. Transition entity
-    let updated = await this.entityRepo.transition(entityId, transition.toState, signal, artifacts);
+    let updated = await this.entityRepo.transition(entityId, toState, trigger, artifacts);
 
     // Clear gate_failures on successful transition so stale failures don't bleed into future agent prompts
     await this.entityRepo.updateArtifacts(entityId, { gate_failures: [] });
@@ -213,47 +154,47 @@ export class Engine {
       entityId,
       flowId: flow.id,
       fromState: entity.state,
-      toState: transition.toState,
-      trigger: signal,
+      toState,
+      trigger,
       emittedAt: new Date(),
     });
 
     const result: ProcessSignalResult = {
-      newState: transition.toState,
+      newState: toState,
       gatesPassed,
       gated: false,
       terminal: false,
     };
 
     // 6b. Execute onEnter hook if defined on the new state
-    const newStateDef = flow.states.find((s) => s.name === transition.toState);
+    const newStateDef = flow.states.find((s) => s.name === toState);
     if (newStateDef?.onEnter) {
       const onEnterResult = await executeOnEnter(newStateDef.onEnter, updated, this.entityRepo);
       if (onEnterResult.skipped) {
         await this.eventEmitter.emit({
           type: "onEnter.skipped",
           entityId,
-          state: transition.toState,
+          state: toState,
           emittedAt: new Date(),
         });
       } else if (onEnterResult.error) {
         await this.eventEmitter.emit({
           type: "onEnter.failed",
           entityId,
-          state: transition.toState,
+          state: toState,
           error: onEnterResult.error,
           emittedAt: new Date(),
         });
         await this.transitionLogRepo.record({
           entityId,
           fromState: entity.state,
-          toState: transition.toState,
-          trigger: signal,
+          toState,
+          trigger,
           invocationId: triggeringInvocationId ?? null,
           timestamp: new Date(),
         });
         return {
-          newState: transition.toState,
+          newState: toState,
           gatesPassed,
           gated: false,
           onEnterFailed: true,
@@ -264,7 +205,7 @@ export class Engine {
         await this.eventEmitter.emit({
           type: "onEnter.completed",
           entityId,
-          state: transition.toState,
+          state: toState,
           artifacts: onEnterResult.artifacts ?? {},
           emittedAt: new Date(),
         });
@@ -288,7 +229,7 @@ export class Engine {
         const build = await buildInvocation(newStateDef, enriched, this.adapters, flow, this.logger);
         const invocation = await this.invocationRepo.create(
           entityId,
-          transition.toState,
+          toState,
           build.prompt,
           build.mode,
           undefined,
@@ -302,7 +243,7 @@ export class Engine {
           type: "invocation.created",
           entityId,
           invocationId: invocation.id,
-          stage: transition.toState,
+          stage: toState,
           emittedAt: new Date(),
         });
       }
@@ -313,14 +254,14 @@ export class Engine {
     await this.transitionLogRepo.record({
       entityId,
       fromState: entity.state,
-      toState: transition.toState,
-      trigger: signal,
+      toState,
+      trigger,
       invocationId: triggeringInvocationId ?? null,
       timestamp: new Date(),
     });
 
     // 9. Spawn child flows
-    const spawned = await executeSpawn(transition, updated, this.flowRepo, this.entityRepo, this.logger);
+    const spawned = await executeSpawn({ spawnFlow }, updated, this.flowRepo, this.entityRepo, this.logger);
     if (spawned) {
       result.spawned = [spawned.id];
       await this.eventEmitter.emit({
@@ -332,14 +273,114 @@ export class Engine {
       });
     }
 
-    // 10. Mark terminal — no invocation is created for terminal states (handled above),
-    //     but we surface terminality in the result for callers.
-    if (isTerminal(flow, transition.toState)) {
+    // 10. Mark terminal
+    if (isTerminal(flow, toState)) {
       result.terminal = true;
       result.spawned = result.spawned ?? [];
     }
 
     return result;
+  }
+
+  /**
+   * Evaluate a gate and return a routing decision:
+   * - `proceed`  — gate passed, continue to transition.toState
+   * - `redirect` — gate outcome maps to a different toState
+   * - `block`    — gate failed or timed out; caller should return this as the signal result
+   */
+  private async resolveGate(
+    gateId: string,
+    entity: Entity,
+    flow: Flow,
+  ): Promise<
+    | { kind: "proceed"; gatesPassed: string[] }
+    | { kind: "redirect"; toState: string; trigger: string; gatesPassed: string[] }
+    | {
+        kind: "block";
+        gateTimedOut: boolean;
+        gateOutput: string;
+        gateName: string;
+        failurePrompt?: string;
+        timeoutPrompt?: string;
+        gatesPassed: string[];
+      }
+  > {
+    const gate = await this.gateRepo.get(gateId);
+    if (!gate) throw new NotFoundError(`Gate "${gateId}" not found`);
+
+    const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
+    const namedOutcome = gateResult.outcome && gate.outcomes ? gate.outcomes[gateResult.outcome] : undefined;
+
+    if (namedOutcome?.toState) {
+      const outcomeLabel = gateResult.outcome ?? gate.name;
+      await this.eventEmitter.emit({
+        type: "gate.redirected",
+        entityId: entity.id,
+        gateId: gate.id,
+        outcome: outcomeLabel,
+        toState: namedOutcome.toState,
+        emittedAt: new Date(),
+      });
+      return {
+        kind: "redirect",
+        toState: namedOutcome.toState,
+        trigger: `gate:${gate.name}:${outcomeLabel}`,
+        gatesPassed: [gate.name],
+      };
+    }
+
+    if (namedOutcome?.proceed || (!namedOutcome && gateResult.passed)) {
+      await this.eventEmitter.emit({
+        type: "gate.passed",
+        entityId: entity.id,
+        gateId: gate.id,
+        emittedAt: new Date(),
+      });
+      return { kind: "proceed", gatesPassed: [gate.name] };
+    }
+
+    // Gate failed — persist failure context and emit event
+    const priorFailures = Array.isArray(entity.artifacts?.gate_failures)
+      ? (entity.artifacts.gate_failures as Array<Record<string, unknown>>)
+      : [];
+    await this.entityRepo.updateArtifacts(entity.id, {
+      gate_failures: [
+        ...priorFailures,
+        { gateId: gate.id, gateName: gate.name, output: gateResult.output, failedAt: new Date().toISOString() },
+      ],
+    });
+    await this.eventEmitter.emit({
+      type: gateResult.timedOut ? "gate.timedOut" : "gate.failed",
+      entityId: entity.id,
+      gateId: gate.id,
+      emittedAt: new Date(),
+    });
+
+    let timeoutPrompt: string | undefined;
+    if (gateResult.timedOut) {
+      const rawTemplate = gate.timeoutPrompt ?? flow.timeoutPrompt ?? DEFAULT_TIMEOUT_PROMPT;
+      try {
+        const hbs = getHandlebars();
+        timeoutPrompt = hbs.compile(rawTemplate)({
+          entity,
+          flow,
+          gate: { name: gate.name, output: gateResult.output },
+        });
+      } catch (err) {
+        this.logger.error("[engine] Failed to render timeoutPrompt template:", err);
+        timeoutPrompt = DEFAULT_TIMEOUT_PROMPT;
+      }
+    }
+
+    return {
+      kind: "block",
+      gateTimedOut: gateResult.timedOut,
+      gateOutput: gateResult.output,
+      gateName: gate.name,
+      failurePrompt: gate.failurePrompt ?? undefined,
+      timeoutPrompt,
+      gatesPassed: [],
+    };
   }
 
   async createEntity(

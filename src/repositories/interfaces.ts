@@ -127,6 +127,10 @@ export interface Gate {
   timeoutMs: number | null;
   failurePrompt: string | null;
   timeoutPrompt: string | null;
+  /** Named outcome map from structured gate output. Keys are outcome names; values declare
+   *  where the entity goes. `proceed: true` means the original transition continues.
+   *  `toState` redirects to a different state. */
+  outcomes: Record<string, { proceed?: boolean; toState?: string }> | null;
 }
 
 /** A complete flow definition with its states and transitions */
@@ -217,6 +221,7 @@ export interface CreateGateInput {
   timeoutMs?: number;
   failurePrompt?: string;
   timeoutPrompt?: string;
+  outcomes?: Record<string, { proceed?: boolean; toState?: string }>;
 }
 
 /** Data-access contract for entity lifecycle operations. */
@@ -409,7 +414,7 @@ export interface IGateRepository {
   update(
     id: string,
     changes: Partial<
-      Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt">
+      Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt" | "outcomes">
     >,
   ): Promise<Gate>;
 

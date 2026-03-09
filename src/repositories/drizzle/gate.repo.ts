@@ -19,6 +19,7 @@ function toGate(row: typeof gateDefinitions.$inferSelect): Gate {
     timeoutMs: row.timeoutMs ?? null,
     failurePrompt: row.failurePrompt ?? null,
     timeoutPrompt: row.timeoutPrompt ?? null,
+    outcomes: (row.outcomes as Record<string, { proceed?: boolean; toState?: string }> | null) ?? null,
   };
 }
 
@@ -48,6 +49,7 @@ export class DrizzleGateRepository implements IGateRepository {
       ...(gate.timeoutMs != null ? { timeoutMs: gate.timeoutMs } : {}),
       failurePrompt: gate.failurePrompt ?? null,
       timeoutPrompt: gate.timeoutPrompt ?? null,
+      outcomes: gate.outcomes ?? null,
     };
     this.db.insert(gateDefinitions).values(values).run();
     const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();

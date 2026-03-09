@@ -54,6 +54,7 @@ export const gateDefinitions = sqliteTable("gate_definitions", {
   timeoutMs: integer("timeout_ms"),
   failurePrompt: text("failure_prompt"),
   timeoutPrompt: text("timeout_prompt"),
+  outcomes: text("outcomes", { mode: "json" }),
 });
 
 export const transitionRules = sqliteTable("transition_rules", {

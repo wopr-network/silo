@@ -92,6 +92,13 @@
       "when": 1773002575474,
       "tag": "0012_certain_human_fly",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1773100000000,
+      "tag": "0013_gate_outcomes",
+      "breakpoints": true
     }
   ]
 }
