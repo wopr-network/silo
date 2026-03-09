@@ -255,6 +255,10 @@ program
     const startHttp = !opts.mcpOnly;
     const startMcp = !opts.httpOnly;
 
+    if (opts.mcpOnly && opts.ui) {
+      console.warn("Warning: --ui is ignored when --mcp-only is set (HTTP server is disabled)");
+    }
+
     try {
       validateAdminToken({ adminToken, startHttp, transport: opts.transport });
     } catch (err: unknown) {

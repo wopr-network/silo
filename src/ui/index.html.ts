@@ -133,6 +133,17 @@ td.payload-cell.expanded { white-space: pre-wrap; word-break: break-all; }
 let TOKEN = '';
 let sseSource = null;
 let allEvents = [];
+let dashboardDebounceTimer = null;
+
+function scheduleDashboardRefresh() {
+  if (dashboardDebounceTimer) clearTimeout(dashboardDebounceTimer);
+  dashboardDebounceTimer = setTimeout(() => {
+    dashboardDebounceTimer = null;
+    if (document.getElementById('worker-dashboard').classList.contains('active')) {
+      loadDashboard();
+    }
+  }, 100);
+}
 
 function ts(ms) {
   return new Date(typeof ms === 'number' ? ms : ms).toLocaleString();
@@ -176,8 +187,47 @@ function initApp() {
 
 function connectSSE() {
   if (sseSource) sseSource.close();
-  const url = '/api/ui/events?token=' + encodeURIComponent(TOKEN);
-  sseSource = new EventSource(url);
+  // Pass token via Authorization header using a fetch-based SSE reader to
+  // avoid exposing it in the URL (which appears in server logs).
+  // EventSource does not support custom headers, so we use fetch + ReadableStream.
+  const ctrl = new AbortController();
+  sseSource = ctrl; // store for close()
+  fetch('/api/ui/events', { headers: { Authorization: 'Bearer ' + TOKEN }, signal: ctrl.signal })
+    .then(r => {
+      if (!r.ok) { handleSseError(); return; }
+      const el = document.getElementById('sse-status');
+      el.textContent = 'SSE: connected';
+      el.className = 'connected';
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      function pump() {
+        reader.read().then(({ done, value }) => {
+          if (done) { handleSseError(); return; }
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const ev = JSON.parse(line.slice(6));
+                prependEventRow(ev);
+                scheduleDashboardRefresh();
+              } catch (_) {}
+            }
+          }
+          pump();
+        }).catch(handleSseError);
+      }
+      pump();
+    })
+    .catch(handleSseError);
+  function handleSseError() {
+    const el = document.getElementById('sse-status');
+    if (el) { el.textContent = 'SSE: reconnecting...'; el.className = 'error'; }
+    setTimeout(() => connectSSE(), 5000);
+  }
+}
   sseSource.onopen = () => {
     const el = document.getElementById('sse-status');
     el.textContent = 'SSE: connected';
@@ -200,7 +250,10 @@ function connectSSE() {
 }
 
 function api(path) {
-  return fetch(path, { headers: { Authorization: 'Bearer ' + TOKEN } }).then(r => r.json());
+  return fetch(path, { headers: { Authorization: 'Bearer ' + TOKEN } }).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
 }
 
 function showTab(id, btn) {
@@ -354,8 +407,12 @@ async function loadDashboard() {
 async function loadEventLog() {
   const el = document.getElementById('event-log-container');
   try {
-    const events = await api('/api/ui/events/recent?limit=200');
-    allEvents = Array.isArray(events) ? events : [];
+    const fetched = await api('/api/ui/events/recent?limit=200');
+    const fetchedRows = Array.isArray(fetched) ? fetched : [];
+    // Merge: keep SSE-injected events not in the fetched set (by id), then prepend fetched
+    const fetchedIds = new Set(fetchedRows.map(e => e.id));
+    const sseOnly = allEvents.filter(e => !fetchedIds.has(e.id));
+    allEvents = [...sseOnly, ...fetchedRows];
     updateEventTypeFilter();
     renderEventLog();
   } catch (e) {

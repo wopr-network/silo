@@ -192,5 +192,7 @@ export const events = sqliteTable(
   },
   (table) => ({
     typeEmittedIdx: index("events_type_emitted_idx").on(table.type, table.emittedAt),
+    entityIdIdx: index("events_entity_id_idx").on(table.entityId),
+    emittedAtIdx: index("events_emitted_at_idx").on(table.emittedAt),
   }),
 );
