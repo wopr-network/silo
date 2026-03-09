@@ -398,10 +398,24 @@ export interface ITransitionLogRepository {
   historyFor(entityId: string): Promise<TransitionLog[]>;
 }
 
+/** A raw row from the events table. */
+export interface EventRow {
+  id: string;
+  type: string;
+  entityId: string | null;
+  flowId: string | null;
+  payload: Record<string, unknown> | null;
+  emittedAt: number;
+}
+
 /** Data-access contract for emitting definition-change events. */
 export interface IEventRepository {
   /** Emit a definition change event for a tool action. */
   emitDefinitionChanged(flowId: string | null, tool: string, payload: Record<string, unknown>): Promise<void>;
+  /** Get events for a specific entity, ordered by emittedAt descending. */
+  findByEntity(entityId: string, limit?: number): Promise<EventRow[]>;
+  /** Get the most recent events across all entities, ordered by emittedAt descending. */
+  findRecent(limit?: number): Promise<EventRow[]>;
 }
 
 /** Data-access contract for gate definitions and result recording. */

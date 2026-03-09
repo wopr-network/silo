@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { desc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type { IEventRepository } from "../interfaces.js";
+import type { EventRow, IEventRepository } from "../interfaces.js";
 import type * as schema from "./schema.js";
 import { events } from "./schema.js";
 
@@ -25,5 +26,23 @@ export class DrizzleEventRepository implements IEventRepository {
 
   findAll(): (typeof events.$inferSelect)[] {
     return this.db.select().from(events).all();
+  }
+
+  findByEntity(entityId: string, limit = 100): Promise<EventRow[]> {
+    return Promise.resolve(
+      this.db
+        .select()
+        .from(events)
+        .where(eq(events.entityId, entityId))
+        .orderBy(desc(events.emittedAt))
+        .limit(limit)
+        .all() as EventRow[],
+    );
+  }
+
+  findRecent(limit = 100): Promise<EventRow[]> {
+    return Promise.resolve(
+      this.db.select().from(events).orderBy(desc(events.emittedAt)).limit(limit).all() as EventRow[],
+    );
   }
 }

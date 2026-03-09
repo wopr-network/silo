@@ -5,6 +5,8 @@ import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
+import { UI_HTML } from "../ui/index.html.js";
+import type { UiSseAdapter } from "../ui/sse.js";
 import { type ApiResponse, type ParsedRequest, Router } from "./router.js";
 
 function extractBearerToken(header: string | undefined): string | undefined {
@@ -21,6 +23,8 @@ export interface HttpServerDeps {
   workerToken?: string;
   corsOrigins?: string[]; // explicit CORS origins, or undefined for loopback default
   logger?: Logger;
+  enableUi?: boolean;
+  uiSseAdapter?: UiSseAdapter;
 }
 
 function requireAdminToken(deps: HttpServerDeps, req: ParsedRequest): ApiResponse | null {
@@ -335,6 +339,47 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
     return mcpResultToApi(result);
   });
 
+  // --- UI routes (optional, enabled via enableUi) ---
+  if (deps.enableUi) {
+    router.add("GET", "/ui", async (req) => {
+      const authErr = requireAdminToken(deps, req);
+      if (authErr) return authErr;
+      return { status: 200, body: "__HTML__" as unknown as Record<string, unknown> };
+    });
+
+    router.add("GET", "/api/ui/entity/:id/events", async (req) => {
+      const authErr = requireAdminToken(deps, req);
+      if (authErr) return authErr;
+      const limitStr = req.query.get("limit");
+      const limit = limitStr ? parseInt(limitStr, 10) : 100;
+      const evts = await deps.mcpDeps.eventRepo.findByEntity(req.params.id, limit);
+      return { status: 200, body: evts as unknown as Record<string, unknown> };
+    });
+
+    router.add("GET", "/api/ui/entity/:id/invocations", async (req) => {
+      const authErr = requireAdminToken(deps, req);
+      if (authErr) return authErr;
+      const invocations = await deps.mcpDeps.invocations.findByEntity(req.params.id);
+      return { status: 200, body: invocations as unknown as Record<string, unknown> };
+    });
+
+    router.add("GET", "/api/ui/entity/:id/gates", async (req) => {
+      const authErr = requireAdminToken(deps, req);
+      if (authErr) return authErr;
+      const results = await deps.mcpDeps.gates.resultsFor(req.params.id);
+      return { status: 200, body: results as unknown as Record<string, unknown> };
+    });
+
+    router.add("GET", "/api/ui/events/recent", async (req) => {
+      const authErr = requireAdminToken(deps, req);
+      if (authErr) return authErr;
+      const limitStr = req.query.get("limit");
+      const limit = limitStr ? parseInt(limitStr, 10) : 200;
+      const evts = await deps.mcpDeps.eventRepo.findRecent(limit);
+      return { status: 200, body: evts as unknown as Record<string, unknown> };
+    });
+  }
+
   // --- HTTP server ---
   const server = http.createServer(async (req, res) => {
     // CORS
@@ -360,6 +405,37 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
     }
 
     const url = new URL(req.url ?? "/", `http://localhost`);
+
+    // SSE endpoint — handled before router (holds connection open)
+    if (deps.enableUi && url.pathname === "/api/ui/events" && req.method === "GET") {
+      const queryToken = url.searchParams.get("token") ?? undefined;
+      const headerToken = extractBearerToken(req.headers.authorization);
+      const callerToken = headerToken ?? queryToken;
+      const configuredToken = deps.adminToken?.trim() || undefined;
+      if (configuredToken) {
+        if (!callerToken) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+        const hashA = createHash("sha256").update(configuredToken).digest();
+        const hashB = createHash("sha256").update(callerToken).digest();
+        if (!timingSafeEqual(hashA, hashB)) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      res.write(":\n\n"); // SSE comment to establish connection
+      deps.uiSseAdapter?.addClient(res);
+      return;
+    }
+
     const match = router.match(req.method ?? "GET", url.pathname);
 
     if (!match) {
@@ -403,6 +479,9 @@ export function createHttpServer(deps: HttpServerDeps): http.Server {
       const apiRes = await match.handler(parsed);
       if (apiRes.status === 204) {
         res.writeHead(204).end();
+      } else if (apiRes.body === "__HTML__") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(UI_HTML);
       } else {
         res.writeHead(apiRes.status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(apiRes.body));
