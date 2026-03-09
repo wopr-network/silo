@@ -15,6 +15,26 @@ export function createDatabase(dbPath = DB_PATH): {
   return { db, sqlite };
 }
 
+/**
+ * Wraps `fn` in a BEGIN/COMMIT/ROLLBACK transaction on `sqlite`.
+ * If already inside a transaction, runs `fn` directly (allows nested calls).
+ * Supports both synchronous and Promise-returning `fn`.
+ */
+export async function withTransaction<T>(sqlite: Database.Database, fn: () => T | Promise<T>): Promise<T> {
+  if (sqlite.inTransaction) {
+    return fn();
+  }
+  sqlite.exec("BEGIN");
+  try {
+    const result = await fn();
+    sqlite.exec("COMMIT");
+    return result;
+  } catch (err) {
+    sqlite.exec("ROLLBACK");
+    throw err;
+  }
+}
+
 export function runMigrations(db: ReturnType<typeof drizzle>, migrationsFolder = "./drizzle"): void {
   migrate(db, { migrationsFolder });
 }

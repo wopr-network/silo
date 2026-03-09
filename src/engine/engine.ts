@@ -63,6 +63,8 @@ export interface EngineDeps {
   adapters: Map<string, unknown>;
   eventEmitter: IEventBusAdapter;
   logger?: Logger;
+  /** Optional transaction wrapper from the database layer. When provided, processSignal runs inside a single transaction and events are flushed only after successful commit. */
+  withTransaction?: <T>(fn: () => T | Promise<T>) => Promise<T>;
 }
 
 export class Engine {
@@ -74,6 +76,7 @@ export class Engine {
   readonly adapters: Map<string, unknown>;
   private eventEmitter: IEventBusAdapter;
   private readonly logger: Logger;
+  private readonly withTransactionFn: (<T>(fn: () => T | Promise<T>) => Promise<T>) | null;
   private drainingWorkers = new Set<string>();
 
   constructor(deps: EngineDeps) {
@@ -85,6 +88,7 @@ export class Engine {
     this.adapters = deps.adapters;
     this.eventEmitter = deps.eventEmitter;
     this.logger = deps.logger ?? consoleLogger;
+    this.withTransactionFn = deps.withTransaction ?? null;
   }
 
   drainWorker(workerId: string): void {
@@ -112,6 +116,45 @@ export class Engine {
     signal: string,
     artifacts?: Artifacts,
     triggeringInvocationId?: string,
+  ): Promise<ProcessSignalResult> {
+    const pendingEvents: import("./event-types.js").EngineEvent[] = [];
+    const bufferingEmitter: IEventBusAdapter = {
+      emit: async (event) => {
+        pendingEvents.push(event);
+      },
+    };
+
+    if (this.withTransactionFn) {
+      // Run DB writes inside a transaction; events are buffered and only
+      // flushed to real subscribers after successful COMMIT.
+      const result = await this.withTransactionFn(() =>
+        this._processSignalInner(entityId, signal, artifacts, triggeringInvocationId, bufferingEmitter),
+      );
+      for (const event of pendingEvents) {
+        await this.eventEmitter.emit(event);
+      }
+      return result;
+    }
+
+    const result = await this._processSignalInner(
+      entityId,
+      signal,
+      artifacts,
+      triggeringInvocationId,
+      bufferingEmitter,
+    );
+    for (const event of pendingEvents) {
+      await this.eventEmitter.emit(event);
+    }
+    return result;
+  }
+
+  private async _processSignalInner(
+    entityId: string,
+    signal: string,
+    artifacts?: Artifacts,
+    triggeringInvocationId?: string,
+    emitter: IEventBusAdapter = this.eventEmitter,
   ): Promise<ProcessSignalResult> {
     // 1. Load entity
     const entity = await this.entityRepo.get(entityId);
@@ -173,7 +216,7 @@ export class Engine {
     updated = { ...updated, artifacts: { ...updated.artifacts, gate_failures: [] } };
 
     // 6. Emit transition event
-    await this.eventEmitter.emit({
+    await emitter.emit({
       type: "entity.transitioned",
       entityId,
       flowId: flow.id,
@@ -195,14 +238,14 @@ export class Engine {
     if (newStateDef?.onEnter) {
       const onEnterResult = await executeOnEnter(newStateDef.onEnter, updated, this.entityRepo);
       if (onEnterResult.skipped) {
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "onEnter.skipped",
           entityId,
           state: toState,
           emittedAt: new Date(),
         });
       } else if (onEnterResult.error) {
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "onEnter.failed",
           entityId,
           state: toState,
@@ -226,7 +269,7 @@ export class Engine {
           terminal: false,
         };
       } else {
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "onEnter.completed",
           entityId,
           state: toState,
@@ -263,7 +306,7 @@ export class Engine {
           newStateDef.agentRole ?? null,
         );
         result.invocationId = invocation.id;
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "invocation.created",
           entityId,
           invocationId: invocation.id,
@@ -288,7 +331,7 @@ export class Engine {
     const spawned = await executeSpawn({ spawnFlow }, updated, this.flowRepo, this.entityRepo, this.logger);
     if (spawned) {
       result.spawned = [spawned.id];
-      await this.eventEmitter.emit({
+      await emitter.emit({
         type: "flow.spawned",
         entityId,
         flowId: flow.id,

@@ -798,4 +798,50 @@ describe("Engine", () => {
       }
     });
   });
+
+  describe("processSignal event buffering", () => {
+    it("does not emit events to subscribers when withTransaction rolls back", async () => {
+      const mocks = makeMockRepos();
+      // Make transition throw after DB writes begin (simulate a late failure)
+      (mocks.transitionLogRepo.record as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("db error"));
+
+      let rolledBack = false;
+      const withTransaction = async <T>(fn: () => T | Promise<T>): Promise<T> => {
+        try {
+          const result = await fn();
+          return result;
+        } catch (err) {
+          rolledBack = true;
+          throw err;
+        }
+      };
+
+      const engine = new Engine({ ...mocks, adapters: new Map(), withTransaction });
+
+      await expect(engine.processSignal("ent-1", "start")).rejects.toThrow("db error");
+
+      // Transaction rolled back but NO events should have reached the real emitter
+      expect(rolledBack).toBe(true);
+      expect(mocks.events).toHaveLength(0);
+    });
+
+    it("flushes buffered events to subscribers after successful withTransaction commit", async () => {
+      const mocks = makeMockRepos();
+
+      let committed = false;
+      const withTransaction = async <T>(fn: () => T | Promise<T>): Promise<T> => {
+        const result = await fn();
+        committed = true;
+        return result;
+      };
+
+      const engine = new Engine({ ...mocks, adapters: new Map(), withTransaction });
+
+      await engine.processSignal("ent-1", "start");
+
+      expect(committed).toBe(true);
+      expect(mocks.events).toContainEqual(expect.objectContaining({ type: "entity.transitioned" }));
+      expect(mocks.events).toContainEqual(expect.objectContaining({ type: "invocation.created" }));
+    });
+  });
 });

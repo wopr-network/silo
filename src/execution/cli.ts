@@ -14,6 +14,7 @@ import { loadSeed } from "../config/seed-loader.js";
 import { resolveCorsOrigin } from "../cors.js";
 import { Engine } from "../engine/engine.js";
 import { EventEmitter } from "../engine/event-emitter.js";
+import { withTransaction } from "../main.js";
 import { DrizzleEntityRepository } from "../repositories/drizzle/entity.repo.js";
 import { DrizzleEventRepository } from "../repositories/drizzle/event.repo.js";
 import { DrizzleFlowRepository } from "../repositories/drizzle/flow.repo.js";
@@ -212,6 +213,7 @@ program
       transitionLogRepo,
       adapters: new Map(),
       eventEmitter,
+      withTransaction: (fn) => withTransaction(sqlite, fn),
     });
 
     const deps: McpServerDeps = {
