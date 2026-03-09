@@ -38,6 +38,16 @@ export const OnEnterSchema = z.object({
   timeout_ms: z.number().int().min(0).optional().default(30000),
 });
 
+export const OnExitSchema = z.object({
+  command: z
+    .string()
+    .min(1)
+    .refine((val) => validateTemplate(val), {
+      message: "onExit command contains disallowed Handlebars expressions",
+    }),
+  timeout_ms: z.number().int().min(0).optional().default(30000),
+});
+
 export const StateDefinitionSchema = z.object({
   name: z.string().min(1),
   flowName: z.string().min(1),
@@ -53,6 +63,7 @@ export const StateDefinitionSchema = z.object({
     .optional(),
   constraints: z.record(z.string(), z.unknown()).optional(),
   onEnter: OnEnterSchema.optional(),
+  onExit: OnExitSchema.optional(),
   retryAfterMs: z.number().int().min(0).optional(),
 });
 

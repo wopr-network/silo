@@ -10,6 +10,7 @@ import type {
   IFlowRepository,
   Mode,
   OnEnterConfig,
+  OnExitConfig,
   State,
   Transition,
   UpdateFlowInput,
@@ -36,6 +37,7 @@ function rowToState(r: typeof stateDefinitions.$inferSelect): State {
     promptTemplate: r.promptTemplate ?? null,
     constraints: r.constraints as Record<string, unknown> | null,
     onEnter: (r.onEnter as OnEnterConfig | null) ?? null,
+    onExit: (r.onExit as OnExitConfig | null) ?? null,
     retryAfterMs: r.retryAfterMs ?? null,
   };
 }
@@ -188,6 +190,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       promptTemplate: state.promptTemplate ?? null,
       constraints: (state.constraints ?? null) as Record<string, unknown> | null,
       onEnter: (state.onEnter ?? null) as OnEnterConfig | null,
+      onExit: (state.onExit ?? null) as OnExitConfig | null,
       retryAfterMs: state.retryAfterMs ?? null,
     };
     this.db.transaction((tx) => {
@@ -209,6 +212,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.promptTemplate !== undefined) updateValues.promptTemplate = changes.promptTemplate;
     if (changes.constraints !== undefined) updateValues.constraints = changes.constraints;
     if (changes.onEnter !== undefined) updateValues.onEnter = changes.onEnter;
+    if (changes.onExit !== undefined) updateValues.onExit = changes.onExit;
     if (changes.retryAfterMs !== undefined) updateValues.retryAfterMs = changes.retryAfterMs;
 
     if (Object.keys(updateValues).length > 0) {
@@ -370,6 +374,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
             promptTemplate: s.promptTemplate,
             constraints: s.constraints as Record<string, unknown> | null,
             onEnter: (s.onEnter ?? null) as OnEnterConfig | null,
+            onExit: (s.onExit ?? null) as OnExitConfig | null,
             retryAfterMs: s.retryAfterMs ?? null,
           })
           .run();

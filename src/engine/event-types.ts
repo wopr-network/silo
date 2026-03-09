@@ -25,7 +25,9 @@ export type EngineEvent =
   | { type: "definition.changed"; flowId: string; tool: string; payload: Record<string, unknown>; emittedAt: Date }
   | { type: "onEnter.completed"; entityId: string; state: string; artifacts: Record<string, unknown>; emittedAt: Date }
   | { type: "onEnter.failed"; entityId: string; state: string; error: string; emittedAt: Date }
-  | { type: "onEnter.skipped"; entityId: string; state: string; emittedAt: Date };
+  | { type: "onEnter.skipped"; entityId: string; state: string; emittedAt: Date }
+  | { type: "onExit.completed"; entityId: string; state: string; emittedAt: Date }
+  | { type: "onExit.failed"; entityId: string; state: string; error: string; emittedAt: Date };
 
 /** Adapter for broadcasting engine events to external systems. */
 export interface IEventBusAdapter {

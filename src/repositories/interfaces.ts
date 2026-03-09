@@ -13,6 +13,12 @@ export interface OnEnterConfig {
   timeout_ms?: number;
 }
 
+/** Configuration for running a cleanup command when an entity exits a state */
+export interface OnExitConfig {
+  command: string;
+  timeout_ms?: number;
+}
+
 /** Invocation execution mode */
 export type Mode = "active" | "passive";
 
@@ -97,6 +103,7 @@ export interface State {
   promptTemplate: string | null;
   constraints: Record<string, unknown> | null;
   onEnter: OnEnterConfig | null;
+  onExit: OnExitConfig | null;
   /** Override check_back delay for workers claiming this state. Falls back to Flow.claimRetryAfterMs. */
   retryAfterMs: number | null;
 }
@@ -196,6 +203,7 @@ export interface CreateStateInput {
   promptTemplate?: string;
   constraints?: Record<string, unknown>;
   onEnter?: OnEnterConfig;
+  onExit?: OnExitConfig;
   retryAfterMs?: number;
 }
 

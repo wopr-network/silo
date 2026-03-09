@@ -37,6 +37,7 @@ export const stateDefinitions = sqliteTable(
     promptTemplate: text("prompt_template"),
     constraints: text("constraints", { mode: "json" }),
     onEnter: text("on_enter", { mode: "json" }),
+    onExit: text("on_exit", { mode: "json" }),
     retryAfterMs: integer("retry_after_ms"),
   },
   (table) => ({

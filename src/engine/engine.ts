@@ -20,6 +20,7 @@ import { evaluateGate } from "./gate-evaluator.js";
 import { getHandlebars } from "./handlebars.js";
 import { buildInvocation } from "./invocation-builder.js";
 import { executeOnEnter } from "./on-enter.js";
+import { executeOnExit } from "./on-exit.js";
 import { findTransition, isTerminal } from "./state-machine.js";
 
 export interface ProcessSignalResult {
@@ -139,6 +140,29 @@ export class Engine {
     const trigger = routing.kind === "redirect" ? routing.trigger : signal;
     const spawnFlow = routing.kind === "redirect" ? null : transition.spawnFlow;
     const { gatesPassed } = routing;
+
+    // 4b. Execute onExit hook on the DEPARTING state (before transition)
+    const departingStateDef = flow.states.find((s) => s.name === entity.state);
+    if (departingStateDef?.onExit) {
+      const onExitResult = await executeOnExit(departingStateDef.onExit, entity);
+      if (onExitResult.error) {
+        this.logger.warn(`[engine] onExit failed for entity ${entityId} state ${entity.state}: ${onExitResult.error}`);
+        await this.eventEmitter.emit({
+          type: "onExit.failed",
+          entityId,
+          state: entity.state,
+          error: onExitResult.error,
+          emittedAt: new Date(),
+        });
+      } else {
+        await this.eventEmitter.emit({
+          type: "onExit.completed",
+          entityId,
+          state: entity.state,
+          emittedAt: new Date(),
+        });
+      }
+    }
 
     // 5. Transition entity
     let updated = await this.entityRepo.transition(entityId, toState, trigger, artifacts);

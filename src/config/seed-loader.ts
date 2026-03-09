@@ -128,6 +128,7 @@ async function parseSeedAndLoad(
           promptTemplate: s.promptTemplate,
           constraints: s.constraints,
           onEnter: s.onEnter,
+          onExit: s.onExit,
           retryAfterMs: s.retryAfterMs,
         });
       }

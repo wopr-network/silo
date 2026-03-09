@@ -1,0 +1,1 @@
+ALTER TABLE `state_definitions` ADD `on_exit` text;
