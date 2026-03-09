@@ -42,3 +42,4 @@ Key concepts that must appear in both method/ and wopr/ docs:
 - **Snapshot replay**: Snapshot save failures must be non-fatal (try/catch) — replay from events is the fallback; never let a cache failure break the read path.
 - **Event filtering**: `EventSourcedEntityRepository.get()` must filter events at DB level (e.g., `WHERE sequence >= minSequence`), not load all events and filter in memory.
 - **Event-sourced mutations**: All state changes in `EventSourcedEntityRepository` (including artifact removal) must emit domain events — direct DB writes are invisible to event-sourced replay.
+- **Engine merge-blocked escalation**: When `blocked` signal fires from `merging` state, engine increments `merge_blocked_count`; at ≥3 it overrides `toState` to `stuck` — flows without a `stuck` state silently skip the override.
