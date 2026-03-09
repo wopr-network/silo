@@ -173,6 +173,37 @@ describe("buildInvocation", () => {
     expect(result.context.refs).toEqual({});
   });
 
+  it("renders activityHistory from entity artifacts in prompt template", async () => {
+    const state = makeState({
+      promptTemplate:
+        "Fix the code.{{#if entity.artifacts.activityHistory}}\n## Prior Attempt\n{{entity.artifacts.activityHistory}}{{/if}}",
+    });
+    const entity = makeEntity({
+      artifacts: {
+        task: "fix auth",
+        activityHistory:
+          "Prior work on this entity:\n\nAttempt 1:\n  - Called tool: Edit({file: 'src/auth.ts'})\n  - Ended: success (cost: $0.0042)",
+      },
+    });
+    const result = await buildInvocation(state, entity);
+    expect(result.prompt).toContain("## Prior Attempt");
+    expect(result.prompt).toContain("Called tool: Edit");
+    expect(result.prompt).toContain("cost: $0.0042");
+  });
+
+  it("omits activityHistory section when artifact is not present", async () => {
+    const state = makeState({
+      promptTemplate:
+        "Fix the code.{{#if entity.artifacts.activityHistory}}\n## Prior Attempt\n{{entity.artifacts.activityHistory}}{{/if}}",
+    });
+    const entity = makeEntity({
+      artifacts: { task: "fix auth" },
+    });
+    const result = await buildInvocation(state, entity);
+    expect(result.prompt).toBe("Fix the code.");
+    expect(result.prompt).not.toContain("Prior Attempt");
+  });
+
   it("renders {{flow.name}} when flow is passed", async () => {
     const state = makeState({ promptTemplate: "You are on the {{flow.name}} team." });
     const entity = makeEntity();
