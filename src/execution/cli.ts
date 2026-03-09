@@ -19,6 +19,7 @@ import { buildConfigFromEnv, isLitestreamEnabled, LitestreamManager } from "../l
 import { withTransaction } from "../main.js";
 import { DrizzleDomainEventRepository } from "../repositories/drizzle/domain-event.repo.js";
 import { DrizzleEntityRepository } from "../repositories/drizzle/entity.repo.js";
+import { DrizzleEntitySnapshotRepository } from "../repositories/drizzle/entity-snapshot.repo.js";
 import { DrizzleEventRepository } from "../repositories/drizzle/event.repo.js";
 import { DrizzleFlowRepository } from "../repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../repositories/drizzle/gate.repo.js";
@@ -36,6 +37,9 @@ import {
   transitionRules,
 } from "../repositories/drizzle/schema.js";
 import { DrizzleTransitionLogRepository } from "../repositories/drizzle/transition-log.repo.js";
+import { EventSourcedEntityRepository } from "../repositories/event-sourced/entity.repo.js";
+import { EventSourcedInvocationRepository } from "../repositories/event-sourced/invocation.repo.js";
+import type { IEntityRepository, IInvocationRepository } from "../repositories/interfaces.js";
 import { UiSseAdapter } from "../ui/sse.js";
 import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
@@ -210,13 +214,29 @@ program
     if (litestreamMgr) {
       litestreamMgr.start();
     }
-    const entityRepo = new DrizzleEntityRepository(db);
+    const mutableEntityRepo = new DrizzleEntityRepository(db);
     const flowRepo = new DrizzleFlowRepository(db);
-    const invocationRepo = new DrizzleInvocationRepository(db);
+    const mutableInvocationRepo = new DrizzleInvocationRepository(db);
     const gateRepo = new DrizzleGateRepository(db);
     const transitionLogRepo = new DrizzleTransitionLogRepository(db);
 
     const domainEventRepo = new DrizzleDomainEventRepository(db);
+
+    const useEventSourced = process.env.DEFCON_EVENT_SOURCED === "true";
+    const snapshotInterval = parseInt(process.env.DEFCON_SNAPSHOT_INTERVAL ?? "10", 10);
+
+    let entityRepo: IEntityRepository;
+    let invocationRepo: IInvocationRepository;
+
+    if (useEventSourced) {
+      const snapshotRepo = new DrizzleEntitySnapshotRepository(db);
+      entityRepo = new EventSourcedEntityRepository(mutableEntityRepo, domainEventRepo, snapshotRepo, snapshotInterval);
+      invocationRepo = new EventSourcedInvocationRepository(mutableInvocationRepo, domainEventRepo);
+      process.stderr.write("[defcon] Event-sourced repositories enabled\n");
+    } else {
+      entityRepo = mutableEntityRepo;
+      invocationRepo = mutableInvocationRepo;
+    }
 
     const eventEmitter = new EventEmitter();
     eventEmitter.register({

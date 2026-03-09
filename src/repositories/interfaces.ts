@@ -469,6 +469,15 @@ export interface DomainEvent {
   emittedAt: number;
 }
 
+/** Data-access contract for entity state snapshots (event-sourcing optimization). */
+export interface IEntitySnapshotRepository {
+  /** Save a snapshot of entity state at a given event sequence number. Ignores duplicates. */
+  save(entityId: string, sequence: number, state: Entity): Promise<void>;
+
+  /** Load the latest snapshot for an entity. Returns null if none exists. */
+  loadLatest(entityId: string): Promise<{ sequence: number; state: Entity } | null>;
+}
+
 /** Data-access contract for the append-only domain_events table. */
 export interface IDomainEventRepository {
   /** Append a domain event. Sequence is computed as max(sequence)+1 for the entity. */
