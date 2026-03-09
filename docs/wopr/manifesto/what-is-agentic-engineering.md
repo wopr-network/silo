@@ -1,6 +1,8 @@
 # What is Agentic Engineering — The WOPR Implementation
 
 > Implements: [method/manifesto/what-is-agentic-engineering.md](../../method/manifesto/what-is-agentic-engineering.md)
+>
+> See also: [The Thesis](the-thesis.md) — why we built this and what the names mean
 
 ---
 

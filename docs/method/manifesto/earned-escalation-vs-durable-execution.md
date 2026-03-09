@@ -1,5 +1,7 @@
 # Earned Escalation vs Durable Execution
 
+> Builds on: [The Thesis](the-thesis.md) — the launch protocol argument.
+
 There are two philosophies for making workflows survive failure.
 
 **Durable execution** says: write your workflow as code, and the platform will replay event history to reconstruct state after crashes. The workflow survives because the runtime is persistent. The workflow is code. The durability is infrastructure.
@@ -39,6 +41,12 @@ In earned escalation, the gate is not a validation layer bolted on at the end. T
 - Yes: does the shell command return exit code 0?
 
 The agent does work. The gate decides if the work is sufficient. These are separate concerns performed by separate systems.
+
+### Gate Output as Next-Agent Specification
+
+A gate's failure output is not a consolation message. It is the **specification for the next agent invocation**. The gate knows exactly what went wrong — a missing spec comment, a failing test, an unresolved review finding. The failure prompt should encode that knowledge as actionable instructions. Each correction attempt is more likely to succeed when the gate tells the agent exactly what to fix, not just that something is wrong.
+
+This makes the flow definition itself the primary engineering artifact. The flow author is not configuring a workflow — they are writing the prompts, the gates, the failure specifications, and the context assembly hooks that determine whether agents spend their tokens on work or on figuring out what work to do. 90% of the engineering effort is in the flow definition: getting the context assembly right, getting the gate predicates right, getting the failure prompts right. The agent is the easy part.
 
 ## Composability
 

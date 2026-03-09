@@ -1,6 +1,8 @@
 # Vibe Coding vs Agentic Engineering — The WOPR Experience
 
 > Implements: [method/manifesto/vibe-coding-vs-agentic-engineering.md](../../method/manifesto/vibe-coding-vs-agentic-engineering.md)
+>
+> See also: [The Thesis](the-thesis.md) — the full argument for why gates beat hope
 
 ---
 

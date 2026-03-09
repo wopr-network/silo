@@ -1,5 +1,7 @@
 # Why This Works
 
+> Builds on: [The Thesis](the-thesis.md) — the argument for why you must give AI the keys and build the launch protocol.
+
 The holistic argument for agentic engineering — why deterministic gates and ephemeral agents produce better software than any alternative.
 
 ---
@@ -86,6 +88,34 @@ What happens without agentic engineering?
 **Without feedback loops**: The same mistakes recur. Each occurrence costs as much as the first. The system never gets smarter.
 
 **Without observability**: "Something went wrong" is the extent of the incident report. Root cause analysis is guesswork. Prevention is impossible because the failure mode is unknown.
+
+## The Correction Ratio Is Physics
+
+For every 1 coder invocation, there are roughly 2.8 reviewer/fixer invocations. This is not a bug. This is the cost of verification.
+
+The coder writes code. The reviewer reads it. The reviewer finds issues (it almost always does — AI-generated code is imperfect). The fixer addresses the findings. The reviewer re-reviews. The fixer fixes again. The reviewer clears it. That's 1 coder + 1 reviewer + 1 fixer + 1 re-reviewer = 4 invocations for one PR, minimum. With multiple review cycles, the ratio climbs.
+
+You cannot eliminate this ratio by making the coder better. A perfect coder still needs review — because the reviewer catches things the coder's context window missed, because the review bots find security issues, because the gate scripts verify integration constraints. The correction cycle IS the work.
+
+What you can do is stop wasting invocations on decisions the gates already know:
+
+- **Gate routing**: If CI is red, route directly to the fixer. Don't invoke the reviewer to say "ISSUES: CI failed." That's a $0.03 invocation producing a deterministic answer a $0.00 gate script already had.
+- **Context assembly**: If the reviewer needs the diff, the bot comments, and the CI results — assemble them in the onEnter hook, not in the reviewer's tool calls. Every tool call the agent makes for context gathering is a failure of the flow definition.
+- **Prompt qualification**: If the reviewer's context isn't complete (bots haven't posted, CI hasn't finished), don't invoke the reviewer. The gate holds the entity until the context is ready. The cost of a gate is milliseconds. The cost of a premature invocation is the entire reviewer cycle.
+
+The ratio improves over time — not by removing review cycles, but by the learning loop making each cycle more productive.
+
+## The Learning Loop
+
+The compound effect depends on a concrete mechanism: every merge teaches the system something, and that knowledge ships in the same PR as the code.
+
+After the reviewer clears the code, two more agents fire:
+1. **The documenter** updates project docs with anything the implementation changed.
+2. **The learner** updates project rules (CLAUDE.md) with institutional gotchas from this cycle — "this API returns null not undefined," "always run migrations after schema changes," "the test helper expects UTC timestamps."
+
+These updates ship in the same PR. One PR, one merge, one atomic unit of code + knowledge. The next entity that enters the pipeline reads those updated rules before it starts working. The gotcha that caught the fixer three times won't catch the next coder at all.
+
+This is how the 1:2.8 ratio improves over sprint 50 vs sprint 1. Not by removing the correction cycle — by making each cycle shorter because the agents start with more knowledge.
 
 ## The Cost
 
