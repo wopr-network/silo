@@ -44,7 +44,11 @@ export class EventSourcedEntityRepository implements IEntityRepository {
 
     if (eventsAfterSnapshot.length >= this.snapshotInterval) {
       const lastEvent = eventsAfterSnapshot[eventsAfterSnapshot.length - 1];
-      await this.snapshots.save(id, lastEvent.sequence, entity);
+      try {
+        await this.snapshots.save(id, lastEvent.sequence, entity);
+      } catch {
+        // snapshot write failure is non-fatal — continue with in-memory entity
+      }
     }
 
     return entity;
