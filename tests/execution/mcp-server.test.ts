@@ -313,15 +313,16 @@ describe("MCP tool handlers", () => {
     return result;
   }
 
-  it("lists all 28 tools", async () => {
+  it("lists all 29 tools", async () => {
     const result = await listTools();
-    expect(result.tools).toHaveLength(28);
+    expect(result.tools).toHaveLength(29);
     const names = result.tools.map((t: { name: string }) => t.name).sort();
     expect(names).toEqual([
       "admin.entity.cancel",
       "admin.entity.create",
       "admin.entity.migrate",
       "admin.entity.reset",
+      "admin.events.list",
       "admin.flow.create",
       "admin.flow.pause",
       "admin.flow.restore",
