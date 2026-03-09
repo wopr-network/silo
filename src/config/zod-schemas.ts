@@ -45,7 +45,7 @@ export const OnExitSchema = z.object({
     .refine((val) => validateTemplate(val), {
       message: "onExit command contains disallowed Handlebars expressions",
     }),
-  timeout_ms: z.number().int().min(0).optional().default(30000),
+  timeout_ms: z.number().int().min(1).optional().default(30000),
 });
 
 export const StateDefinitionSchema = z.object({

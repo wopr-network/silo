@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { type ExecFileException, execFile } from "node:child_process";
 import type { Entity, OnExitConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -48,10 +48,11 @@ function runCommand(
   timeoutMs: number,
 ): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const child = execFile("/bin/sh", ["-c", command], { timeout: timeoutMs }, (error, stdout, stderr) => {
-      const timedOut = error !== null && child.killed === true;
+    execFile("/bin/sh", ["-c", command], { timeout: timeoutMs }, (error, stdout, stderr) => {
+      const execErr = error as ExecFileException | null;
+      const timedOut = execErr !== null && execErr.killed === true;
       resolve({
-        exitCode: error ? ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1) : 0,
+        exitCode: execErr ? (typeof execErr.code === "number" ? execErr.code : 1) : 0,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
         timedOut,
