@@ -297,6 +297,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.onEnter !== undefined) updateValues.onEnter = changes.onEnter;
     if (changes.onExit !== undefined) updateValues.onExit = changes.onExit;
     if (changes.retryAfterMs !== undefined) updateValues.retryAfterMs = changes.retryAfterMs;
+    if (changes.meta !== undefined) updateValues.meta = changes.meta;
 
     if (Object.keys(updateValues).length > 0) {
       this.db.update(stateDefinitions).set(updateValues).where(eq(stateDefinitions.id, stateId)).run();
