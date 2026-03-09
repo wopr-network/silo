@@ -896,7 +896,7 @@ async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string,
 
   const entity = await deps.entities.get(entity_id);
   if (!entity) return errorResult(`Entity not found: ${entity_id}`);
-  if (entity.state === "cancelled") return errorResult(`Entity ${entity_id} is already cancelled`);
+  if (entity.state === "cancelled" && !cascade) return errorResult(`Entity ${entity_id} is already cancelled`);
 
   const cancelled: string[] = [];
   const MAX_CANCEL_DEPTH = 100;
