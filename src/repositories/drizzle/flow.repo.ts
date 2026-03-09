@@ -39,6 +39,7 @@ function rowToState(r: typeof stateDefinitions.$inferSelect): State {
     onEnter: (r.onEnter as OnEnterConfig | null) ?? null,
     onExit: (r.onExit as OnExitConfig | null) ?? null,
     retryAfterMs: r.retryAfterMs ?? null,
+    meta: r.meta as Record<string, unknown> | null,
   };
 }
 
@@ -204,6 +205,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
         onEnter: s.onEnter ?? null,
         onExit: s.onExit ?? null,
         retryAfterMs: s.retryAfterMs ?? null,
+        meta: s.meta ?? null,
       })),
       transitions: (snap.transitions ?? []).map((t) => ({
         id: t.id,
@@ -272,6 +274,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
       onEnter: (state.onEnter ?? null) as OnEnterConfig | null,
       onExit: (state.onExit ?? null) as OnExitConfig | null,
       retryAfterMs: state.retryAfterMs ?? null,
+      meta: (state.meta ?? null) as Record<string, unknown> | null,
     };
     this.db.transaction((tx) => {
       tx.insert(stateDefinitions).values(row).run();
@@ -294,6 +297,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.onEnter !== undefined) updateValues.onEnter = changes.onEnter;
     if (changes.onExit !== undefined) updateValues.onExit = changes.onExit;
     if (changes.retryAfterMs !== undefined) updateValues.retryAfterMs = changes.retryAfterMs;
+    if (changes.meta !== undefined) updateValues.meta = changes.meta;
 
     if (Object.keys(updateValues).length > 0) {
       this.db.update(stateDefinitions).set(updateValues).where(eq(stateDefinitions.id, stateId)).run();

@@ -39,6 +39,8 @@ export const stateDefinitions = sqliteTable(
     onEnter: text("on_enter", { mode: "json" }),
     onExit: text("on_exit", { mode: "json" }),
     retryAfterMs: integer("retry_after_ms"),
+    /** Opaque metadata passed through to consumers. Defcon stores but does not interpret. */
+    meta: text("meta", { mode: "json" }),
   },
   (table) => ({
     flowNameUnique: uniqueIndex("state_definitions_flow_name_unique").on(table.flowId, table.name),

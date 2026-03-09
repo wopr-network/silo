@@ -406,7 +406,9 @@ describe("Engine", () => {
       expect(result).not.toBeNull();
       expect(result!.entityId).toBe("ent-1");
       expect(result!.invocationId).toBe("inv-1");
-      expect(result!.prompt).toBeTruthy();
+      expect(result!.stage).toBe("open");
+      expect(result!.refs).toBeNull();
+      expect(result!.artifacts).toBeNull();
     });
 
     it("returns null when no work is available", async () => {
@@ -644,7 +646,7 @@ describe("Engine", () => {
       expect(mockAdapter.get).toHaveBeenCalledWith("L-3");
     });
 
-    it("claimWork (unclaimed invocation path) fetches invocations and gateResults before buildInvocation", async () => {
+    it("claimWork (unclaimed invocation path) returns slim claim result without buildInvocation", async () => {
       const mocks = makeMockRepos();
       const pendingInvocation: Invocation = {
         id: "inv-pending", entityId: "ent-1", stage: "coding",
@@ -662,10 +664,16 @@ describe("Engine", () => {
       });
       const engine = new Engine({ ...mocks, adapters: new Map() });
 
-      await engine.claimWork("coder", "test-flow");
+      const result = await engine.claimWork("coder", "test-flow");
 
-      expect(mocks.invocationRepo.findByEntity).toHaveBeenCalledWith("ent-1");
-      expect(mocks.gateRepo.resultsFor).toHaveBeenCalledWith("ent-1");
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("all_claimed");
+      const claim = result as { entityId: string; invocationId: string; stage: string; refs: unknown; artifacts: unknown };
+      expect(claim.entityId).toBe("ent-1");
+      expect(claim.invocationId).toBe("inv-pending");
+      expect(claim.stage).toBe("coding");
+      expect(claim.refs).toBeNull();
+      expect(claim.artifacts).toBeNull();
     });
   });
 

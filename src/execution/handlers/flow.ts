@@ -188,8 +188,15 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
       continue;
     }
     const flow = entity ? flowById.get(entity.flowId) : undefined;
+    if (!flow) {
+      await deps.entities.release(entity.id, claimerId).catch(() => {});
+      await deps.invocations
+        .fail(claimed.id, `Flow not found for entity ${entity.id} (flowId: ${entity.flowId})`)
+        .catch(() => {});
+      continue;
+    }
     // Record affinity for the claiming worker (best-effort; failure must not block the claim)
-    if (worker_id && entity && flow) {
+    if (worker_id && entity) {
       try {
         const windowMs = flow.affinityWindowMs ?? 300000;
         await deps.entities.setAffinity(claimed.entityId, worker_id, role, new Date(Date.now() + windowMs));
@@ -213,14 +220,12 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
     }
 
     return jsonResult({
-      worker_id: worker_id,
-      entity_id: claimed.entityId,
+      entity_id: entity.id,
       invocation_id: claimed.id,
-      flow: flow?.name ?? null,
-      stage: claimed.stage,
-      agent_role: claimed.agentRole || null,
-      prompt: claimed.prompt,
-      context: claimed.context,
+      flow: flow.name,
+      state: claimed.stage,
+      refs: claimedEntity.refs ?? null,
+      artifacts: claimedEntity.artifacts ?? null,
     });
   }
 

@@ -49,8 +49,8 @@ export interface ClaimWorkResult {
   invocationId: string;
   flowName: string;
   stage: string;
-  prompt: string;
-  context: Record<string, unknown> | null;
+  refs: Record<string, unknown> | null;
+  artifacts: Record<string, unknown> | null;
 }
 
 export interface EngineStatus {
@@ -751,13 +751,6 @@ export class Engine {
         }
       }
 
-      const versionedFlow = await this.flowRepo.getAtVersion(claimed.flowId, claimed.flowVersion);
-      const effectiveFlow = versionedFlow ?? flow;
-      const state = effectiveFlow.states.find((s) => s.name === pending.stage);
-      const build = state
-        ? await this.buildPromptForEntity(state, claimed, effectiveFlow)
-        : { prompt: pending.prompt, context: null };
-
       await this.eventEmitter.emit({
         type: "entity.claimed",
         entityId: claimed.id,
@@ -770,8 +763,8 @@ export class Engine {
         invocationId: claimedInvocation.id,
         flowName: flow.name,
         stage: pending.stage,
-        prompt: build.prompt,
-        context: build.context,
+        refs: claimed.refs ?? null,
+        artifacts: claimed.artifacts ?? null,
       };
     }
 
@@ -864,8 +857,8 @@ export class Engine {
           invocationId: claimedInvocation.id,
           flowName: flow.name,
           stage: state.name,
-          prompt: build.prompt,
-          context: build.context,
+          refs: claimed.refs ?? null,
+          artifacts: claimed.artifacts ?? null,
         };
       }
     }

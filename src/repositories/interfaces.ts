@@ -107,6 +107,8 @@ export interface State {
   onExit: OnExitConfig | null;
   /** Override check_back delay for workers claiming this state. Falls back to Flow.claimRetryAfterMs. */
   retryAfterMs: number | null;
+  /** Opaque metadata passed through to consumers (e.g. radar). Defcon stores but does not interpret. */
+  meta: Record<string, unknown> | null;
 }
 
 /** A transition rule between two states */
@@ -206,6 +208,7 @@ export interface CreateStateInput {
   onEnter?: OnEnterConfig;
   onExit?: OnExitConfig;
   retryAfterMs?: number;
+  meta?: Record<string, unknown>;
 }
 
 /** Input for adding a transition rule */

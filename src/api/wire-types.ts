@@ -10,15 +10,12 @@ export type ClaimResponse =
       message: string;
     }
   | {
-      worker_id?: string;
       entity_id: string;
       invocation_id: string;
       flow: string | null;
-      stage: string;
-      agent_role: string | null;
-      prompt: string;
-      context: Record<string, unknown> | null;
-      worker_notice?: string;
+      state: string;
+      refs: Record<string, unknown> | null;
+      artifacts: Record<string, unknown> | null;
     };
 
 export type ReportResponse =
