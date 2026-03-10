@@ -8,7 +8,7 @@ import Database from "better-sqlite3";
 import { Command } from "commander";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { createHttpServer } from "../api/server.js";
+import { startHonoServer, HonoSseAdapter as UiSseAdapter } from "../api/hono-server.js";
 import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { resolveCorsOrigin } from "../cors.js";
@@ -40,7 +40,6 @@ import { DrizzleTransitionLogRepository } from "../repositories/drizzle/transiti
 import { EventSourcedEntityRepository } from "../repositories/event-sourced/entity.repo.js";
 import { EventSourcedInvocationRepository } from "../repositories/event-sourced/invocation.repo.js";
 import type { IEntityRepository, IInvocationRepository } from "../repositories/interfaces.js";
-import { UiSseAdapter } from "../ui/sse.js";
 import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
@@ -119,7 +118,7 @@ function openDb(dbPath: string) {
 }
 
 const program = new Command();
-program.name("defcon").version("0.1.0");
+program.name("silo").version("0.1.0");
 
 // ─── init ───
 program
@@ -130,7 +129,7 @@ program
   .action(async (opts) => {
     const seedPath = opts.seed;
     if (typeof seedPath !== "string") {
-      console.log("Usage: defcon init --seed <path> [--force]");
+      console.log("Usage: silo init --seed <path> [--force]");
       return;
     }
 
@@ -232,7 +231,7 @@ program
       const snapshotRepo = new DrizzleEntitySnapshotRepository(db);
       entityRepo = new EventSourcedEntityRepository(mutableEntityRepo, domainEventRepo, snapshotRepo, snapshotInterval);
       invocationRepo = new EventSourcedInvocationRepository(mutableInvocationRepo, domainEventRepo);
-      process.stderr.write("[defcon] Event-sourced repositories enabled\n");
+      process.stderr.write("[silo] Event-sourced repositories enabled\n");
     } else {
       entityRepo = mutableEntityRepo;
       invocationRepo = mutableInvocationRepo;
@@ -319,7 +318,7 @@ program
       process.exit(1);
     }
 
-    let restHttpServer: ReturnType<typeof createHttpServer> | undefined;
+    let restHttpServer: import("node:http").Server | undefined;
     if (startHttp) {
       const httpPort = parseInt(opts.httpPort as string, 10);
       const httpHost = opts.httpHost as string;
@@ -333,15 +332,20 @@ program
         process.exit(1);
       }
       const uiSseAdapter = opts.ui ? new UiSseAdapter() : undefined;
-      restHttpServer = createHttpServer({
-        engine,
-        mcpDeps: deps,
-        adminToken,
-        workerToken,
-        corsOrigins: restCorsResult.origins ?? undefined,
-        enableUi: !!opts.ui,
-        uiSseAdapter,
-      });
+      const honoResult = startHonoServer(
+        {
+          engine,
+          mcpDeps: deps,
+          adminToken,
+          workerToken,
+          corsOrigins: restCorsResult.origins ?? undefined,
+          enableUi: !!opts.ui,
+          sseAdapter: uiSseAdapter,
+        },
+        httpPort,
+        httpHost,
+      );
+      restHttpServer = honoResult.server;
       if (uiSseAdapter) {
         eventEmitter.register(uiSseAdapter);
       }
@@ -353,11 +357,7 @@ program
         });
         eventEmitter.register(wsBroadcaster);
       }
-      restHttpServer.listen(httpPort, httpHost, () => {
-        const addr = restHttpServer?.address();
-        const boundPort = addr && typeof addr === "object" ? addr.port : httpPort;
-        console.error(`HTTP REST API listening on ${httpHost}:${boundPort}`);
-      });
+      console.error(`HTTP REST API listening on ${httpHost}:${httpPort}`);
     }
 
     if (opts.transport === "sse" && startMcp) {

@@ -60,21 +60,28 @@ export const gateDefinitions = sqliteTable("gate_definitions", {
   outcomes: text("outcomes", { mode: "json" }),
 });
 
-export const transitionRules = sqliteTable("transition_rules", {
-  id: text("id").primaryKey(),
-  flowId: text("flow_id")
-    .notNull()
-    .references(() => flowDefinitions.id),
-  fromState: text("from_state").notNull(),
-  toState: text("to_state").notNull(),
-  trigger: text("trigger").notNull(),
-  gateId: text("gate_id").references(() => gateDefinitions.id),
-  condition: text("condition"),
-  priority: integer("priority").default(0),
-  spawnFlow: text("spawn_flow"),
-  spawnTemplate: text("spawn_template"),
-  createdAt: integer("created_at"),
-});
+export const transitionRules = sqliteTable(
+  "transition_rules",
+  {
+    id: text("id").primaryKey(),
+    flowId: text("flow_id")
+      .notNull()
+      .references(() => flowDefinitions.id),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    trigger: text("trigger").notNull(),
+    gateId: text("gate_id").references(() => gateDefinitions.id),
+    condition: text("condition"),
+    priority: integer("priority").default(0),
+    spawnFlow: text("spawn_flow"),
+    spawnTemplate: text("spawn_template"),
+    createdAt: integer("created_at"),
+  },
+  (table) => ({
+    flowIdx: index("transition_rules_flow_id_idx").on(table.flowId),
+    gateIdx: index("transition_rules_gate_id_idx").on(table.gateId),
+  }),
+);
 
 export const flowVersions = sqliteTable(
   "flow_versions",
@@ -153,18 +160,25 @@ export const invocations = sqliteTable(
   }),
 );
 
-export const gateResults = sqliteTable("gate_results", {
-  id: text("id").primaryKey(),
-  entityId: text("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  gateId: text("gate_id")
-    .notNull()
-    .references(() => gateDefinitions.id),
-  passed: integer("passed").notNull(),
-  output: text("output"),
-  evaluatedAt: integer("evaluated_at"),
-});
+export const gateResults = sqliteTable(
+  "gate_results",
+  {
+    id: text("id").primaryKey(),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entities.id),
+    gateId: text("gate_id")
+      .notNull()
+      .references(() => gateDefinitions.id),
+    passed: integer("passed").notNull(),
+    output: text("output"),
+    evaluatedAt: integer("evaluated_at"),
+  },
+  (table) => ({
+    entityIdx: index("gate_results_entity_id_idx").on(table.entityId),
+    gateIdx: index("gate_results_gate_id_idx").on(table.gateId),
+  }),
+);
 
 export const entityHistory = sqliteTable(
   "entity_history",
@@ -181,6 +195,7 @@ export const entityHistory = sqliteTable(
   },
   (table) => ({
     entityTimestampIdx: index("entity_history_entity_ts_idx").on(table.entityId, table.timestamp),
+    invocationIdx: index("entity_history_invocation_id_idx").on(table.invocationId),
   }),
 );
 
@@ -243,4 +258,108 @@ export const entitySnapshots = sqliteTable(
     entitySeqUnique: uniqueIndex("entity_snapshots_entity_seq_idx").on(table.entityId, table.sequence),
     entityLatestIdx: index("entity_snapshots_entity_latest_idx").on(table.entityId, table.snapshotAt),
   }),
+);
+
+// ─── Worker Pool Tables (merged from radar-db) ───
+
+export const sources = sqliteTable("sources", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  type: text("type").notNull(),
+  config: text("config").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const watches = sqliteTable(
+  "watches",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    filter: text("filter").notNull(),
+    action: text("action").notNull(),
+    actionConfig: text("action_config").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    sourceIdx: index("watches_source_id_idx").on(table.sourceId),
+  }),
+);
+
+export const eventLog = sqliteTable(
+  "event_log",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    watchId: text("watch_id").references(() => watches.id, { onDelete: "cascade" }),
+    rawEvent: text("raw_event").notNull(),
+    actionTaken: text("action_taken"),
+    defconResponse: text("defcon_response"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    sourceIdx: index("event_log_source_id_idx").on(table.sourceId),
+    watchIdx: index("event_log_watch_id_idx").on(table.watchId),
+  }),
+);
+
+export const workers = sqliteTable("workers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  discipline: text("discipline").notNull(),
+  status: text("status").notNull().default("idle"),
+  config: text("config"),
+  lastHeartbeat: integer("last_heartbeat").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export const entityActivity = sqliteTable(
+  "entity_activity",
+  {
+    id: text("id").primaryKey(),
+    entityId: text("entity_id").notNull(),
+    slotId: text("slot_id").notNull(),
+    seq: integer("seq").notNull(),
+    type: text("type").notNull(),
+    data: text("data").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("entity_activity_entity_id_idx").on(t.entityId),
+    uniqueIndex("entity_activity_entity_seq_uniq").on(t.entityId, t.seq),
+  ],
+);
+
+export const throughputEvents = sqliteTable(
+  "throughput_events",
+  {
+    id: text("id").primaryKey(),
+    outcome: text("outcome").notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("throughput_events_created_at_idx").on(t.createdAt)],
+);
+
+export const entityMap = sqliteTable(
+  "entity_map",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    entityId: text("entity_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("entity_map_source_external_uniq").on(t.sourceId, t.externalId)],
 );

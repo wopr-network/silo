@@ -1,6 +1,5 @@
 /**
- * Wire types for defcon's REST and MCP APIs.
- * Exported for consumers (e.g. radar) to import instead of duplicating.
+ * Wire types for silo's REST API.
  */
 
 export type ClaimResponse =
@@ -10,12 +9,14 @@ export type ClaimResponse =
       message: string;
     }
   | {
+      worker_id?: string;
       entity_id: string;
       invocation_id: string;
       flow: string | null;
-      state: string;
-      refs: Record<string, unknown> | null;
-      artifacts: Record<string, unknown> | null;
+      stage: string;
+      prompt: string;
+      context: Record<string, unknown> | null;
+      worker_notice?: string;
     };
 
 export type ReportResponse =

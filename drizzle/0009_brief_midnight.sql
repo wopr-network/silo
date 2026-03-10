@@ -1,1 +1,0 @@
-ALTER TABLE `flow_definitions` ADD `timeout_prompt` text;

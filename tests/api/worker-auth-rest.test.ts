@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import http from "node:http";
+import { serve } from "@hono/node-server";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -12,11 +13,11 @@ import { DrizzleTransitionLogRepository } from "../../src/repositories/drizzle/t
 import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.repo.js";
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
-import { createHttpServer } from "../../src/api/server.js";
+import { createHonoApp, type HonoServerDeps } from "../../src/api/hono-server.js";
 
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 
-function makeTestDeps(workerToken?: string) {
+function makeTestDeps(workerToken?: string): HonoServerDeps & { stopReaper: () => Promise<void>; sqlite: Database.Database } {
   const sqlite = new Database(":memory:");
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
@@ -56,15 +57,6 @@ function makeTestDeps(workerToken?: string) {
   return { engine, mcpDeps, adminToken: undefined, workerToken, stopReaper, sqlite };
 }
 
-async function listen(server: http.Server): Promise<number> {
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as { port: number };
-      resolve(addr.port);
-    });
-  });
-}
-
 async function request(port: number, method: string, path: string, body?: unknown, token?: string) {
   return new Promise<{ status: number; body: unknown }>((resolve, reject) => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -100,8 +92,13 @@ describe("REST worker auth", () => {
 
   beforeAll(async () => {
     deps = makeTestDeps("worker-secret-456");
-    server = createHttpServer(deps);
-    port = await listen(server);
+    const app = createHonoApp(deps);
+    server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }) as http.Server;
+    await new Promise<void>((resolve) => {
+      if (server.listening) resolve();
+      else server.on("listening", resolve);
+    });
+    port = (server.address() as { port: number }).port;
   });
 
   afterAll(async () => {

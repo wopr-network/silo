@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createHttpServer } from "../../src/api/server.js";
+import { startHonoServer } from "../../src/api/hono-server.js";
 
 describe("HTTP server timeout configuration", () => {
-  it("should set sensible global timeouts with flow.report route extending its own timeout per-request", () => {
-    // Minimal deps — we only care about server config, not routing
+  it("should set hardened timeouts on the underlying http.Server", () => {
     const engine = {} as any;
     const mcpDeps = {
       entities: {},
@@ -15,15 +14,14 @@ describe("HTTP server timeout configuration", () => {
       engine: null,
     } as any;
 
-    const server = createHttpServer({ engine, mcpDeps });
+    const { server, close } = startHonoServer({ engine, mcpDeps }, 0, "127.0.0.1");
 
-    // Global defaults protect all routes from Slowloris/DoS.
-    // flow.report overrides timeout per-request via req.setTimeout(0).
-    expect(server.requestTimeout).toBe(30000);
-    expect(server.headersTimeout).toBe(10000);
-
-    if (server.listening) {
-      server.close();
+    try {
+      // Global defaults protect all routes from Slowloris/DoS.
+      expect(server.requestTimeout).toBe(30000);
+      expect(server.headersTimeout).toBe(10000);
+    } finally {
+      close();
     }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
+import { serve } from "@hono/node-server";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -12,12 +13,11 @@ import { DrizzleTransitionLogRepository } from "../../src/repositories/drizzle/t
 import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.repo.js";
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
-import { createHttpServer, type HttpServerDeps } from "../../src/api/server.js";
-import { Router } from "../../src/api/router.js";
+import { createHonoApp, type HonoServerDeps } from "../../src/api/hono-server.js";
 
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 
-function makeTestDeps(): HttpServerDeps & { stopReaper: () => Promise<void>; closeDb: () => void } {
+function makeTestDeps(): HonoServerDeps & { stopReaper: () => Promise<void>; closeDb: () => void } {
   const sqlite = new Database(":memory:");
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
@@ -57,42 +57,16 @@ function makeTestDeps(): HttpServerDeps & { stopReaper: () => Promise<void>; clo
   return { engine, mcpDeps, adminToken: undefined, stopReaper, closeDb: () => sqlite.close() };
 }
 
-async function listen(server: http.Server): Promise<number> {
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as { port: number };
-      resolve(addr.port);
-    });
+async function startTestServer(deps: HonoServerDeps): Promise<{ server: http.Server; port: number }> {
+  const app = createHonoApp(deps);
+  const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }) as http.Server;
+  await new Promise<void>((resolve) => {
+    if (server.listening) resolve();
+    else server.on("listening", resolve);
   });
+  const port = (server.address() as { port: number }).port;
+  return { server, port };
 }
-
-// ─── Router unit tests ───────────────────────────────────────────────────────
-
-describe("Router", () => {
-  it("matches a parameterized route", () => {
-    const router = new Router();
-    const handler = async () => ({ status: 200, body: { ok: true } });
-    router.add("GET", "/api/flows/:id", handler);
-
-    const match = router.match("GET", "/api/flows/abc-123");
-    expect(match).not.toBeNull();
-    expect(match!.params).toEqual({ id: "abc-123" });
-  });
-
-  it("returns null for unmatched routes", () => {
-    const router = new Router();
-    const match = router.match("GET", "/api/unknown");
-    expect(match).toBeNull();
-  });
-
-  it("distinguishes methods", () => {
-    const router = new Router();
-    const handler = async () => ({ status: 200, body: {} });
-    router.add("POST", "/api/entities", handler);
-    expect(router.match("GET", "/api/entities")).toBeNull();
-    expect(router.match("POST", "/api/entities")).not.toBeNull();
-  });
-});
 
 // ─── HTTP server integration tests ───────────────────────────────────────────
 
@@ -103,8 +77,9 @@ describe("HTTP Server - basic", () => {
 
   beforeAll(async () => {
     deps = makeTestDeps();
-    server = createHttpServer(deps);
-    port = await listen(server);
+    const result = await startTestServer(deps);
+    server = result.server;
+    port = result.port;
   });
 
   afterAll(async () => {
@@ -302,8 +277,9 @@ describe("HTTP Server - explicit CORS origin", () => {
   beforeAll(async () => {
     deps = makeTestDeps();
     deps.corsOrigins = ["https://app.example.com"];
-    server = createHttpServer(deps);
-    port = await listen(server);
+    const result = await startTestServer(deps);
+    server = result.server;
+    port = result.port;
   });
 
   afterAll(async () => {
@@ -347,8 +323,9 @@ describe("HTTP Server - handler error", () => {
     deps.engine.getStatus = async () => {
       throw new Error("boom");
     };
-    server = createHttpServer(deps);
-    port = await listen(server);
+    const result = await startTestServer(deps);
+    server = result.server;
+    port = result.port;
   });
 
   afterAll(async () => {

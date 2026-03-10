@@ -1,1 +1,0 @@
-ALTER TABLE `flow_definitions` ADD `gate_timeout_ms` integer;

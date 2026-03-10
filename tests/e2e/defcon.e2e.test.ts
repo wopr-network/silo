@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import http from "node:http";
 import { WebSocket } from "ws";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { serve } from "@hono/node-server";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -15,7 +17,7 @@ import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.rep
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { WebSocketBroadcaster } from "../../src/ws/broadcast.js";
-import { createHttpServer } from "../../src/api/server.js";
+import { createHonoApp } from "../../src/api/hono-server.js";
 import { loadSeed } from "../../src/config/seed-loader.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,7 +37,7 @@ interface E2EContext {
 	eventRepo: DrizzleEventRepository;
 	eventEmitter: EventEmitter;
 	broadcaster: WebSocketBroadcaster;
-	server: ReturnType<typeof createHttpServer>;
+	server: http.Server;
 	port: number;
 	db: ReturnType<typeof drizzle>;
 }
@@ -75,21 +77,23 @@ async function setupE2E(): Promise<E2EContext> {
 		engine,
 	};
 
-	const server = createHttpServer({
+	const app = createHonoApp({
 		engine,
 		mcpDeps,
 		adminToken: ADMIN_TOKEN,
 		workerToken: WORKER_TOKEN,
 	});
 
+	const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }) as http.Server;
+	await new Promise<void>((resolve) => {
+		if (server.listening) resolve();
+		else server.on("listening", resolve);
+	});
+
 	const broadcaster = new WebSocketBroadcaster({ server, engine, adminToken: ADMIN_TOKEN });
 	eventEmitter.register(broadcaster);
 
-	const port = await new Promise<number>((resolvePort) => {
-		server.listen(0, "127.0.0.1", () => {
-			resolvePort((server.address() as { port: number }).port);
-		});
-	});
+	const port = (server.address() as { port: number }).port;
 
 	return {
 		sqlite,

@@ -1,5 +1,5 @@
 {
-  "name": "@wopr-network/defcon",
+  "name": "@wopr-network/silo",
   "version": "0.2.2",
   "type": "module",
   "packageManager": "pnpm@9.15.4",
@@ -8,7 +8,7 @@
   },
   "main": "./dist/src/main.js",
   "bin": {
-    "defcon": "./dist/src/execution/cli.js"
+    "silo": "./dist/src/execution/cli.js"
   },
   "types": "./dist/src/main.d.ts",
   "exports": {
@@ -38,13 +38,19 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.71",
     "@anthropic-ai/sdk": "^0.78.0",
+    "@hono/node-server": "^1.19.11",
     "@linear/sdk": "^76.0.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^12.6.2",
     "commander": "^14.0.3",
     "drizzle-orm": "^0.45.1",
     "handlebars": "^4.7.8",
+    "hono": "^4.12.5",
+    "mcp-remote": "^0.1.18",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
@@ -72,6 +78,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/wopr-network/defcon.git"
+    "url": "https://github.com/wopr-network/silo.git"
   }
 }

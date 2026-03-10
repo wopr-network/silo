@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import http from "node:http";
 import { WebSocket } from "ws";
+import { serve } from "@hono/node-server";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -13,7 +15,7 @@ import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.rep
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { WebSocketBroadcaster } from "../../src/ws/broadcast.js";
-import { createHttpServer } from "../../src/api/server.js";
+import { createHonoApp } from "../../src/api/hono-server.js";
 
 const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 const ADMIN_TOKEN = "integration-test-token";
@@ -24,7 +26,7 @@ describe("WebSocket integration with HTTP server", () => {
 	let engine: Engine;
 	let eventEmitter: EventEmitter;
 	let sqlite: Database.Database;
-	let server: ReturnType<typeof createHttpServer>;
+	let server: http.Server;
 
 	beforeEach(async () => {
 		sqlite = new Database(":memory:");
@@ -61,21 +63,23 @@ describe("WebSocket integration with HTTP server", () => {
 			engine,
 		};
 
-		server = createHttpServer({
+		const app = createHonoApp({
 			engine,
 			mcpDeps,
 			adminToken: ADMIN_TOKEN,
 			workerToken: "worker-tok",
 		});
 
+		server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }) as http.Server;
+		await new Promise<void>((resolve) => {
+			if (server.listening) resolve();
+			else server.on("listening", resolve);
+		});
+
 		broadcaster = new WebSocketBroadcaster({ server, engine, adminToken: ADMIN_TOKEN });
 		eventEmitter.register(broadcaster);
 
-		port = await new Promise<number>((resolve) => {
-			server.listen(0, "127.0.0.1", () => {
-				resolve((server.address() as { port: number }).port);
-			});
-		});
+		port = (server.address() as { port: number }).port;
 	});
 
 	afterEach(async () => {
