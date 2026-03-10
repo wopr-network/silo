@@ -69,6 +69,20 @@ export class DirectFlowEngine implements IFlowEngine {
     const prompt = invocation?.prompt ?? "";
     const context = invocation?.context ?? null;
 
+    // Look up state config for modelTier and agentRole
+    let model_tier: string | undefined;
+    let agent_role: string | undefined;
+    if (result.flowName && result.stage) {
+      const flowDef = await this.flows.getByName(result.flowName);
+      if (flowDef) {
+        const state = flowDef.states.find((s) => s.name === result.stage);
+        if (state) {
+          model_tier = state.modelTier ?? undefined;
+          agent_role = state.agentRole ?? undefined;
+        }
+      }
+    }
+
     return {
       worker_id: workerId,
       entity_id: result.entityId,
@@ -77,6 +91,8 @@ export class DirectFlowEngine implements IFlowEngine {
       stage: result.stage,
       prompt,
       context,
+      ...(model_tier ? { model_tier } : {}),
+      ...(agent_role ? { agent_role } : {}),
     };
   }
 
@@ -203,12 +219,36 @@ export class DirectFlowEngine implements IFlowEngine {
     }
 
     if (nextAction === "continue") {
+      // Auto-claim the next invocation for the same worker so the RunLoop
+      // can report against it without a separate claim round-trip.
+      if (result.invocationId && workerId) {
+        await this.invocations.claim(result.invocationId, workerId).catch(() => {});
+      }
+      // Look up model_tier and agent_role for the new state so the run-loop
+      // can switch models when transitioning (e.g. opus architect → sonnet fixer).
+      let next_model_tier: string | undefined;
+      let next_agent_role: string | undefined;
+      if (result.newState) {
+        const entity = await this.entities.get(entityId);
+        if (entity) {
+          const flow = await this.flows.get(entity.flowId);
+          if (flow) {
+            const newStateDef = flow.states.find((s) => s.name === result.newState);
+            if (newStateDef) {
+              next_model_tier = newStateDef.modelTier ?? undefined;
+              next_agent_role = newStateDef.agentRole ?? undefined;
+            }
+          }
+        }
+      }
       return {
         next_action: "continue",
         new_state: result.newState ?? "",
         gates_passed: result.gatesPassed,
         prompt: nextPrompt,
         context: nextContext,
+        ...(next_model_tier ? { model_tier: next_model_tier } : {}),
+        ...(next_agent_role ? { agent_role: next_agent_role } : {}),
       };
     }
 

@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { GateError, NotFoundError, ValidationError } from "../errors.js";
+import { logger } from "../logger.js";
 import type { Entity, Gate, IGateRepository } from "../repositories/interfaces.js";
 import { validateGateCommand } from "./gate-command-validator.js";
 import { checkSsrf } from "./ssrf-guard.js";
@@ -81,18 +82,34 @@ export async function evaluateGate(
     output = result.output;
     timedOut = result.timedOut;
 
-    // Parse structured JSON outcome from the last non-empty output line.
-    // Gate scripts can emit { outcome: string, message?: string } as their final line
-    // to enable named outcome routing (e.g. "blocked" → toState: "fixing").
-    const lastLine = result.output
+    const stdoutLines = result.stdout
       .split("\n")
       .map((l) => l.trim())
-      .filter(Boolean)
-      .at(-1);
+      .filter(Boolean);
+    const lastLine = stdoutLines.at(-1);
+
+    logger.info(`[gate] "${gate.name}" command finished`, {
+      entityId: entity.id,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+      stdoutLineCount: stdoutLines.length,
+      lastLine: lastLine ?? "(empty)",
+      stderrLength: result.output.length - result.stdout.length,
+    });
+
+    // Parse structured JSON outcome from the last non-empty stdout line.
+    // Gate scripts emit { outcome, message } as their final stdout line
+    // to enable named outcome routing (e.g. "ci_failed" → toState: "fixing").
     if (lastLine?.startsWith("{")) {
       try {
         const parsed = JSON.parse(lastLine) as { outcome?: unknown; message?: unknown };
         if (typeof parsed.outcome === "string") {
+          logger.info(`[gate] "${gate.name}" parsed outcome: ${String(parsed.outcome)}`, {
+            entityId: entity.id,
+            outcome: parsed.outcome,
+            message: parsed.message ?? "(none)",
+            passed,
+          });
           const outcomeResult = {
             passed,
             timedOut,
@@ -103,9 +120,18 @@ export async function evaluateGate(
           await gateRepo.record(entity.id, gate.id, passed, result.output);
           return outcomeResult;
         }
-      } catch {
-        // Not JSON — treat output as plain text, fall through to normal path
+        logger.warn(`[gate] "${gate.name}" JSON parsed but no outcome field`, { lastLine });
+      } catch (err) {
+        logger.warn(`[gate] "${gate.name}" last line looked like JSON but failed to parse`, {
+          lastLine,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+    } else {
+      logger.warn(`[gate] "${gate.name}" no JSON outcome in stdout`, {
+        entityId: entity.id,
+        lastLine: lastLine ?? "(empty)",
+      });
     }
   } else if (gate.type === "function") {
     try {
@@ -280,12 +306,13 @@ function runCommand(
   file: string,
   args: string[],
   timeoutMs: number,
-): Promise<{ exitCode: number; output: string; timedOut: boolean }> {
+): Promise<{ exitCode: number; output: string; stdout: string; timedOut: boolean }> {
   return new Promise((resolve) => {
     execFile(file, args, { timeout: timeoutMs }, (error, stdout, stderr) => {
       resolve({
         exitCode: error ? 1 : 0,
         output: (stdout + stderr).trim(),
+        stdout: stdout.trim(),
         timedOut: error !== null && "killed" in error && error.killed === true,
       });
     });

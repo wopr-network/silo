@@ -167,7 +167,7 @@ export class Engine {
     emitter: IEventBusAdapter = this.eventEmitter,
   ): Promise<ProcessSignalResult> {
     // 1. Load entity
-    const entity = await this.entityRepo.get(entityId);
+    let entity = await this.entityRepo.get(entityId);
     if (!entity) throw new NotFoundError(`Entity "${entityId}" not found`);
 
     if (entity.state === "cancelled") {
@@ -182,6 +182,13 @@ export class Engine {
     const transition = findTransition(flow, entity.state, signal, { entity }, true, this.logger);
     if (!transition)
       throw new ValidationError(`No transition from "${entity.state}" on signal "${signal}" in flow "${flow.name}"`);
+
+    // 3b. Persist signal artifacts BEFORE gate evaluation so gate templates
+    //     (e.g. {{entity.artifacts.prNumber}}) can reference them.
+    if (artifacts && Object.keys(artifacts).length > 0) {
+      await this.entityRepo.updateArtifacts(entityId, artifacts);
+      entity = { ...entity, artifacts: { ...entity.artifacts, ...artifacts } };
+    }
 
     // 4. Evaluate gate — returns a routing decision or a block result to return immediately.
     const routing = transition.gateId
@@ -426,11 +433,44 @@ export class Engine {
     const gate = await this.gateRepo.get(gateId);
     if (!gate) throw new NotFoundError(`Gate "${gateId}" not found`);
 
+    this.logger.info(`[engine] evaluating gate "${gate.name}" for entity ${entity.id}`, {
+      gateId,
+      gateName: gate.name,
+      gateType: gate.type,
+      command: gate.command,
+      entityState: entity.state,
+      entityArtifactKeys: Object.keys(entity.artifacts ?? {}),
+    });
+
     const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
+
+    this.logger.info(`[engine] gate "${gate.name}" result`, {
+      entityId: entity.id,
+      passed: gateResult.passed,
+      timedOut: gateResult.timedOut,
+      outcome: gateResult.outcome,
+      message: gateResult.message,
+      output: gateResult.output,
+    });
+
     const namedOutcome = gateResult.outcome && gate.outcomes ? gate.outcomes[gateResult.outcome] : undefined;
+
+    this.logger.info(`[engine] gate "${gate.name}" routing`, {
+      entityId: entity.id,
+      outcome: gateResult.outcome ?? "(none)",
+      hasOutcomesMap: !!gate.outcomes,
+      availableOutcomes: gate.outcomes ? Object.keys(gate.outcomes) : [],
+      matchedOutcome: namedOutcome ? JSON.stringify(namedOutcome) : "(no match)",
+      passed: gateResult.passed,
+    });
 
     if (namedOutcome?.toState) {
       const outcomeLabel = gateResult.outcome ?? gate.name;
+      this.logger.info(`[engine] gate "${gate.name}" REDIRECT → ${namedOutcome.toState}`, {
+        entityId: entity.id,
+        outcome: outcomeLabel,
+        toState: namedOutcome.toState,
+      });
       await this.eventEmitter.emit({
         type: "gate.redirected",
         entityId: entity.id,
@@ -448,6 +488,7 @@ export class Engine {
     }
 
     if (namedOutcome?.proceed || (!namedOutcome && gateResult.passed)) {
+      this.logger.info(`[engine] gate "${gate.name}" PASSED → proceed`, { entityId: entity.id });
       await this.eventEmitter.emit({
         type: "gate.passed",
         entityId: entity.id,

@@ -80,7 +80,7 @@ describe("EntityActivityRepo", () => {
       expect(await repo.getSummary("e1")).toBe("");
     });
 
-    it("includes tool_use events", async () => {
+    it("skips tool_use events from summary", async () => {
       const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({
@@ -96,7 +96,7 @@ describe("EntityActivityRepo", () => {
         data: { subtype: "success", cost_usd: 0.001 },
       });
       const summary = await repo.getSummary("e1");
-      expect(summary).toContain("Called tool: Read");
+      expect(summary).not.toContain("Called tool");
       expect(summary).toContain("Ended: success");
     });
 

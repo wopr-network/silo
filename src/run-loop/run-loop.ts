@@ -238,12 +238,12 @@ export class RunLoop {
     try {
       const claimAny = claim as Record<string, unknown>;
       const rawModelTier = (claimAny.model_tier as string | undefined) ?? "sonnet";
-      const modelTier: "opus" | "sonnet" | "haiku" =
+      let modelTier: "opus" | "sonnet" | "haiku" =
         rawModelTier === "opus" || rawModelTier === "haiku" ? rawModelTier : "sonnet";
       // agentRole is fixed for the lifetime of this claim. On `continue` responses the
       // new prompt is applied but the agent role stays the same — the next stage's
       // invocation will be claimed fresh with its own agentRole set by silo.
-      const agentRole = (claimAny.agent_role as string | null | undefined) ?? null;
+      let agentRole = (claimAny.agent_role as string | null | undefined) ?? null;
       const originalPrompt = claim.prompt;
       let currentPrompt = claim.prompt;
       let currentSignal: string | undefined;
@@ -291,10 +291,6 @@ export class RunLoop {
             activityHistory = await this.config.activityRepo.getSummary(claim.entity_id);
             if (activityHistory) {
               activityHistory = activityHistory.trim();
-              const MAX_HISTORY_CHARS = 8000;
-              if (activityHistory.length > MAX_HISTORY_CHARS) {
-                activityHistory = `[...history truncated]\n\n${activityHistory.slice(-MAX_HISTORY_CHARS)}`;
-              }
             }
           } catch (err) {
             logger.warn(`[radar] slot ${slotId} failed to get activity history`, {
@@ -304,6 +300,10 @@ export class RunLoop {
         }
 
         if (activityHistory) {
+          logger.info(`[radar] slot ${slotId} activityHistory fetched`, {
+            entity: claim.entity_id,
+            length: activityHistory.length,
+          });
           currentArtifacts = { ...(currentArtifacts ?? {}), activityHistory: activityHistory };
         }
 
@@ -328,10 +328,33 @@ export class RunLoop {
 
         if (response.next_action === "continue") {
           const basePrompt = response.prompt ?? originalPrompt;
+          logger.info(`[radar] slot ${slotId} continue prompt assembly`, {
+            entity: claim.entity_id,
+            activityHistoryLength: activityHistory?.length ?? 0,
+            basePromptLength: basePrompt.length,
+          });
           currentPrompt = activityHistory ? `${activityHistory}\n\n---\n${basePrompt}` : basePrompt;
           // Update templateContext from the engine so the next dispatch uses fresh context
           if ("context" in response && response.context != null) {
             (claim as Record<string, unknown>).context = response.context;
+          }
+          // Update model tier if the new state specifies a different one
+          const resp = response as Record<string, unknown>;
+          if (typeof resp.model_tier === "string") {
+            const newTier = resp.model_tier;
+            if (newTier === "opus" || newTier === "sonnet" || newTier === "haiku") {
+              if (newTier !== modelTier) {
+                logger.info(`[radar] slot ${slotId} model tier changed`, {
+                  from: modelTier,
+                  to: newTier,
+                  newState: resp.new_state,
+                });
+                modelTier = newTier;
+              }
+            }
+          }
+          if (typeof resp.agent_role === "string") {
+            agentRole = resp.agent_role;
           }
           currentSignal = undefined;
           currentArtifacts = undefined;

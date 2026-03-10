@@ -181,7 +181,7 @@ describe("RunLoop — activityHistory injection on report", () => {
     expect((reportCall?.artifacts as Record<string, unknown> | undefined)?.activityHistory).toBeUndefined();
   });
 
-  it("caps activityHistory at 8000 characters", async () => {
+  it("passes full activityHistory without truncation", async () => {
     const longSummary = "x".repeat(10000);
     const activityRepo = makeActivityRepo(longSummary);
 
@@ -207,8 +207,7 @@ describe("RunLoop — activityHistory injection on report", () => {
 
     const reportCall = vi.mocked(silo.report).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
     const history = (reportCall?.artifacts as Record<string, unknown> | undefined)?.activityHistory as string;
-    expect(history.length).toBeLessThanOrEqual(8050);
-    expect(history).toContain("[...history truncated]");
+    expect(history.length).toBe(10000);
   });
 });
 

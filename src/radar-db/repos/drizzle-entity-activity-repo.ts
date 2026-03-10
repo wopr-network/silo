@@ -86,12 +86,11 @@ export class DrizzleEntityActivityRepo implements IEntityActivityRepo {
       const lines: string[] = [`Attempt ${attemptNum}:`];
       for (const event of events) {
         if (event.type === "tool_use") {
-          const d = event.data as { name?: string; input?: unknown };
-          lines.push(`  - Called tool: ${d.name ?? "unknown"}(${JSON.stringify(d.input ?? {})})`);
+          // Skip — tool call inputs bloat the prompt without useful context
         } else if (event.type === "text") {
           const d = event.data as { text?: string };
-          const excerpt = (d.text ?? "").slice(0, 200).replace(/\n/g, " ");
-          if (excerpt) lines.push(`  - Said: "${excerpt}${excerpt.length === 200 ? "…" : ""}"`);
+          const text = (d.text ?? "").replace(/\n/g, " ").trim();
+          if (text) lines.push(`  - Said: "${text}"`);
         } else if (event.type === "result") {
           const d = event.data as { subtype?: string; cost_usd?: number };
           lines.push(`  - Ended: ${d.subtype ?? "unknown"} (cost: $${(d.cost_usd ?? 0).toFixed(4)})`);
