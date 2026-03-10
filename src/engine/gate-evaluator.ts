@@ -262,7 +262,8 @@ export async function evaluateGateForAllRepos(
     // Extract PR number from URL (e.g. https://github.com/org/repo/pull/123 → 123)
     const prNumber = prUrl.split("/").pop() ?? "";
     const fullRepo =
-      (entity.artifacts?.repos as string[] | undefined)?.find((r: string) => r.endsWith(`/${repoName}`)) ?? repoName;
+      (entity.artifacts?.repos as string[] | undefined)?.find((r: string) => r.split("/").pop() === repoName) ??
+      repoName;
 
     // Create a per-repo entity view with repo-specific context for template rendering
     const repoEntity: Entity = {

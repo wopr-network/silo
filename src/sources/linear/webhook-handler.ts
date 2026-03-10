@@ -79,6 +79,8 @@ export function handleLinearWebhook(payload: unknown, watch: WebhookWatchConfig)
           title: data.title,
           description,
         },
+        // Backwards compat: existing templates reference {{entity.artifacts.refs.github.repo}}.
+        // New code should use payload.repos. This will be removed once templates are migrated.
         github: { repo: repos[0] ?? null },
       },
     },

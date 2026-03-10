@@ -121,6 +121,7 @@ export class LinearPoller {
                     title: issue.title,
                     description: issue.description,
                   },
+                  // Backwards compat — see webhook-handler.ts for rationale
                   github: { repo: repos[0] ?? null },
                 },
               },
