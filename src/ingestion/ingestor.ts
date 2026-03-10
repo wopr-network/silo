@@ -26,7 +26,7 @@ export class Ingestor {
     // Only the caller that wins the INSERT proceeds to createEntity;
     // concurrent callers see the conflict and bail out, preventing duplicate entities.
     const sentinel = "__pending__";
-    const won = this.entityMapRepo.insertIfAbsent(event.sourceId, event.externalId, sentinel);
+    const won = await this.entityMapRepo.insertIfAbsent(event.sourceId, event.externalId, sentinel);
     if (!won) {
       return;
     }
@@ -39,12 +39,12 @@ export class Ingestor {
       });
     } catch (err) {
       // Clean up the sentinel so future events can retry.
-      this.entityMapRepo.deleteRow(event.sourceId, event.externalId);
+      await this.entityMapRepo.deleteRow(event.sourceId, event.externalId);
       throw err;
     }
 
     // Update the sentinel row to the real entityId.
-    this.entityMapRepo.updateEntityId(event.sourceId, event.externalId, response.id);
+    await this.entityMapRepo.updateEntityId(event.sourceId, event.externalId, response.id);
 
     // Fire the configured signal (e.g. "start") to advance the entity out of its initial state.
     if (event.signal) {
@@ -53,7 +53,7 @@ export class Ingestor {
   }
 
   private async handleUpdate(event: IngestEvent): Promise<void> {
-    const entityId = this.entityMapRepo.findEntityId(event.sourceId, event.externalId);
+    const entityId = await this.entityMapRepo.findEntityId(event.sourceId, event.externalId);
     if (entityId === undefined) {
       return;
     }

@@ -1,43 +1,23 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import { serve } from "@hono/node-server";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
-import { DrizzleEntityRepository } from "../../src/repositories/drizzle/entity.repo.js";
-import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
-import { DrizzleInvocationRepository } from "../../src/repositories/drizzle/invocation.repo.js";
-import { DrizzleGateRepository } from "../../src/repositories/drizzle/gate.repo.js";
-import { DrizzleTransitionLogRepository } from "../../src/repositories/drizzle/transition-log.repo.js";
-import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.repo.js";
+import { createTestDb } from "../helpers/pg-test-db.js";
+import { createScopedRepos } from "../../src/repositories/scoped-repos.js";
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { createHonoApp, type HonoServerDeps } from "../../src/api/hono-server.js";
 
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
-
-function makeTestDeps(): HonoServerDeps & { stopReaper: () => Promise<void>; closeDb: () => void } {
-  const sqlite = new Database(":memory:");
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-
-  const entityRepo = new DrizzleEntityRepository(db);
-  const flowRepo = new DrizzleFlowRepository(db);
-  const invocationRepo = new DrizzleInvocationRepository(db);
-  const gateRepo = new DrizzleGateRepository(db);
-  const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-  const eventRepo = new DrizzleEventRepository(db);
+async function makeTestDeps(): Promise<HonoServerDeps & { stopReaper: () => Promise<void>; closeDb: () => Promise<void> }> {
+  const { db, close } = await createTestDb();
+  const repos = createScopedRepos(db, "test-tenant");
   const eventEmitter = new EventEmitter();
 
   const engine = new Engine({
-    entityRepo,
-    flowRepo,
-    invocationRepo,
-    gateRepo,
-    transitionLogRepo,
+    entityRepo: repos.entities,
+    flowRepo: repos.flows,
+    invocationRepo: repos.invocations,
+    gateRepo: repos.gates,
+    transitionLogRepo: repos.transitionLog,
     adapters: new Map(),
     eventEmitter,
   });
@@ -45,16 +25,16 @@ function makeTestDeps(): HonoServerDeps & { stopReaper: () => Promise<void>; clo
   const stopReaper = engine.startReaper(5000, 300000);
 
   const mcpDeps = {
-    entities: entityRepo,
-    flows: flowRepo,
-    invocations: invocationRepo,
-    gates: gateRepo,
-    transitions: transitionLogRepo,
-    eventRepo,
+    entities: repos.entities,
+    flows: repos.flows,
+    invocations: repos.invocations,
+    gates: repos.gates,
+    transitions: repos.transitionLog,
+    eventRepo: repos.events,
     engine,
   };
 
-  return { engine, mcpDeps, adminToken: undefined, stopReaper, closeDb: () => sqlite.close() };
+  return { engine, mcpDeps, db, defaultTenantId: "test-tenant", eventEmitter, adminToken: undefined, stopReaper, closeDb: close };
 }
 
 async function startTestServer(deps: HonoServerDeps): Promise<{ server: http.Server; port: number }> {
@@ -71,12 +51,12 @@ async function startTestServer(deps: HonoServerDeps): Promise<{ server: http.Ser
 // ─── HTTP server integration tests ───────────────────────────────────────────
 
 describe("HTTP Server - basic", () => {
-  let deps: ReturnType<typeof makeTestDeps>;
+  let deps: Awaited<ReturnType<typeof makeTestDeps>>;
   let server: http.Server;
   let port: number;
 
   beforeAll(async () => {
-    deps = makeTestDeps();
+    deps = await makeTestDeps();
     const result = await startTestServer(deps);
     server = result.server;
     port = result.port;
@@ -85,6 +65,7 @@ describe("HTTP Server - basic", () => {
   afterAll(async () => {
     server.close();
     await deps.stopReaper();
+    await deps.closeDb();
   });
 
   it("GET /api/status returns engine status", async () => {
@@ -270,12 +251,12 @@ describe("HTTP Server - basic", () => {
 });
 
 describe("HTTP Server - explicit CORS origin", () => {
-  let deps: ReturnType<typeof makeTestDeps>;
+  let deps: Awaited<ReturnType<typeof makeTestDeps>>;
   let server: http.Server;
   let port: number;
 
   beforeAll(async () => {
-    deps = makeTestDeps();
+    deps = await makeTestDeps();
     deps.corsOrigins = ["https://app.example.com"];
     const result = await startTestServer(deps);
     server = result.server;
@@ -285,7 +266,7 @@ describe("HTTP Server - explicit CORS origin", () => {
   afterAll(async () => {
     server.close();
     await deps.stopReaper();
-    deps.closeDb();
+    await deps.closeDb();
   });
 
   it("reflects matching explicit CORS origin", async () => {
@@ -314,10 +295,10 @@ describe("HTTP Server - handler error", () => {
   let server: http.Server;
   let port: number;
   let stopReaper: () => Promise<void>;
-  let closeDb: () => void;
+  let closeDb: () => Promise<void>;
 
   beforeAll(async () => {
-    const deps = makeTestDeps();
+    const deps = await makeTestDeps();
     stopReaper = deps.stopReaper;
     closeDb = deps.closeDb;
     deps.engine.getStatus = async () => {
@@ -331,7 +312,7 @@ describe("HTTP Server - handler error", () => {
   afterAll(async () => {
     server.close();
     await stopReaper();
-    closeDb();
+    await closeDb();
   });
 
   it("returns 500 when handler throws", async () => {
@@ -339,5 +320,51 @@ describe("HTTP Server - handler error", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Internal server error");
+  });
+});
+
+// ─── Tenant isolation ─────────────────────────────────────────────────────────
+
+describe("HTTP Server - tenant isolation via x-tenant-id", () => {
+  let deps: Awaited<ReturnType<typeof makeTestDeps>>;
+  let server: http.Server;
+  let port: number;
+
+  beforeAll(async () => {
+    deps = await makeTestDeps();
+    const result = await startTestServer(deps);
+    server = result.server;
+    port = result.port;
+  });
+
+  afterAll(async () => {
+    server.close();
+    await deps.stopReaper();
+    await deps.closeDb();
+  });
+
+  it("uses default tenant when x-tenant-id header is absent", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/flows`);
+    expect(res.status).toBe(200);
+    const flows = await res.json();
+    expect(Array.isArray(flows)).toBe(true);
+  });
+
+  it("returns empty flows for a different tenant", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/flows`, {
+      headers: { "x-tenant-id": "other-tenant" },
+    });
+    expect(res.status).toBe(200);
+    const flows = await res.json();
+    expect(flows).toEqual([]);
+  });
+
+  it("status works for a different tenant", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { "x-tenant-id": "other-tenant" },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveProperty("flows");
   });
 });

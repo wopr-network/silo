@@ -1,23 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
-import { bootstrap } from "../../../src/main.js";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleEntityRepository } from "../../../src/repositories/drizzle/entity.repo.js";
 import { flowDefinitions, entities } from "../../../src/repositories/drizzle/schema.js";
-import type Database from "better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
-let db: BetterSQLite3Database;
-let sqlite: Database.Database;
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: DrizzleEntityRepository;
 const TEST_FLOW_ID = "test-flow-1";
+const TEST_TENANT = "test-tenant";
 
 beforeEach(async () => {
-  const res = bootstrap(":memory:");
+  const res = await createTestDb();
   db = res.db;
-  sqlite = res.sqlite;
-  repo = new DrizzleEntityRepository(db);
+  close = res.close;
+  repo = new DrizzleEntityRepository(db, TEST_TENANT);
   await db.insert(flowDefinitions).values({
     id: TEST_FLOW_ID,
+    tenantId: TEST_TENANT,
     name: "test-flow",
     initialState: "open",
     version: 1,
@@ -26,8 +26,8 @@ beforeEach(async () => {
   });
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleEntityRepository", () => {

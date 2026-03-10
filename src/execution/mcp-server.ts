@@ -58,7 +58,19 @@ export interface McpServerDeps {
   domainEvents?: IDomainEventRepository;
   engine?: Engine;
   logger?: Logger;
-  withTransaction?: <T>(fn: () => T | Promise<T>) => Promise<T>;
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  withTransaction?: <T>(fn: (tx: any) => T | Promise<T>) => Promise<T>;
+  /** Factory to create tenant-scoped repos from a transaction handle. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  repoFactory?: (txDb: any) => {
+    entities: IEntityRepository;
+    flows: IFlowRepository;
+    invocations: IInvocationRepository;
+    gates: IGateRepository;
+    transitions: ITransitionLogRepository;
+    eventRepo: IEventRepository;
+    domainEvents?: IDomainEventRepository;
+  };
 }
 
 export interface McpServerOpts {
@@ -919,7 +931,7 @@ async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string,
   const cancelled: string[] = [];
   const MAX_CANCEL_DEPTH = 100;
 
-  async function cancelOne(eid: string, depth: number, visited: Set<string>): Promise<void> {
+  async function cancelOne(eid: string, depth: number, visited: Set<string>, d: McpServerDeps = deps): Promise<void> {
     if (visited.has(eid)) return;
     visited.add(eid);
     if (depth > MAX_CANCEL_DEPTH) {
@@ -928,20 +940,20 @@ async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string,
       );
     }
 
-    const e = await deps.entities.get(eid);
+    const e = await d.entities.get(eid);
     const alreadyCancelled = !e || e.state === "cancelled";
 
     if (!alreadyCancelled) {
-      const invocations = await deps.invocations.findByEntity(eid);
+      const invocations = await d.invocations.findByEntity(eid);
       for (const inv of invocations) {
         if (inv.completedAt === null && inv.failedAt === null) {
-          await deps.invocations.fail(inv.id, reason ?? "Cancelled by admin");
+          await d.invocations.fail(inv.id, reason ?? "Cancelled by admin");
         }
       }
 
-      await deps.entities.cancelEntity(eid);
+      await d.entities.cancelEntity(eid);
 
-      await deps.transitions.record({
+      await d.transitions.record({
         entityId: eid,
         fromState: e.state,
         toState: "cancelled",
@@ -950,8 +962,8 @@ async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string,
         timestamp: new Date(),
       });
 
-      if (deps.engine) {
-        await deps.engine.emit({
+      if (d.engine) {
+        await d.engine.emit({
           type: "entity.cancelled",
           entityId: eid,
           flowId: e.flowId,
@@ -966,14 +978,18 @@ async function handleAdminEntityCancel(deps: McpServerDeps, args: Record<string,
     }
 
     if (cascade) {
-      const children = await deps.entities.findByParentId(eid);
+      const children = await d.entities.findByParentId(eid);
       for (const child of children) {
-        await cancelOne(child.id, depth + 1, visited);
+        await cancelOne(child.id, depth + 1, visited, d);
       }
     }
   }
 
-  const run = () => cancelOne(entity_id, 0, new Set<string>());
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver tx handle
+  const run = (tx?: any) => {
+    const effectiveDeps = tx && deps.repoFactory ? { ...deps, ...deps.repoFactory(tx) } : deps;
+    return cancelOne(entity_id, 0, new Set<string>(), effectiveDeps);
+  };
   if (deps.withTransaction) {
     await deps.withTransaction(run);
   } else {

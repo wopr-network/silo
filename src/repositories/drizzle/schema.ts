@@ -1,32 +1,41 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, boolean, index, jsonb, pgTable, serial, text, uniqueIndex } from "drizzle-orm/pg-core";
 
 // ─── Definition Tables ───
 
-export const flowDefinitions = sqliteTable("flow_definitions", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  description: text("description"),
-  entitySchema: text("entity_schema", { mode: "json" }),
-  initialState: text("initial_state").notNull(),
-  maxConcurrent: integer("max_concurrent").default(0),
-  maxConcurrentPerRepo: integer("max_concurrent_per_repo").default(0),
-  affinityWindowMs: integer("affinity_window_ms").default(300000),
-  claimRetryAfterMs: integer("claim_retry_after_ms"),
-  gateTimeoutMs: integer("gate_timeout_ms"),
-  version: integer("version").default(1),
-  createdBy: text("created_by"),
-  discipline: text("discipline"),
-  defaultModelTier: text("default_model_tier"),
-  timeoutPrompt: text("timeout_prompt"),
-  paused: integer("paused").default(0),
-  createdAt: integer("created_at"),
-  updatedAt: integer("updated_at"),
-});
+export const flowDefinitions = pgTable(
+  "flow_definitions",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    entitySchema: jsonb("entity_schema"),
+    initialState: text("initial_state").notNull(),
+    maxConcurrent: bigint("max_concurrent", { mode: "number" }).default(0),
+    maxConcurrentPerRepo: bigint("max_concurrent_per_repo", { mode: "number" }).default(0),
+    affinityWindowMs: bigint("affinity_window_ms", { mode: "number" }).default(300000),
+    claimRetryAfterMs: bigint("claim_retry_after_ms", { mode: "number" }),
+    gateTimeoutMs: bigint("gate_timeout_ms", { mode: "number" }),
+    version: bigint("version", { mode: "number" }).default(1),
+    createdBy: text("created_by"),
+    discipline: text("discipline"),
+    defaultModelTier: text("default_model_tier"),
+    timeoutPrompt: text("timeout_prompt"),
+    paused: boolean("paused").default(false),
+    createdAt: bigint("created_at", { mode: "number" }),
+    updatedAt: bigint("updated_at", { mode: "number" }),
+  },
+  (table) => [
+    uniqueIndex("uq_flow_tenant_name").on(table.tenantId, table.name),
+    index("idx_flow_definitions_tenant").on(table.tenantId),
+  ],
+);
 
-export const stateDefinitions = sqliteTable(
+export const stateDefinitions = pgTable(
   "state_definitions",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     flowId: text("flow_id")
       .notNull()
       .references(() => flowDefinitions.id),
@@ -35,35 +44,42 @@ export const stateDefinitions = sqliteTable(
     modelTier: text("model_tier"),
     mode: text("mode").default("passive"),
     promptTemplate: text("prompt_template"),
-    constraints: text("constraints", { mode: "json" }),
-    onEnter: text("on_enter", { mode: "json" }),
-    onExit: text("on_exit", { mode: "json" }),
-    retryAfterMs: integer("retry_after_ms"),
+    constraints: jsonb("constraints"),
+    onEnter: jsonb("on_enter"),
+    onExit: jsonb("on_exit"),
+    retryAfterMs: bigint("retry_after_ms", { mode: "number" }),
     /** Opaque metadata passed through to consumers. Silo stores but does not interpret. */
-    meta: text("meta", { mode: "json" }),
+    meta: jsonb("meta"),
   },
-  (table) => ({
-    flowNameUnique: uniqueIndex("state_definitions_flow_name_unique").on(table.flowId, table.name),
-  }),
+  (table) => [uniqueIndex("uq_state_tenant_flow_name").on(table.tenantId, table.flowId, table.name)],
 );
 
-export const gateDefinitions = sqliteTable("gate_definitions", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  type: text("type").notNull(),
-  command: text("command"),
-  functionRef: text("function_ref"),
-  apiConfig: text("api_config", { mode: "json" }),
-  timeoutMs: integer("timeout_ms"),
-  failurePrompt: text("failure_prompt"),
-  timeoutPrompt: text("timeout_prompt"),
-  outcomes: text("outcomes", { mode: "json" }),
-});
+export const gateDefinitions = pgTable(
+  "gate_definitions",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    command: text("command"),
+    functionRef: text("function_ref"),
+    apiConfig: jsonb("api_config"),
+    timeoutMs: bigint("timeout_ms", { mode: "number" }),
+    failurePrompt: text("failure_prompt"),
+    timeoutPrompt: text("timeout_prompt"),
+    outcomes: jsonb("outcomes"),
+  },
+  (table) => [
+    uniqueIndex("uq_gate_tenant_name").on(table.tenantId, table.name),
+    index("idx_gate_definitions_tenant").on(table.tenantId),
+  ],
+);
 
-export const transitionRules = sqliteTable(
+export const transitionRules = pgTable(
   "transition_rules",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     flowId: text("flow_id")
       .notNull()
       .references(() => flowDefinitions.id),
@@ -72,70 +88,74 @@ export const transitionRules = sqliteTable(
     trigger: text("trigger").notNull(),
     gateId: text("gate_id").references(() => gateDefinitions.id),
     condition: text("condition"),
-    priority: integer("priority").default(0),
+    priority: bigint("priority", { mode: "number" }).default(0),
     spawnFlow: text("spawn_flow"),
     spawnTemplate: text("spawn_template"),
-    createdAt: integer("created_at"),
+    createdAt: bigint("created_at", { mode: "number" }),
   },
-  (table) => ({
-    flowIdx: index("transition_rules_flow_id_idx").on(table.flowId),
-    gateIdx: index("transition_rules_gate_id_idx").on(table.gateId),
-  }),
+  (table) => [
+    index("transition_rules_flow_id_idx").on(table.flowId),
+    index("transition_rules_gate_id_idx").on(table.gateId),
+    index("idx_transition_rules_tenant").on(table.tenantId),
+  ],
 );
 
-export const flowVersions = sqliteTable(
+export const flowVersions = pgTable(
   "flow_versions",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     flowId: text("flow_id")
       .notNull()
       .references(() => flowDefinitions.id),
-    version: integer("version").notNull(),
-    snapshot: text("snapshot", { mode: "json" }),
+    version: bigint("version", { mode: "number" }).notNull(),
+    snapshot: jsonb("snapshot"),
     changedBy: text("changed_by"),
     changeReason: text("change_reason"),
-    createdAt: integer("created_at"),
+    createdAt: bigint("created_at", { mode: "number" }),
   },
-  (table) => ({
-    flowVersionUnique: uniqueIndex("flow_versions_flow_version_unique").on(table.flowId, table.version),
-  }),
+  (table) => [uniqueIndex("uq_flow_version_tenant_flow_ver").on(table.tenantId, table.flowId, table.version)],
 );
 
 // ─── Runtime Tables ───
 
-export const entities = sqliteTable(
+export const entities = pgTable(
   "entities",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     flowId: text("flow_id")
       .notNull()
       .references(() => flowDefinitions.id),
     state: text("state").notNull(),
-    refs: text("refs", { mode: "json" }),
-    artifacts: text("artifacts", { mode: "json" }),
+    refs: jsonb("refs"),
+    artifacts: jsonb("artifacts"),
     claimedBy: text("claimed_by"),
-    claimedAt: integer("claimed_at"),
-    flowVersion: integer("flow_version"),
-    priority: integer("priority").default(0),
-    createdAt: integer("created_at"),
-    updatedAt: integer("updated_at"),
+    claimedAt: bigint("claimed_at", { mode: "number" }),
+    flowVersion: bigint("flow_version", { mode: "number" }),
+    priority: bigint("priority", { mode: "number" }).default(0),
+    createdAt: bigint("created_at", { mode: "number" }),
+    updatedAt: bigint("updated_at", { mode: "number" }),
     affinityWorkerId: text("affinity_worker_id"),
     affinityRole: text("affinity_role"),
-    affinityExpiresAt: integer("affinity_expires_at"),
+    affinityExpiresAt: bigint("affinity_expires_at", { mode: "number" }),
     parentEntityId: text("parent_entity_id"),
   },
-  (table) => ({
-    flowStateIdx: index("entities_flow_state_idx").on(table.flowId, table.state),
-    claimIdx: index("entities_claim_idx").on(table.flowId, table.state, table.claimedBy),
-    affinityIdx: index("entities_affinity_idx").on(table.affinityWorkerId, table.affinityRole, table.affinityExpiresAt),
-    parentIdx: index("entities_parent_idx").on(table.parentEntityId),
-  }),
+  (table) => [
+    index("entities_flow_state_idx").on(table.flowId, table.state),
+    index("entities_claim_idx").on(table.flowId, table.state, table.claimedBy),
+    index("entities_affinity_idx").on(table.affinityWorkerId, table.affinityRole, table.affinityExpiresAt),
+    index("entities_parent_idx").on(table.parentEntityId),
+    index("idx_entities_tenant_state").on(table.tenantId, table.state),
+    index("idx_entities_tenant_flow").on(table.tenantId, table.flowId),
+  ],
 );
 
-export const invocations = sqliteTable(
+export const invocations = pgTable(
   "invocations",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     entityId: text("entity_id")
       .notNull()
       .references(() => entities.id),
@@ -143,47 +163,49 @@ export const invocations = sqliteTable(
     agentRole: text("agent_role"),
     mode: text("mode").notNull(),
     prompt: text("prompt").notNull(),
-    context: text("context", { mode: "json" }),
+    context: jsonb("context"),
     claimedBy: text("claimed_by"),
-    claimedAt: integer("claimed_at"),
-    startedAt: integer("started_at"),
-    completedAt: integer("completed_at"),
-    failedAt: integer("failed_at"),
+    claimedAt: bigint("claimed_at", { mode: "number" }),
+    startedAt: bigint("started_at", { mode: "number" }),
+    completedAt: bigint("completed_at", { mode: "number" }),
+    failedAt: bigint("failed_at", { mode: "number" }),
     signal: text("signal"),
-    artifacts: text("artifacts", { mode: "json" }),
+    artifacts: jsonb("artifacts"),
     error: text("error"),
-    ttlMs: integer("ttl_ms").default(1800000),
-    createdAt: integer("created_at"),
+    ttlMs: bigint("ttl_ms", { mode: "number" }).default(1800000),
+    createdAt: bigint("created_at", { mode: "number" }),
   },
-  (table) => ({
-    entityIdx: index("invocations_entity_idx").on(table.entityId),
-  }),
+  (table) => [index("invocations_entity_idx").on(table.entityId), index("idx_invocations_tenant").on(table.tenantId)],
 );
 
-export const gateResults = sqliteTable(
+export const gateResults = pgTable(
   "gate_results",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    seq: serial("seq"),
     entityId: text("entity_id")
       .notNull()
       .references(() => entities.id),
     gateId: text("gate_id")
       .notNull()
       .references(() => gateDefinitions.id),
-    passed: integer("passed").notNull(),
+    passed: boolean("passed").notNull(),
     output: text("output"),
-    evaluatedAt: integer("evaluated_at"),
+    evaluatedAt: bigint("evaluated_at", { mode: "number" }),
   },
-  (table) => ({
-    entityIdx: index("gate_results_entity_id_idx").on(table.entityId),
-    gateIdx: index("gate_results_gate_id_idx").on(table.gateId),
-  }),
+  (table) => [
+    index("gate_results_entity_id_idx").on(table.entityId),
+    index("gate_results_gate_id_idx").on(table.gateId),
+  ],
 );
 
-export const entityHistory = sqliteTable(
+export const entityHistory = pgTable(
   "entity_history",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    seq: serial("seq"),
     entityId: text("entity_id")
       .notNull()
       .references(() => entities.id),
@@ -191,91 +213,101 @@ export const entityHistory = sqliteTable(
     toState: text("to_state").notNull(),
     trigger: text("trigger"),
     invocationId: text("invocation_id").references(() => invocations.id),
-    timestamp: integer("timestamp").notNull(),
+    timestamp: bigint("timestamp", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    entityTimestampIdx: index("entity_history_entity_ts_idx").on(table.entityId, table.timestamp),
-    invocationIdx: index("entity_history_invocation_id_idx").on(table.invocationId),
-  }),
+  (table) => [
+    index("entity_history_entity_ts_idx").on(table.entityId, table.timestamp),
+    index("entity_history_invocation_id_idx").on(table.invocationId),
+  ],
 );
 
-export const events = sqliteTable(
+export const events = pgTable(
   "events",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     type: text("type").notNull(),
     entityId: text("entity_id"),
     flowId: text("flow_id"),
-    payload: text("payload", { mode: "json" }),
-    emittedAt: integer("emitted_at").notNull(),
+    payload: jsonb("payload"),
+    emittedAt: bigint("emitted_at", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    typeEmittedIdx: index("events_type_emitted_idx").on(table.type, table.emittedAt),
-    entityIdIdx: index("events_entity_id_idx").on(table.entityId),
-    emittedAtIdx: index("events_emitted_at_idx").on(table.emittedAt),
-  }),
+  (table) => [
+    index("events_type_emitted_idx").on(table.type, table.emittedAt),
+    index("events_entity_id_idx").on(table.entityId),
+    index("events_emitted_at_idx").on(table.emittedAt),
+    index("idx_events_tenant").on(table.tenantId),
+  ],
 );
 
-export const domainEvents = sqliteTable(
+export const domainEvents = pgTable(
   "domain_events",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     type: text("type").notNull(),
     entityId: text("entity_id").notNull(),
-    payload: text("payload", { mode: "json" }).notNull(),
-    sequence: integer("sequence").notNull(),
-    emittedAt: integer("emitted_at").notNull(),
+    payload: jsonb("payload").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    emittedAt: bigint("emitted_at", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    entitySeqIdx: uniqueIndex("domain_events_entity_seq_idx").on(table.entityId, table.sequence),
-    typeIdx: index("domain_events_type_idx").on(table.type, table.emittedAt),
-  }),
+  (table) => [
+    uniqueIndex("domain_events_entity_seq_idx").on(table.entityId, table.sequence),
+    index("domain_events_type_idx").on(table.type, table.emittedAt),
+  ],
 );
 
-export const entitySnapshots = sqliteTable(
+export const entitySnapshots = pgTable(
   "entity_snapshots",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     entityId: text("entity_id").notNull(),
-    sequence: integer("sequence").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
     state: text("state").notNull(),
     flowId: text("flow_id").notNull(),
-    refs: text("refs", { mode: "json" }),
-    artifacts: text("artifacts", { mode: "json" }),
+    refs: jsonb("refs"),
+    artifacts: jsonb("artifacts"),
     claimedBy: text("claimed_by"),
-    claimedAt: integer("claimed_at"),
-    flowVersion: integer("flow_version"),
-    priority: integer("priority").default(0),
+    claimedAt: bigint("claimed_at", { mode: "number" }),
+    flowVersion: bigint("flow_version", { mode: "number" }),
+    priority: bigint("priority", { mode: "number" }).default(0),
     affinityWorkerId: text("affinity_worker_id"),
     affinityRole: text("affinity_role"),
-    affinityExpiresAt: integer("affinity_expires_at"),
-    createdAt: integer("created_at"),
-    updatedAt: integer("updated_at"),
-    snapshotAt: integer("snapshot_at").notNull(),
+    affinityExpiresAt: bigint("affinity_expires_at", { mode: "number" }),
+    createdAt: bigint("created_at", { mode: "number" }),
+    updatedAt: bigint("updated_at", { mode: "number" }),
+    snapshotAt: bigint("snapshot_at", { mode: "number" }).notNull(),
     parentEntityId: text("parent_entity_id"),
   },
-  (table) => ({
-    entitySeqUnique: uniqueIndex("entity_snapshots_entity_seq_idx").on(table.entityId, table.sequence),
-    entityLatestIdx: index("entity_snapshots_entity_latest_idx").on(table.entityId, table.snapshotAt),
-  }),
+  (table) => [
+    uniqueIndex("entity_snapshots_entity_seq_idx").on(table.entityId, table.sequence),
+    index("entity_snapshots_entity_latest_idx").on(table.entityId, table.snapshotAt),
+  ],
 );
 
 // ─── Worker Pool Tables (merged from radar-db) ───
 
-export const sources = sqliteTable("sources", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  type: text("type").notNull(),
-  config: text("config").notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const sources = pgTable(
+  "sources",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    config: text("config").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [uniqueIndex("uq_source_tenant_name").on(table.tenantId, table.name)],
+);
 
-export const watches = sqliteTable(
+export const watches = pgTable(
   "watches",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     sourceId: text("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
@@ -283,19 +315,18 @@ export const watches = sqliteTable(
     filter: text("filter").notNull(),
     action: text("action").notNull(),
     actionConfig: text("action_config").notNull(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    sourceIdx: index("watches_source_id_idx").on(table.sourceId),
-  }),
+  (table) => [index("watches_source_id_idx").on(table.sourceId)],
 );
 
-export const eventLog = sqliteTable(
+export const eventLog = pgTable(
   "event_log",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     sourceId: text("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
@@ -303,63 +334,68 @@ export const eventLog = sqliteTable(
     rawEvent: text("raw_event").notNull(),
     actionTaken: text("action_taken"),
     siloResponse: text("silo_response"),
-    createdAt: integer("created_at").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
-  (table) => ({
-    sourceIdx: index("event_log_source_id_idx").on(table.sourceId),
-    watchIdx: index("event_log_watch_id_idx").on(table.watchId),
-  }),
+  (table) => [index("event_log_source_id_idx").on(table.sourceId), index("event_log_watch_id_idx").on(table.watchId)],
 );
 
-export const workers = sqliteTable("workers", {
+export const workers = pgTable("workers", {
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(),
   discipline: text("discipline").notNull(),
   status: text("status").notNull().default("idle"),
   config: text("config"),
-  lastHeartbeat: integer("last_heartbeat").notNull(),
-  createdAt: integer("created_at").notNull(),
+  lastHeartbeat: bigint("last_heartbeat", { mode: "number" }).notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
-export const entityActivity = sqliteTable(
+export const entityActivity = pgTable(
   "entity_activity",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     entityId: text("entity_id").notNull(),
     slotId: text("slot_id").notNull(),
-    seq: integer("seq").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
     type: text("type").notNull(),
     data: text("data").notNull(),
-    createdAt: integer("created_at").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
   (t) => [
     index("entity_activity_entity_id_idx").on(t.entityId),
-    uniqueIndex("entity_activity_entity_seq_uniq").on(t.entityId, t.seq),
+    uniqueIndex("entity_activity_entity_seq_uniq").on(t.tenantId, t.entityId, t.seq),
   ],
 );
 
-export const throughputEvents = sqliteTable(
+export const throughputEvents = pgTable(
   "throughput_events",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     outcome: text("outcome").notNull(),
-    durationMs: integer("duration_ms").notNull(),
-    createdAt: integer("created_at").notNull(),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
   (t) => [index("throughput_events_created_at_idx").on(t.createdAt)],
 );
 
-export const entityMap = sqliteTable(
+export const entityMap = pgTable(
   "entity_map",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
     sourceId: text("source_id")
       .notNull()
       .references(() => sources.id, { onDelete: "cascade" }),
     externalId: text("external_id").notNull(),
     entityId: text("entity_id").notNull(),
-    createdAt: integer("created_at").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
-  (t) => [uniqueIndex("entity_map_source_external_uniq").on(t.sourceId, t.externalId)],
+  (t) => [
+    uniqueIndex("entity_map_source_external_uniq").on(t.tenantId, t.sourceId, t.externalId),
+    // Separate index on sourceId for efficient FK cascade deletes from sources table.
+    index("entity_map_source_id_idx").on(t.sourceId),
+  ],
 );

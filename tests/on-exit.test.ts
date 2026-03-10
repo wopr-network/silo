@@ -1,20 +1,19 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestDb, type TestDb } from "./helpers/pg-test-db.js";
 import { Engine } from "../src/engine/engine.js";
 import { executeOnExit } from "../src/engine/on-exit.js";
 import { DrizzleEntityRepository } from "../src/repositories/drizzle/entity.repo.js";
 import { DrizzleFlowRepository } from "../src/repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../src/repositories/drizzle/gate.repo.js";
 import { DrizzleInvocationRepository } from "../src/repositories/drizzle/invocation.repo.js";
-import * as schema from "../src/repositories/drizzle/schema.js";
 import type {
   Entity,
   IEventBusAdapter,
   ITransitionLogRepository,
   OnExitConfig,
 } from "../src/repositories/interfaces.js";
+
+const TEST_TENANT = "test-tenant";
 
 function makeEntity(overrides?: Partial<Entity>): Entity {
   return {
@@ -73,20 +72,22 @@ describe("executeOnExit", () => {
 });
 
 describe("Engine.processSignal onExit integration", () => {
+  let db: TestDb;
+  let close: () => Promise<void>;
   let engine: Engine;
   let flowRepo: DrizzleFlowRepository;
   let entityRepo: DrizzleEntityRepository;
   let emittedEvents: Array<{ type: string; [key: string]: unknown }>;
 
-  beforeEach(() => {
-    const sqlite = new Database(":memory:");
-    const db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: "drizzle" });
+  beforeEach(async () => {
+    const res = await createTestDb();
+    db = res.db;
+    close = res.close;
 
-    flowRepo = new DrizzleFlowRepository(db);
-    entityRepo = new DrizzleEntityRepository(db);
-    const invocationRepo = new DrizzleInvocationRepository(db);
-    const gateRepo = new DrizzleGateRepository(db);
+    flowRepo = new DrizzleFlowRepository(db, TEST_TENANT);
+    entityRepo = new DrizzleEntityRepository(db, TEST_TENANT);
+    const invocationRepo = new DrizzleInvocationRepository(db, TEST_TENANT);
+    const gateRepo = new DrizzleGateRepository(db, TEST_TENANT);
     emittedEvents = [];
     const eventEmitter: IEventBusAdapter = {
       emit: async (event) => {
@@ -115,6 +116,10 @@ describe("Engine.processSignal onExit integration", () => {
       adapters: new Map(),
       eventEmitter,
     });
+  });
+
+  afterEach(async () => {
+    await close();
   });
 
   it("runs onExit on the departing state when gate passes", async () => {

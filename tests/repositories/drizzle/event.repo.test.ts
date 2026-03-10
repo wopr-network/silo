@@ -1,22 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type Database from "better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { bootstrap } from "../../../src/main.js";
+import { randomUUID } from "node:crypto";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleEventRepository } from "../../../src/repositories/drizzle/event.repo.js";
+import { events as eventsTable } from "../../../src/repositories/drizzle/schema.js";
 
-let db: BetterSQLite3Database;
-let sqlite: Database.Database;
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: DrizzleEventRepository;
 
-beforeEach(() => {
-  const res = bootstrap(":memory:");
-  db = res.db;
-  sqlite = res.sqlite;
-  repo = new DrizzleEventRepository(db);
+const TENANT = "test-tenant";
+
+beforeEach(async () => {
+  const testDb = await createTestDb();
+  db = testDb.db;
+  close = testDb.close;
+  repo = new DrizzleEventRepository(db, TENANT);
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleEventRepository", () => {
@@ -24,7 +26,7 @@ describe("DrizzleEventRepository", () => {
     it("inserts a definition.changed event with flowId", async () => {
       await repo.emitDefinitionChanged("flow-1", "flow.create", { name: "test-flow" });
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows).toHaveLength(1);
       expect(rows[0].type).toBe("definition.changed");
       expect(rows[0].flowId).toBe("flow-1");
@@ -37,7 +39,7 @@ describe("DrizzleEventRepository", () => {
     it("inserts a definition.changed event with null flowId", async () => {
       await repo.emitDefinitionChanged(null, "gate.create", { gateName: "lint" });
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows).toHaveLength(1);
       expect(rows[0].flowId).toBeNull();
       expect(rows[0].payload).toEqual({ tool: "gate.create", gateName: "lint" });
@@ -46,7 +48,7 @@ describe("DrizzleEventRepository", () => {
     it("coerces empty string flowId to null", async () => {
       await repo.emitDefinitionChanged("", "flow.update", {});
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows).toHaveLength(1);
       expect(rows[0].flowId).toBeNull();
     });
@@ -56,7 +58,7 @@ describe("DrizzleEventRepository", () => {
       await repo.emitDefinitionChanged("flow-1", "state.add", { b: 2 });
       await repo.emitDefinitionChanged("flow-2", "flow.create", { c: 3 });
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows).toHaveLength(3);
       const ids = rows.map((r) => r.id);
       expect(new Set(ids).size).toBe(3);
@@ -67,7 +69,7 @@ describe("DrizzleEventRepository", () => {
       await repo.emitDefinitionChanged("flow-1", "flow.create", {});
       const after = Date.now();
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows[0].emittedAt).toBeGreaterThanOrEqual(before);
       expect(rows[0].emittedAt).toBeLessThanOrEqual(after);
     });
@@ -76,7 +78,7 @@ describe("DrizzleEventRepository", () => {
       const payload = { nested: { key: "value" }, arr: [1, 2, 3], flag: true };
       await repo.emitDefinitionChanged("flow-1", "flow.update", payload);
 
-      const rows = repo.findAll();
+      const rows = await repo.findAll();
       expect(rows[0].payload).toEqual({ tool: "flow.update", ...payload });
     });
   });
@@ -85,10 +87,24 @@ describe("DrizzleEventRepository", () => {
     it("returns events for the given entityId", async () => {
       await repo.emitDefinitionChanged("flow-1", "flow.create", { entityId: "e1" });
       // Insert a raw event with an entityId via the events table directly
-      const { events: eventsTable } = await import("../../../src/repositories/drizzle/schema.js");
-      const { randomUUID } = await import("node:crypto");
-      db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: "e1", flowId: "f1", payload: {}, emittedAt: Date.now() }).run();
-      db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: "e2", flowId: "f1", payload: {}, emittedAt: Date.now() }).run();
+      await db.insert(eventsTable).values({
+        id: randomUUID(),
+        tenantId: TENANT,
+        type: "entity.created",
+        entityId: "e1",
+        flowId: "f1",
+        payload: {},
+        emittedAt: Date.now(),
+      });
+      await db.insert(eventsTable).values({
+        id: randomUUID(),
+        tenantId: TENANT,
+        type: "entity.created",
+        entityId: "e2",
+        flowId: "f1",
+        payload: {},
+        emittedAt: Date.now(),
+      });
 
       const rows = await repo.findByEntity("e1");
       expect(rows.every((r) => r.entityId === "e1")).toBe(true);
@@ -96,10 +112,16 @@ describe("DrizzleEventRepository", () => {
     });
 
     it("respects the limit parameter", async () => {
-      const { events: eventsTable } = await import("../../../src/repositories/drizzle/schema.js");
-      const { randomUUID } = await import("node:crypto");
       for (let i = 0; i < 5; i++) {
-        db.insert(eventsTable).values({ id: randomUUID(), type: "entity.updated", entityId: "e3", flowId: null, payload: {}, emittedAt: Date.now() + i }).run();
+        await db.insert(eventsTable).values({
+          id: randomUUID(),
+          tenantId: TENANT,
+          type: "entity.updated",
+          entityId: "e3",
+          flowId: null,
+          payload: {},
+          emittedAt: Date.now() + i,
+        });
       }
       const rows = await repo.findByEntity("e3", 3);
       expect(rows).toHaveLength(3);
@@ -108,21 +130,49 @@ describe("DrizzleEventRepository", () => {
 
   describe("findRecent", () => {
     it("returns all events up to the limit", async () => {
-      const { events: eventsTable } = await import("../../../src/repositories/drizzle/schema.js");
-      const { randomUUID } = await import("node:crypto");
       for (let i = 0; i < 5; i++) {
-        db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: `e${i}`, flowId: null, payload: {}, emittedAt: Date.now() + i }).run();
+        await db.insert(eventsTable).values({
+          id: randomUUID(),
+          tenantId: TENANT,
+          type: "entity.created",
+          entityId: `e${i}`,
+          flowId: null,
+          payload: {},
+          emittedAt: Date.now() + i,
+        });
       }
       const rows = await repo.findRecent(3);
       expect(rows).toHaveLength(3);
     });
 
     it("returns events ordered by emittedAt descending", async () => {
-      const { events: eventsTable } = await import("../../../src/repositories/drizzle/schema.js");
-      const { randomUUID } = await import("node:crypto");
-      db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: "ea", flowId: null, payload: {}, emittedAt: 1000 }).run();
-      db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: "eb", flowId: null, payload: {}, emittedAt: 3000 }).run();
-      db.insert(eventsTable).values({ id: randomUUID(), type: "entity.created", entityId: "ec", flowId: null, payload: {}, emittedAt: 2000 }).run();
+      await db.insert(eventsTable).values({
+        id: randomUUID(),
+        tenantId: TENANT,
+        type: "entity.created",
+        entityId: "ea",
+        flowId: null,
+        payload: {},
+        emittedAt: 1000,
+      });
+      await db.insert(eventsTable).values({
+        id: randomUUID(),
+        tenantId: TENANT,
+        type: "entity.created",
+        entityId: "eb",
+        flowId: null,
+        payload: {},
+        emittedAt: 3000,
+      });
+      await db.insert(eventsTable).values({
+        id: randomUUID(),
+        tenantId: TENANT,
+        type: "entity.created",
+        entityId: "ec",
+        flowId: null,
+        payload: {},
+        emittedAt: 2000,
+      });
 
       const rows = await repo.findRecent(10);
       expect(rows[0].emittedAt).toBeGreaterThanOrEqual(rows[1].emittedAt);

@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { RadarDb } from "../index.js";
 import { eventLog } from "../schema.js";
 
@@ -33,60 +33,68 @@ function toRow(raw: typeof eventLog.$inferSelect): EventLogRow {
 }
 
 export class EventLogRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
-  append(input: AppendEventInput): EventLogRow {
+  async append(input: AppendEventInput): Promise<EventLogRow> {
     const id = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
-    this.db
-      .insert(eventLog)
-      .values({
-        id,
-        sourceId: input.sourceId,
-        watchId: input.watchId,
-        rawEvent: JSON.stringify(input.rawEvent),
-        actionTaken: input.actionTaken,
-        siloResponse: input.siloResponse ? JSON.stringify(input.siloResponse) : null,
-        createdAt: now,
-      })
-      .run();
-    const row = this.db.select().from(eventLog).where(eq(eventLog.id, id)).get();
+    await this.db.insert(eventLog).values({
+      id,
+      tenantId: this.tenantId,
+      sourceId: input.sourceId,
+      watchId: input.watchId,
+      rawEvent: JSON.stringify(input.rawEvent),
+      actionTaken: input.actionTaken,
+      siloResponse: input.siloResponse ? JSON.stringify(input.siloResponse) : null,
+      createdAt: now,
+    });
+    const [row] = await this.db.select().from(eventLog).where(eq(eventLog.id, id));
     if (!row) throw new Error("Insert failed");
     return toRow(row);
   }
 
-  getById(id: string): EventLogRow | undefined {
-    const row = this.db.select().from(eventLog).where(eq(eventLog.id, id)).get();
+  async getById(id: string): Promise<EventLogRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(eventLog)
+      .where(and(eq(eventLog.id, id), eq(eventLog.tenantId, this.tenantId)));
     return row ? toRow(row) : undefined;
   }
 
-  list(opts?: { limit?: number; offset?: number }): EventLogRow[] {
-    const query = this.db
+  async list(opts?: { limit?: number; offset?: number }): Promise<EventLogRow[]> {
+    let query = this.db
       .select()
       .from(eventLog)
+      .where(eq(eventLog.tenantId, this.tenantId))
       .orderBy(desc(eventLog.createdAt))
-      .limit(opts?.limit ?? -1)
       .offset(opts?.offset ?? 0);
-    return query.all().map(toRow);
+    if (opts?.limit && opts.limit > 0) query = query.limit(opts.limit) as typeof query;
+    const rows = await query;
+    return rows.map(toRow);
   }
 
-  queryBySource(sourceId: string, opts?: { limit?: number }): EventLogRow[] {
-    const query = this.db
+  async queryBySource(sourceId: string, opts?: { limit?: number }): Promise<EventLogRow[]> {
+    let query = this.db
       .select()
       .from(eventLog)
-      .where(eq(eventLog.sourceId, sourceId))
-      .orderBy(desc(eventLog.createdAt))
-      .limit(opts?.limit ?? -1);
-    return query.all().map(toRow);
+      .where(and(eq(eventLog.sourceId, sourceId), eq(eventLog.tenantId, this.tenantId)))
+      .orderBy(desc(eventLog.createdAt));
+    if (opts?.limit && opts.limit > 0) query = query.limit(opts.limit) as typeof query;
+    const rows = await query;
+    return rows.map(toRow);
   }
 
-  queryByWatch(watchId: string, opts?: { limit?: number }): EventLogRow[] {
-    const query = this.db
+  async queryByWatch(watchId: string, opts?: { limit?: number }): Promise<EventLogRow[]> {
+    let query = this.db
       .select()
       .from(eventLog)
-      .where(eq(eventLog.watchId, watchId))
-      .orderBy(desc(eventLog.createdAt))
-      .limit(opts?.limit ?? -1);
-    return query.all().map(toRow);
+      .where(and(eq(eventLog.watchId, watchId), eq(eventLog.tenantId, this.tenantId)))
+      .orderBy(desc(eventLog.createdAt));
+    if (opts?.limit && opts.limit > 0) query = query.limit(opts.limit) as typeof query;
+    const rows = await query;
+    return rows.map(toRow);
   }
 }

@@ -1,40 +1,39 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq, sql } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { and, asc, eq } from "drizzle-orm";
 import type { ITransitionLogRepository, TransitionLog } from "../interfaces.js";
-import type * as schema from "./schema.js";
 import { entityHistory } from "./schema.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (postgres-js + PGlite)
+type Db = any;
 
 export class DrizzleTransitionLogRepository implements ITransitionLogRepository {
-  constructor(private db: Db) {}
+  constructor(
+    private db: Db,
+    private tenantId: string,
+  ) {}
 
   async record(log: Omit<TransitionLog, "id">): Promise<TransitionLog> {
     const id = randomUUID();
-    this.db
-      .insert(entityHistory)
-      .values({
-        id,
-        entityId: log.entityId,
-        fromState: log.fromState ?? null,
-        toState: log.toState,
-        trigger: log.trigger ?? null,
-        invocationId: log.invocationId ?? null,
-        timestamp: log.timestamp.getTime(),
-      })
-      .run();
+    await this.db.insert(entityHistory).values({
+      id,
+      tenantId: this.tenantId,
+      entityId: log.entityId,
+      fromState: log.fromState ?? null,
+      toState: log.toState,
+      trigger: log.trigger ?? null,
+      invocationId: log.invocationId ?? null,
+      timestamp: log.timestamp.getTime(),
+    });
     return { id, ...log };
   }
 
   async historyFor(entityId: string): Promise<TransitionLog[]> {
-    const rows = this.db
+    const rows = await this.db
       .select()
       .from(entityHistory)
-      .where(eq(entityHistory.entityId, entityId))
-      .orderBy(asc(entityHistory.timestamp), sql`rowid`)
-      .all();
-    return rows.map((r) => ({
+      .where(and(eq(entityHistory.entityId, entityId), eq(entityHistory.tenantId, this.tenantId)))
+      .orderBy(asc(entityHistory.timestamp), asc(entityHistory.seq));
+    return rows.map((r: typeof entityHistory.$inferSelect) => ({
       id: r.id,
       entityId: r.entityId,
       fromState: r.fromState,

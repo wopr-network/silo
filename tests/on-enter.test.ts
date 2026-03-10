@@ -1,15 +1,14 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestDb, type TestDb } from "./helpers/pg-test-db.js";
 import { Engine } from "../src/engine/engine.js";
 import { executeOnEnter } from "../src/engine/on-enter.js";
 import { DrizzleEntityRepository } from "../src/repositories/drizzle/entity.repo.js";
 import { DrizzleFlowRepository } from "../src/repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../src/repositories/drizzle/gate.repo.js";
 import { DrizzleInvocationRepository } from "../src/repositories/drizzle/invocation.repo.js";
-import * as schema from "../src/repositories/drizzle/schema.js";
 import type { Entity, IEntityRepository, IEventBusAdapter, ITransitionLogRepository, OnEnterConfig } from "../src/repositories/interfaces.js";
+
+const TEST_TENANT = "test-tenant";
 
 function makeEntity(overrides?: Partial<Entity>): Entity {
   return {
@@ -202,22 +201,22 @@ describe("executeOnEnter", () => {
 });
 
 describe("Engine onEnter integration", () => {
+  let db: TestDb;
+  let close: () => Promise<void>;
   let engine: Engine;
   let entityRepo: DrizzleEntityRepository;
   let flowRepo: DrizzleFlowRepository;
   let events: Array<{ type: string }>;
 
-  beforeEach(() => {
-    const sqlite = new Database(":memory:");
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-    const db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: "./drizzle" });
+  beforeEach(async () => {
+    const res = await createTestDb();
+    db = res.db;
+    close = res.close;
 
-    entityRepo = new DrizzleEntityRepository(db as Parameters<typeof DrizzleEntityRepository>[0]);
-    flowRepo = new DrizzleFlowRepository(db as Parameters<typeof DrizzleFlowRepository>[0]);
-    const invocationRepo = new DrizzleInvocationRepository(db as Parameters<typeof DrizzleInvocationRepository>[0]);
-    const gateRepo = new DrizzleGateRepository(db as Parameters<typeof DrizzleGateRepository>[0]);
+    entityRepo = new DrizzleEntityRepository(db, TEST_TENANT);
+    flowRepo = new DrizzleFlowRepository(db, TEST_TENANT);
+    const invocationRepo = new DrizzleInvocationRepository(db, TEST_TENANT);
+    const gateRepo = new DrizzleGateRepository(db, TEST_TENANT);
     const transitionRepo: ITransitionLogRepository = {
       record: async (log) => ({ id: crypto.randomUUID(), ...log }),
       historyFor: async () => [],
@@ -238,6 +237,10 @@ describe("Engine onEnter integration", () => {
       adapters: new Map(),
       eventEmitter,
     });
+  });
+
+  afterEach(async () => {
+    await close();
   });
 
   it("onEnter runs and artifacts are merged before invocation creation", async () => {
@@ -332,16 +335,14 @@ describe("Engine onEnter integration", () => {
       historyFor: async () => [],
     };
 
-    const sqlite = new Database(":memory:");
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-    const db2 = drizzle(sqlite, { schema });
-    migrate(db2, { migrationsFolder: "./drizzle" });
+    const res2 = await createTestDb();
+    const db2 = res2.db;
+    const close2 = res2.close;
 
-    const entityRepo2 = new DrizzleEntityRepository(db2 as Parameters<typeof DrizzleEntityRepository>[0]);
-    const flowRepo2 = new DrizzleFlowRepository(db2 as Parameters<typeof DrizzleFlowRepository>[0]);
-    const invocationRepo2 = new DrizzleInvocationRepository(db2 as Parameters<typeof DrizzleInvocationRepository>[0]);
-    const gateRepo2 = new DrizzleGateRepository(db2 as Parameters<typeof DrizzleGateRepository>[0]);
+    const entityRepo2 = new DrizzleEntityRepository(db2, TEST_TENANT);
+    const flowRepo2 = new DrizzleFlowRepository(db2, TEST_TENANT);
+    const invocationRepo2 = new DrizzleInvocationRepository(db2, TEST_TENANT);
+    const gateRepo2 = new DrizzleGateRepository(db2, TEST_TENANT);
 
     const engine2 = new Engine({
       entityRepo: entityRepo2,
@@ -373,6 +374,8 @@ describe("Engine onEnter integration", () => {
       fromState: "triage",
       toState: "coding",
     }));
+
+    await close2();
   });
 
   it("createEntity throws when onEnter fails on initial state", async () => {

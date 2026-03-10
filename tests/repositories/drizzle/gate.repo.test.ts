@@ -1,76 +1,43 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "../../../src/repositories/drizzle/schema.js";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleGateRepository } from "../../../src/repositories/drizzle/gate.repo.js";
+import { entities, flowDefinitions } from "../../../src/repositories/drizzle/schema.js";
 
-function createTestDb() {
-  const sqlite = new Database(":memory:");
-  const db = drizzle(sqlite, { schema });
-  sqlite.exec(`
-    CREATE TABLE flow_definitions (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      description TEXT,
-      entity_schema TEXT,
-      initial_state TEXT NOT NULL,
-      max_concurrent INTEGER DEFAULT 0,
-      max_concurrent_per_repo INTEGER DEFAULT 0,
-      version INTEGER DEFAULT 1,
-      created_by TEXT,
-      created_at INTEGER,
-      updated_at INTEGER
-    );
-    CREATE TABLE gate_definitions (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      type TEXT NOT NULL,
-      command TEXT,
-      function_ref TEXT,
-      api_config TEXT,
-      timeout_ms INTEGER DEFAULT 30000,
-      failure_prompt TEXT,
-      timeout_prompt TEXT,
-      outcomes TEXT
-    );
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      flow_id TEXT NOT NULL REFERENCES flow_definitions(id),
-      state TEXT NOT NULL,
-      refs TEXT,
-      artifacts TEXT,
-      claimed_by TEXT,
-      claimed_at INTEGER,
-      flow_version INTEGER,
-      created_at INTEGER,
-      updated_at INTEGER
-    );
-    CREATE TABLE gate_results (
-      id TEXT PRIMARY KEY,
-      entity_id TEXT NOT NULL REFERENCES entities(id),
-      gate_id TEXT NOT NULL REFERENCES gate_definitions(id),
-      passed INTEGER NOT NULL,
-      output TEXT,
-      evaluated_at INTEGER
-    );
-  `);
-  return { db, sqlite };
+let db: TestDb;
+let close: () => Promise<void>;
+let repo: DrizzleGateRepository;
+
+const TENANT = "test-tenant";
+
+async function seedEntity(flowId = "flow-1", entityId = "entity-1") {
+  await db.insert(flowDefinitions).values({
+    id: flowId,
+    tenantId: TENANT,
+    name: `flow-${flowId}`,
+    initialState: "init",
+  });
+  await db.insert(entities).values({
+    id: entityId,
+    tenantId: TENANT,
+    flowId,
+    state: "init",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
 }
 
+beforeEach(async () => {
+  const testDb = await createTestDb();
+  db = testDb.db;
+  close = testDb.close;
+  repo = new DrizzleGateRepository(db, TENANT);
+});
+
+afterEach(async () => {
+  await close();
+});
+
 describe("DrizzleGateRepository", () => {
-  let repo: DrizzleGateRepository;
-  let sqlite: Database.Database;
-
-  beforeEach(() => {
-    const testDb = createTestDb();
-    repo = new DrizzleGateRepository(testDb.db);
-    sqlite = testDb.sqlite;
-  });
-
-  afterEach(() => {
-    sqlite.close();
-  });
-
   describe("create()", () => {
     it("should create a shell gate with generated id", async () => {
       const gate = await repo.create({
@@ -145,20 +112,9 @@ describe("DrizzleGateRepository", () => {
     });
   });
 
-  function seedEntity(db: Database.Database, flowId = "flow-1", entityId = "entity-1") {
-    db.prepare("INSERT INTO flow_definitions (id, name, initial_state) VALUES (?, ?, ?)").run(
-      flowId,
-      `flow-${flowId}`,
-      "init",
-    );
-    db.prepare(
-      "INSERT INTO entities (id, flow_id, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-    ).run(entityId, flowId, "init", Date.now(), Date.now());
-  }
-
   describe("record()", () => {
     it("should record a gate result", async () => {
-      seedEntity(sqlite);
+      await seedEntity();
       const gate = await repo.create({ name: "lint", type: "shell", command: "npm run lint" });
 
       const result = await repo.record("entity-1", gate.id, true, "All checks passed");
@@ -173,7 +129,7 @@ describe("DrizzleGateRepository", () => {
     });
 
     it("should store multiple results for same entity+gate (history)", async () => {
-      seedEntity(sqlite);
+      await seedEntity();
       const gate = await repo.create({ name: "test", type: "shell", command: "npm test" });
 
       await repo.record("entity-1", gate.id, false, "3 tests failed");
@@ -188,7 +144,7 @@ describe("DrizzleGateRepository", () => {
 
   describe("resultsFor()", () => {
     it("should return results in chronological order", async () => {
-      seedEntity(sqlite);
+      await seedEntity();
       const gate = await repo.create({ name: "build", type: "shell", command: "npm run build" });
 
       await repo.record("entity-1", gate.id, false, "build failed");
@@ -208,18 +164,21 @@ describe("DrizzleGateRepository", () => {
     });
 
     it("should return empty array for entity with no results", async () => {
-      seedEntity(sqlite);
+      await seedEntity();
       const results = await repo.resultsFor("entity-1");
       expect(results).toEqual([]);
     });
 
     it("should only return results for the specified entity", async () => {
-      seedEntity(sqlite, "flow-1", "entity-1");
-      sqlite
-        .prepare(
-          "INSERT INTO entities (id, flow_id, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        )
-        .run("entity-2", "flow-1", "init", Date.now(), Date.now());
+      await seedEntity("flow-1", "entity-1");
+      await db.insert(entities).values({
+        id: "entity-2",
+        tenantId: TENANT,
+        flowId: "flow-1",
+        state: "init",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
 
       const gate = await repo.create({ name: "check", type: "shell", command: "true" });
       await repo.record("entity-1", gate.id, true, "ok");

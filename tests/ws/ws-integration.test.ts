@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import { WebSocket } from "ws";
 import { serve } from "@hono/node-server";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
+import { createTestDb, type TestDb } from "../helpers/pg-test-db.js";
 import { DrizzleEntityRepository } from "../../src/repositories/drizzle/entity.repo.js";
 import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
 import { DrizzleInvocationRepository } from "../../src/repositories/drizzle/invocation.repo.js";
@@ -17,30 +14,29 @@ import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { WebSocketBroadcaster } from "../../src/ws/broadcast.js";
 import { createHonoApp } from "../../src/api/hono-server.js";
 
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
+const TEST_TENANT = "test-tenant";
 const ADMIN_TOKEN = "integration-test-token";
 
 describe("WebSocket integration with HTTP server", () => {
+	let db: TestDb;
+	let dbClose: () => Promise<void>;
 	let broadcaster: WebSocketBroadcaster;
 	let port: number;
 	let engine: Engine;
 	let eventEmitter: EventEmitter;
-	let sqlite: Database.Database;
 	let server: http.Server;
 
 	beforeEach(async () => {
-		sqlite = new Database(":memory:");
-		sqlite.pragma("journal_mode = WAL");
-		sqlite.pragma("foreign_keys = ON");
-		const db = drizzle(sqlite, { schema });
-		migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+		const res = await createTestDb();
+		db = res.db;
+		dbClose = res.close;
 
-		const entityRepo = new DrizzleEntityRepository(db);
-		const flowRepo = new DrizzleFlowRepository(db);
-		const invocationRepo = new DrizzleInvocationRepository(db);
-		const gateRepo = new DrizzleGateRepository(db);
-		const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-		const eventRepo = new DrizzleEventRepository(db);
+		const entityRepo = new DrizzleEntityRepository(db, TEST_TENANT);
+		const flowRepo = new DrizzleFlowRepository(db, TEST_TENANT);
+		const invocationRepo = new DrizzleInvocationRepository(db, TEST_TENANT);
+		const gateRepo = new DrizzleGateRepository(db, TEST_TENANT);
+		const transitionLogRepo = new DrizzleTransitionLogRepository(db, TEST_TENANT);
+		const eventRepo = new DrizzleEventRepository(db, TEST_TENANT);
 		eventEmitter = new EventEmitter();
 
 		engine = new Engine({
@@ -85,7 +81,7 @@ describe("WebSocket integration with HTTP server", () => {
 	afterEach(async () => {
 		broadcaster.close();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
-		sqlite.close();
+		await dbClose();
 	});
 
 	it("HTTP routes still work with WS attached", async () => {

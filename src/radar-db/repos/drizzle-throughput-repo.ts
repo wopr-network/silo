@@ -7,16 +7,21 @@ import type { IThroughputRepo, ThroughputStats } from "./i-throughput-repo.js";
 const ONE_HOUR_MS = 3_600_000;
 
 export class DrizzleThroughputRepo implements IThroughputRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
-  record(outcome: "completed" | "failed", durationMs: number): void {
+  async record(outcome: "completed" | "failed", durationMs: number): Promise<void> {
     const now = Date.now();
-    this.db.insert(throughputEvents).values({ id: randomUUID(), outcome, durationMs, createdAt: now }).run();
+    await this.db
+      .insert(throughputEvents)
+      .values({ id: randomUUID(), tenantId: this.tenantId, outcome, durationMs, createdAt: now });
   }
 
-  getStats(): ThroughputStats {
+  async getStats(): Promise<ThroughputStats> {
     const cutoff = Date.now() - ONE_HOUR_MS;
-    const rows = this.db.select().from(throughputEvents).where(gt(throughputEvents.createdAt, cutoff)).all();
+    const rows = await this.db.select().from(throughputEvents).where(gt(throughputEvents.createdAt, cutoff));
 
     let completed = 0;
     let failed = 0;
@@ -38,7 +43,7 @@ export class DrizzleThroughputRepo implements IThroughputRepo {
     };
   }
 
-  pruneOlderThan(cutoff: number): void {
-    this.db.delete(throughputEvents).where(sql`created_at < ${cutoff}`).run();
+  async pruneOlderThan(cutoff: number): Promise<void> {
+    await this.db.delete(throughputEvents).where(sql`created_at < ${cutoff}`);
   }
 }

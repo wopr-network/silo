@@ -22,55 +22,52 @@ function toRow(raw: typeof entityActivity.$inferSelect): ActivityRow {
 }
 
 export class DrizzleEntityActivityRepo implements IEntityActivityRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
   async insert(input: Omit<ActivityRow, "id" | "seq" | "createdAt">): Promise<void> {
     const id = crypto.randomUUID();
     const now = Date.now();
-    // better-sqlite3 is single-writer; wrapping in a transaction ensures
-    // nextSeq + insert are atomic so concurrent slots can't race for the same seq.
+    // Wrap in a Postgres transaction to ensure nextSeq + insert are atomic.
     // The UNIQUE (entity_id, seq) constraint is the hard guard — this transaction
     // prevents the gap between computing seq and writing it.
-    this.db.transaction((tx) => {
-      const seqRow = tx
+    await this.db.transaction(async (tx) => {
+      const [seqRow] = await tx
         .select({ maxSeq: sql<number>`MAX(seq)` })
         .from(entityActivity)
-        .where(eq(entityActivity.entityId, input.entityId))
-        .get();
-      const seq = (seqRow?.maxSeq ?? -1) + 1;
-      tx.insert(entityActivity)
-        .values({
-          id,
-          entityId: input.entityId,
-          slotId: input.slotId,
-          seq,
-          type: input.type,
-          data: JSON.stringify(input.data),
-          createdAt: now,
-        })
-        .run();
+        .where(and(eq(entityActivity.entityId, input.entityId), eq(entityActivity.tenantId, this.tenantId)));
+      // Postgres returns bigint as string — coerce to number to avoid string concatenation.
+      const seq = Number(seqRow?.maxSeq ?? -1) + 1;
+      await tx.insert(entityActivity).values({
+        id,
+        tenantId: this.tenantId,
+        entityId: input.entityId,
+        slotId: input.slotId,
+        seq,
+        type: input.type,
+        data: JSON.stringify(input.data),
+        createdAt: now,
+      });
     });
   }
 
-  getByEntity(entityId: string, since?: number): Promise<ActivityRow[]> {
-    const conditions =
-      since !== undefined
-        ? and(eq(entityActivity.entityId, entityId), gt(entityActivity.seq, since))
-        : eq(entityActivity.entityId, entityId);
-    return Promise.resolve(
-      this.db.select().from(entityActivity).where(conditions).orderBy(asc(entityActivity.seq)).all().map(toRow),
-    );
+  async getByEntity(entityId: string, since?: number): Promise<ActivityRow[]> {
+    const base = and(eq(entityActivity.entityId, entityId), eq(entityActivity.tenantId, this.tenantId));
+    const conditions = since !== undefined ? and(base, gt(entityActivity.seq, since)) : base;
+    const rows = await this.db.select().from(entityActivity).where(conditions).orderBy(asc(entityActivity.seq));
+    return rows.map(toRow);
   }
 
-  getSummary(entityId: string): Promise<string> {
-    const rows = this.db
+  async getSummary(entityId: string): Promise<string> {
+    const rawRows = await this.db
       .select()
       .from(entityActivity)
-      .where(eq(entityActivity.entityId, entityId))
-      .orderBy(asc(entityActivity.seq))
-      .all()
-      .map(toRow);
-    if (rows.length === 0) return Promise.resolve("");
+      .where(and(eq(entityActivity.entityId, entityId), eq(entityActivity.tenantId, this.tenantId)))
+      .orderBy(asc(entityActivity.seq));
+    const rows = rawRows.map(toRow);
+    if (rows.length === 0) return "";
 
     const bySlot = new Map<string, ActivityRow[]>();
     for (const row of rows) {
@@ -100,13 +97,12 @@ export class DrizzleEntityActivityRepo implements IEntityActivityRepo {
       attemptNum++;
     }
 
-    return Promise.resolve(
-      `Prior work on this entity:\n\n${attempts.join("\n\n")}\n\nPlease pick up where the last attempt left off.`,
-    );
+    return `Prior work on this entity:\n\n${attempts.join("\n\n")}\n\nPlease pick up where the last attempt left off.`;
   }
 
-  deleteByEntity(entityId: string): Promise<void> {
-    this.db.delete(entityActivity).where(eq(entityActivity.entityId, entityId)).run();
-    return Promise.resolve();
+  async deleteByEntity(entityId: string): Promise<void> {
+    await this.db
+      .delete(entityActivity)
+      .where(and(eq(entityActivity.entityId, entityId), eq(entityActivity.tenantId, this.tenantId)));
   }
 }

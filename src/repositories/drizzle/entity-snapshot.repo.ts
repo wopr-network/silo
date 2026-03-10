@@ -1,21 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { and, desc, eq } from "drizzle-orm";
 import type { Artifacts, Entity, IEntitySnapshotRepository, Refs } from "../interfaces.js";
-import type * as schema from "./schema.js";
 import { entitySnapshots } from "./schema.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (postgres-js + PGlite)
+type Db = any;
 
 export class DrizzleEntitySnapshotRepository implements IEntitySnapshotRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly tenantId: string,
+  ) {}
 
   async save(entityId: string, sequence: number, state: Entity): Promise<void> {
     const id = randomUUID();
-    this.db
+    await this.db
       .insert(entitySnapshots)
       .values({
         id,
+        tenantId: this.tenantId,
         entityId,
         sequence,
         state: state.state,
@@ -34,21 +37,18 @@ export class DrizzleEntitySnapshotRepository implements IEntitySnapshotRepositor
         snapshotAt: Date.now(),
         parentEntityId: state.parentEntityId,
       })
-      .onConflictDoNothing()
-      .run();
+      .onConflictDoNothing();
   }
 
   async loadLatest(entityId: string): Promise<{ sequence: number; state: Entity } | null> {
-    const rows = this.db
+    const [row] = await this.db
       .select()
       .from(entitySnapshots)
-      .where(eq(entitySnapshots.entityId, entityId))
+      .where(and(eq(entitySnapshots.entityId, entityId), eq(entitySnapshots.tenantId, this.tenantId)))
       .orderBy(desc(entitySnapshots.sequence))
-      .limit(1)
-      .all();
+      .limit(1);
 
-    if (rows.length === 0) return null;
-    const row = rows[0];
+    if (!row) return null;
 
     return {
       sequence: row.sequence,

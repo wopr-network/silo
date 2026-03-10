@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { sql } from "drizzle-orm";
 import { logger } from "../logger.js";
-import type { RadarDb } from "../radar-db/index.js";
+import type { Db } from "../main.js";
 import { SeedFileSchema } from "./types.js";
 
 export interface LoadSeedDeps {
   siloUrl: string;
-  db: RadarDb;
+  db: Db;
   adminToken?: string;
 }
 
@@ -35,15 +36,15 @@ export function expandEnvVars(raw: string): string {
   );
 }
 
-function ensureSeedTables(db: RadarDb): void {
-  db.$client.exec(`
+async function ensureSeedTables(db: Db): Promise<void> {
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS seed_sources (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
       config TEXT NOT NULL
     )
   `);
-  db.$client.exec(`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS seed_watches (
       id TEXT PRIMARY KEY,
       source_id TEXT NOT NULL,
@@ -94,7 +95,7 @@ export async function loadSeed(seedPath: string, deps: LoadSeedDeps): Promise<Lo
   const json: unknown = expandEnvVarsInValue(JSON.parse(raw));
   const seed = SeedFileSchema.parse(json);
 
-  ensureSeedTables(deps.db);
+  await ensureSeedTables(deps.db);
 
   for (const flow of seed.flows) {
     if (!flow.discipline) {
@@ -140,28 +141,23 @@ export async function loadSeed(seedPath: string, deps: LoadSeedDeps): Promise<Lo
     }
   }
 
-  const upsertSource = deps.db.$client.prepare(
-    "INSERT OR REPLACE INTO seed_sources (id, type, config) VALUES (?, ?, ?)",
-  );
-  const upsertWatch = deps.db.$client.prepare(
-    "INSERT OR REPLACE INTO seed_watches (id, source_id, event, flow_name, filter) VALUES (?, ?, ?, ?, ?)",
-  );
-
-  deps.db.$client.transaction(() => {
+  // biome-ignore lint/suspicious/noExplicitAny: tx has same query API as db
+  await deps.db.transaction(async (tx: any) => {
     for (const source of seed.sources) {
       const { id, type, ...rest } = source;
-      upsertSource.run(id, type, JSON.stringify(rest));
-    }
-    for (const watch of seed.watches) {
-      upsertWatch.run(
-        watch.id,
-        watch.sourceId,
-        watch.event,
-        watch.flowName,
-        watch.filter ? JSON.stringify(watch.filter) : null,
+      await tx.execute(
+        sql`INSERT INTO seed_sources (id, type, config) VALUES (${id}, ${type}, ${JSON.stringify(rest)})
+            ON CONFLICT (id) DO UPDATE SET type = EXCLUDED.type, config = EXCLUDED.config`,
       );
     }
-  })();
+    for (const watch of seed.watches) {
+      await tx.execute(
+        sql`INSERT INTO seed_watches (id, source_id, event, flow_name, filter)
+            VALUES (${watch.id}, ${watch.sourceId}, ${watch.event}, ${watch.flowName}, ${watch.filter ? JSON.stringify(watch.filter) : null})
+            ON CONFLICT (id) DO UPDATE SET source_id = EXCLUDED.source_id, event = EXCLUDED.event, flow_name = EXCLUDED.flow_name, filter = EXCLUDED.filter`,
+      );
+    }
+  });
 
   return {
     flows: seed.flows.length,

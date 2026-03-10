@@ -1,15 +1,26 @@
-import { describe, expect, it } from "vitest";
-import { createDb } from "../index.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestDb, type TestDb } from "../../../tests/helpers/pg-test-db.js";
 import { DrizzleEntityActivityRepo } from "./drizzle-entity-activity-repo.js";
 
-function makeRepo() {
-  return new DrizzleEntityActivityRepo(createDb());
-}
+let db: TestDb;
+let close: () => Promise<void>;
+let repo: DrizzleEntityActivityRepo;
+
+beforeEach(async () => {
+  const res = await createTestDb();
+  db = res.db;
+  close = res.close;
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  repo = new DrizzleEntityActivityRepo(db as any, "test-tenant");
+});
+
+afterEach(async () => {
+  await close();
+});
 
 describe("EntityActivityRepo", () => {
   describe("insert", () => {
     it("stores the row with auto seq=0 for first insert", async () => {
-      const repo = makeRepo();
       await repo.insert({
         entityId: "e1",
         slotId: "slot-1",
@@ -29,7 +40,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("auto-increments seq per entity", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "tool_use", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "result", data: {} });
@@ -40,7 +50,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("seq is scoped per entity", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "result", data: {} });
       await repo.insert({ entityId: "e2", slotId: "s2", type: "start", data: {} });
@@ -51,7 +60,6 @@ describe("EntityActivityRepo", () => {
 
   describe("getByEntity", () => {
     it("returns rows in seq order", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "result", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "tool_use", data: {} });
@@ -60,7 +68,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("filters by since (exclusive)", async () => {
-      const repo = makeRepo();
       for (let i = 0; i < 5; i++) {
         await repo.insert({ entityId: "e1", slotId: "s1", type: "text", data: { text: `line ${i}` } });
       }
@@ -69,19 +76,16 @@ describe("EntityActivityRepo", () => {
     });
 
     it("returns empty array for unknown entity", async () => {
-      const repo = makeRepo();
       expect(await repo.getByEntity("nobody")).toEqual([]);
     });
   });
 
   describe("getSummary", () => {
     it("returns empty string when no activity", async () => {
-      const repo = makeRepo();
       expect(await repo.getSummary("e1")).toBe("");
     });
 
     it("skips tool_use events from summary", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({
         entityId: "e1",
@@ -101,7 +105,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("groups by slotId as separate attempts", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "slot-a", type: "start", data: {} });
       await repo.insert({ entityId: "e1", slotId: "slot-a", type: "result", data: { subtype: "error" } });
       await repo.insert({ entityId: "e1", slotId: "slot-b", type: "start", data: {} });
@@ -112,7 +115,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("includes prose wrapping", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "result", data: {} });
       const summary = await repo.getSummary("e1");
       expect(summary).toContain("Prior work on this entity:");
@@ -122,7 +124,6 @@ describe("EntityActivityRepo", () => {
 
   describe("deleteByEntity", () => {
     it("removes all rows for entity", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({ entityId: "e1", slotId: "s1", type: "result", data: {} });
       await repo.deleteByEntity("e1");
@@ -130,7 +131,6 @@ describe("EntityActivityRepo", () => {
     });
 
     it("does not affect other entities", async () => {
-      const repo = makeRepo();
       await repo.insert({ entityId: "e1", slotId: "s1", type: "start", data: {} });
       await repo.insert({ entityId: "e2", slotId: "s2", type: "start", data: {} });
       await repo.deleteByEntity("e1");

@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { and, asc, eq } from "drizzle-orm";
 import { InternalError } from "../../errors.js";
 import type { CreateGateInput, Gate, GateResult, IGateRepository } from "../interfaces.js";
-import type * as schema from "./schema.js";
 import { gateDefinitions, gateResults } from "./schema.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (postgres-js + PGlite)
+type Db = any;
 
 function toGate(row: typeof gateDefinitions.$inferSelect): Gate {
   return {
@@ -35,12 +34,16 @@ function toGateResult(row: typeof gateResults.$inferSelect): GateResult {
 }
 
 export class DrizzleGateRepository implements IGateRepository {
-  constructor(private db: Db) {}
+  constructor(
+    private db: Db,
+    private tenantId: string,
+  ) {}
 
   async create(gate: CreateGateInput): Promise<Gate> {
     const id = randomUUID();
     const values: typeof gateDefinitions.$inferInsert = {
       id,
+      tenantId: this.tenantId,
       name: gate.name,
       type: gate.type,
       command: gate.command ?? null,
@@ -51,42 +54,44 @@ export class DrizzleGateRepository implements IGateRepository {
       timeoutPrompt: gate.timeoutPrompt ?? null,
       outcomes: gate.outcomes ?? null,
     };
-    this.db.insert(gateDefinitions).values(values).run();
-    const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();
+    await this.db.insert(gateDefinitions).values(values);
+    const [row] = await this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).limit(1);
     if (!row) throw new InternalError(`Gate ${id} not found after insert`);
     return toGate(row);
   }
 
   async get(id: string): Promise<Gate | null> {
-    const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();
+    const [row] = await this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).limit(1);
     return row ? toGate(row) : null;
   }
 
   async getByName(name: string): Promise<Gate | null> {
-    const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.name, name)).get();
+    const [row] = await this.db
+      .select()
+      .from(gateDefinitions)
+      .where(and(eq(gateDefinitions.tenantId, this.tenantId), eq(gateDefinitions.name, name)))
+      .limit(1);
     return row ? toGate(row) : null;
   }
 
   async listAll(): Promise<Gate[]> {
-    const rows = this.db.select().from(gateDefinitions).all();
+    const rows = await this.db.select().from(gateDefinitions).where(eq(gateDefinitions.tenantId, this.tenantId));
     return rows.map(toGate);
   }
 
   async record(entityId: string, gateId: string, passed: boolean, output: string): Promise<GateResult> {
     const id = randomUUID();
     const evaluatedAt = Date.now();
-    this.db
-      .insert(gateResults)
-      .values({
-        id,
-        entityId,
-        gateId,
-        passed: passed ? 1 : 0,
-        output,
-        evaluatedAt,
-      })
-      .run();
-    const row = this.db.select().from(gateResults).where(eq(gateResults.id, id)).get();
+    await this.db.insert(gateResults).values({
+      id,
+      tenantId: this.tenantId,
+      entityId,
+      gateId,
+      passed,
+      output,
+      evaluatedAt,
+    });
+    const [row] = await this.db.select().from(gateResults).where(eq(gateResults.id, id)).limit(1);
     if (!row) throw new InternalError(`GateResult ${id} not found after insert`);
     return toGateResult(row);
   }
@@ -97,26 +102,22 @@ export class DrizzleGateRepository implements IGateRepository {
       Pick<Gate, "command" | "functionRef" | "apiConfig" | "timeoutMs" | "failurePrompt" | "timeoutPrompt">
     >,
   ): Promise<Gate> {
-    this.db.update(gateDefinitions).set(changes).where(eq(gateDefinitions.id, id)).run();
-    const row = this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).get();
+    await this.db.update(gateDefinitions).set(changes).where(eq(gateDefinitions.id, id));
+    const [row] = await this.db.select().from(gateDefinitions).where(eq(gateDefinitions.id, id)).limit(1);
     if (!row) throw new InternalError(`Gate ${id} not found after update`);
     return toGate(row);
   }
 
   async resultsFor(entityId: string): Promise<GateResult[]> {
-    const rows = this.db
+    const rows = await this.db
       .select()
       .from(gateResults)
       .where(eq(gateResults.entityId, entityId))
-      .orderBy(asc(gateResults.evaluatedAt), sql`rowid`)
-      .all();
+      .orderBy(asc(gateResults.evaluatedAt), asc(gateResults.seq));
     return rows.map(toGateResult);
   }
 
   async clearResult(entityId: string, gateId: string): Promise<void> {
-    await this.db
-      .delete(gateResults)
-      .where(and(eq(gateResults.entityId, entityId), eq(gateResults.gateId, gateId)))
-      .run();
+    await this.db.delete(gateResults).where(and(eq(gateResults.entityId, entityId), eq(gateResults.gateId, gateId)));
   }
 }

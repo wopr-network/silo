@@ -1,48 +1,48 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { and, desc, eq } from "drizzle-orm";
 import type { EventRow, IEventRepository } from "../interfaces.js";
-import type * as schema from "./schema.js";
 import { events } from "./schema.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (postgres-js + PGlite)
+type Db = any;
 
 export class DrizzleEventRepository implements IEventRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly tenantId: string,
+  ) {}
 
   async emitDefinitionChanged(flowId: string | null, tool: string, payload: Record<string, unknown>): Promise<void> {
-    this.db
-      .insert(events)
-      .values({
-        id: randomUUID(),
-        type: "definition.changed",
-        entityId: null,
-        flowId: flowId || null,
-        payload: { tool, ...payload },
-        emittedAt: Date.now(),
-      })
-      .run();
+    await this.db.insert(events).values({
+      id: randomUUID(),
+      tenantId: this.tenantId,
+      type: "definition.changed",
+      entityId: null,
+      flowId: flowId || null,
+      payload: { tool, ...payload },
+      emittedAt: Date.now(),
+    });
   }
 
-  findAll(): (typeof events.$inferSelect)[] {
-    return this.db.select().from(events).all();
+  async findAll(): Promise<(typeof events.$inferSelect)[]> {
+    return this.db.select().from(events).where(eq(events.tenantId, this.tenantId));
   }
 
-  findByEntity(entityId: string, limit = 100): Promise<EventRow[]> {
-    return Promise.resolve(
-      this.db
-        .select()
-        .from(events)
-        .where(eq(events.entityId, entityId))
-        .orderBy(desc(events.emittedAt))
-        .limit(limit)
-        .all() as EventRow[],
-    );
+  async findByEntity(entityId: string, limit = 100): Promise<EventRow[]> {
+    return this.db
+      .select()
+      .from(events)
+      .where(and(eq(events.entityId, entityId), eq(events.tenantId, this.tenantId)))
+      .orderBy(desc(events.emittedAt))
+      .limit(limit) as Promise<EventRow[]>;
   }
 
-  findRecent(limit = 100): Promise<EventRow[]> {
-    return Promise.resolve(
-      this.db.select().from(events).orderBy(desc(events.emittedAt)).limit(limit).all() as EventRow[],
-    );
+  async findRecent(limit = 100): Promise<EventRow[]> {
+    return this.db
+      .select()
+      .from(events)
+      .where(eq(events.tenantId, this.tenantId))
+      .orderBy(desc(events.emittedAt))
+      .limit(limit) as Promise<EventRow[]>;
   }
 }

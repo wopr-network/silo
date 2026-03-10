@@ -1,39 +1,39 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { DomainEvent, IDomainEventRepository } from "../interfaces.js";
-import type * as schema from "./schema.js";
+import type { Db } from "./db-type.js";
 import { domainEvents } from "./schema.js";
 
-type Db = BetterSQLite3Database<typeof schema>;
-
 export class DrizzleDomainEventRepository implements IDomainEventRepository {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly tenantId: string,
+  ) {}
 
   async append(type: string, entityId: string, payload: Record<string, unknown>): Promise<DomainEvent> {
-    return this.db.transaction((tx) => {
-      const maxRow = tx
+    return await this.db.transaction(async (tx: Db) => {
+      const [maxRow] = await tx
         .select({ maxSeq: sql<number>`coalesce(max(${domainEvents.sequence}), 0)` })
         .from(domainEvents)
-        .where(eq(domainEvents.entityId, entityId))
-        .get();
-      const sequence = (maxRow?.maxSeq ?? 0) + 1;
+        .where(and(eq(domainEvents.entityId, entityId), eq(domainEvents.tenantId, this.tenantId)));
+      const sequence = (Number(maxRow?.maxSeq) || 0) + 1;
       const id = randomUUID();
       const emittedAt = Date.now();
 
-      tx.insert(domainEvents).values({ id, type, entityId, payload, sequence, emittedAt }).run();
+      await tx
+        .insert(domainEvents)
+        .values({ id, tenantId: this.tenantId, type, entityId, payload, sequence, emittedAt });
 
       return { id, type, entityId, payload, sequence, emittedAt };
     });
   }
 
   async getLastSequence(entityId: string): Promise<number> {
-    const row = this.db
+    const [row] = await this.db
       .select({ maxSeq: sql<number>`coalesce(max(${domainEvents.sequence}), 0)` })
       .from(domainEvents)
-      .where(eq(domainEvents.entityId, entityId))
-      .get();
-    return row?.maxSeq ?? 0;
+      .where(and(eq(domainEvents.entityId, entityId), eq(domainEvents.tenantId, this.tenantId)));
+    return Number(row?.maxSeq) || 0;
   }
 
   async appendCas(
@@ -43,29 +43,25 @@ export class DrizzleDomainEventRepository implements IDomainEventRepository {
     expectedSequence: number,
   ): Promise<DomainEvent | null> {
     try {
-      return this.db.transaction((tx) => {
-        const currentRow = tx
+      return await this.db.transaction(async (tx: Db) => {
+        const [currentRow] = await tx
           .select({ maxSeq: sql<number>`coalesce(max(${domainEvents.sequence}), 0)` })
           .from(domainEvents)
-          .where(eq(domainEvents.entityId, entityId))
-          .get();
-        const currentSeq = currentRow?.maxSeq ?? 0;
+          .where(and(eq(domainEvents.entityId, entityId), eq(domainEvents.tenantId, this.tenantId)));
+        const currentSeq = Number(currentRow?.maxSeq) || 0;
         if (currentSeq !== expectedSequence) {
           return null;
         }
         const newSequence = expectedSequence + 1;
         const id = randomUUID();
         const emittedAt = Date.now();
-        tx.insert(domainEvents).values({ id, type, entityId, payload, sequence: newSequence, emittedAt }).run();
+        await tx
+          .insert(domainEvents)
+          .values({ id, tenantId: this.tenantId, type, entityId, payload, sequence: newSequence, emittedAt });
         return { id, type, entityId, payload, sequence: newSequence, emittedAt };
       });
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        (("code" in err && (err as NodeJS.ErrnoException).code === "SQLITE_CONSTRAINT_UNIQUE") ||
-          ("code" in err && (err as NodeJS.ErrnoException).code === "23505") ||
-          err.message.includes("UNIQUE constraint failed"))
-      ) {
+      if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "23505") {
         return null;
       }
       throw err;
@@ -73,7 +69,7 @@ export class DrizzleDomainEventRepository implements IDomainEventRepository {
   }
 
   async list(entityId: string, opts?: { type?: string; limit?: number; minSequence?: number }): Promise<DomainEvent[]> {
-    const conditions = [eq(domainEvents.entityId, entityId)];
+    const conditions = [eq(domainEvents.entityId, entityId), eq(domainEvents.tenantId, this.tenantId)];
     if (opts?.type) {
       conditions.push(eq(domainEvents.type, opts.type));
     }
@@ -81,15 +77,14 @@ export class DrizzleDomainEventRepository implements IDomainEventRepository {
       conditions.push(gt(domainEvents.sequence, opts.minSequence));
     }
 
-    const rows = this.db
+    const rows = await this.db
       .select()
       .from(domainEvents)
       .where(and(...conditions))
       .orderBy(domainEvents.sequence)
-      .limit(opts?.limit ?? 100)
-      .all();
+      .limit(opts?.limit ?? 100);
 
-    return rows.map((r) => ({
+    return rows.map((r: typeof domainEvents.$inferSelect) => ({
       id: r.id,
       type: r.type,
       entityId: r.entityId,

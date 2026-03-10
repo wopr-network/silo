@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 import * as schema from "../../../src/repositories/drizzle/schema.js";
-import { createDatabase, bootstrap } from "../../../src/main.js";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 
 describe("schema tables exist", () => {
   it("exports flowDefinitions table", () => {
@@ -65,26 +65,37 @@ describe("schema tables exist", () => {
   });
 });
 
-describe("foreign keys enforcement", () => {
-  it("createDatabase enables foreign_keys pragma", () => {
-    const { sqlite } = createDatabase(":memory:");
-    const result = sqlite.pragma("foreign_keys") as { foreign_keys: number }[];
-    expect(result[0].foreign_keys).toBe(1);
-    sqlite.close();
-  });
-});
+describe("Postgres bootstrap", () => {
+  let close: () => Promise<void>;
 
-describe("migration", () => {
-  it("bootstrap runs migrations without error", () => {
-    const { sqlite } = bootstrap(":memory:");
-    const tables = sqlite
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-      .all() as { name: string }[];
-    const tableNames = tables.map((t) => t.name).filter((n) => !n.startsWith("__"));
+  afterEach(async () => {
+    if (close) await close();
+  });
+
+  it("createTestDb runs migrations and creates all tables", async () => {
+    const res = await createTestDb();
+    close = res.close;
+    const db = res.db;
+
+    // Verify we can query a table (proves migrations ran)
+    const rows = await db.select().from(schema.flowDefinitions);
+    expect(rows).toEqual([]);
+  });
+
+  it("all 19 tables are created", async () => {
+    const res = await createTestDb();
+    close = res.close;
+
+    // Query pg_tables for our tables
+    const result = await res.client.query(
+      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
+    );
+    const tableNames = result.rows.map((r: { tablename: string }) => r.tablename);
     expect(tableNames).toContain("flow_definitions");
     expect(tableNames).toContain("entities");
     expect(tableNames).toContain("events");
-    expect(tableNames.length).toBeGreaterThanOrEqual(10);
-    sqlite.close();
+    expect(tableNames).toContain("domain_events");
+    expect(tableNames).toContain("entity_activity");
+    expect(tableNames.length).toBeGreaterThanOrEqual(19);
   });
 });

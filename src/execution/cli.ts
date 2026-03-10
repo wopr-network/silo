@@ -1,30 +1,22 @@
 #!/usr/bin/env node
 import { createHash, timingSafeEqual } from "node:crypto";
-import { readdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import Database from "better-sqlite3";
 import { Command } from "commander";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { eq } from "drizzle-orm";
+import type postgres from "postgres";
 import { startHonoServer, HonoSseAdapter as UiSseAdapter } from "../api/hono-server.js";
-import { DB_PATH } from "../config/db-path.js";
+import { extractBearerToken, tokensMatch } from "../auth.js";
+import { DATABASE_URL } from "../config/db-url.js";
 import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { resolveCorsOrigin } from "../cors.js";
 import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";
 import { Engine } from "../engine/engine.js";
 import { EventEmitter } from "../engine/event-emitter.js";
-import { buildConfigFromEnv, isLitestreamEnabled, LitestreamManager } from "../litestream/manager.js";
-import { withTransaction } from "../main.js";
-import { DrizzleDomainEventRepository } from "../repositories/drizzle/domain-event.repo.js";
-import { DrizzleEntityRepository } from "../repositories/drizzle/entity.repo.js";
+import { bootstrap, type Db } from "../main.js";
 import { DrizzleEntitySnapshotRepository } from "../repositories/drizzle/entity-snapshot.repo.js";
-import { DrizzleEventRepository } from "../repositories/drizzle/event.repo.js";
-import { DrizzleFlowRepository } from "../repositories/drizzle/flow.repo.js";
-import { DrizzleGateRepository } from "../repositories/drizzle/gate.repo.js";
-import { DrizzleInvocationRepository } from "../repositories/drizzle/invocation.repo.js";
-import * as schema from "../repositories/drizzle/schema.js";
 import {
   entities,
   entityHistory,
@@ -36,15 +28,15 @@ import {
   stateDefinitions,
   transitionRules,
 } from "../repositories/drizzle/schema.js";
-import { DrizzleTransitionLogRepository } from "../repositories/drizzle/transition-log.repo.js";
 import { EventSourcedEntityRepository } from "../repositories/event-sourced/entity.repo.js";
 import { EventSourcedInvocationRepository } from "../repositories/event-sourced/invocation.repo.js";
 import type { IEntityRepository, IInvocationRepository } from "../repositories/interfaces.js";
+import { createScopedRepos } from "../repositories/scoped-repos.js";
 import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
-const DB_DEFAULT = DB_PATH;
+const DB_URL_DEFAULT = DATABASE_URL;
 
 /**
  * Validates that SILO_ADMIN_TOKEN is set when network transports are active.
@@ -90,30 +82,16 @@ export function validateWorkerToken(opts: {
   }
 }
 
-// Resolve drizzle migrations folder. Works for both tsx (src/) and compiled (dist/src/) contexts.
-const MIGRATIONS_FOLDER = (() => {
-  const candidates = ["../../drizzle", "../../../drizzle"].map((rel) => new URL(rel, import.meta.url).pathname);
-  const found = candidates.find((p) => {
-    try {
-      readdirSync(p);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  if (!found) throw new Error(`Cannot find drizzle migrations folder (tried: ${candidates.join(", ")})`);
-  return found;
-})();
 const REAPER_INTERVAL_DEFAULT = "30000"; // 30s
 const CLAIM_TTL_DEFAULT = "300000"; // 5min
 
-function openDb(dbPath: string) {
-  const sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  return { db, sqlite };
+function getTenantId(): string {
+  return process.env.SILO_TENANT_ID ?? "default";
+}
+
+async function openDb(url: string): Promise<{ db: Db; client: postgres.Sql }> {
+  const { db, client } = await bootstrap(url);
+  return { db, client };
 }
 
 const program = new Command();
@@ -124,7 +102,7 @@ program
   .command("init")
   .option("--seed <path>", "Path to seed JSON file")
   .option("--force", "Drop existing data before loading")
-  .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--db-url <url>", "Database URL", DB_URL_DEFAULT)
   .action(async (opts) => {
     const seedPath = opts.seed;
     if (typeof seedPath !== "string") {
@@ -132,41 +110,41 @@ program
       return;
     }
 
-    const { db, sqlite } = openDb(opts.db);
-    const flowRepo = new DrizzleFlowRepository(db);
-    const gateRepo = new DrizzleGateRepository(db);
+    const { db, client } = await openDb(opts.dbUrl);
+    const tenantId = getTenantId();
+    const repos = createScopedRepos(db, tenantId);
 
     if (opts.force) {
-      db.delete(gateResults).run();
-      db.delete(entityHistory).run();
-      db.delete(invocations).run();
-      db.delete(entities).run();
-      db.delete(transitionRules).run();
-      db.delete(stateDefinitions).run();
-      db.delete(flowVersions).run();
-      db.delete(gateDefinitions).run();
-      db.delete(flowDefinitions).run();
+      await db.delete(gateResults).where(eq(gateResults.tenantId, tenantId));
+      await db.delete(entityHistory).where(eq(entityHistory.tenantId, tenantId));
+      await db.delete(invocations).where(eq(invocations.tenantId, tenantId));
+      await db.delete(entities).where(eq(entities.tenantId, tenantId));
+      await db.delete(transitionRules).where(eq(transitionRules.tenantId, tenantId));
+      await db.delete(stateDefinitions).where(eq(stateDefinitions.tenantId, tenantId));
+      await db.delete(flowVersions).where(eq(flowVersions.tenantId, tenantId));
+      await db.delete(gateDefinitions).where(eq(gateDefinitions.tenantId, tenantId));
+      await db.delete(flowDefinitions).where(eq(flowDefinitions.tenantId, tenantId));
     }
 
     const seedRoot = process.env.SILO_SEED_ROOT;
-    const result = await loadSeed(resolve(seedPath), flowRepo, gateRepo, {
+    const result = await loadSeed(resolve(seedPath), repos.flows, repos.gates, {
       allowedRoot: seedRoot ?? process.cwd(),
       db,
     });
     console.log(`Loaded seed: flows: ${result.flows}, gates: ${result.gates}`);
-    sqlite.close();
+    await client.end();
   });
 
 // ─── export ───
 program
   .command("export")
   .option("--out <path>", "Output file path (defaults to stdout)")
-  .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--db-url <url>", "Database URL", DB_URL_DEFAULT)
   .action(async (opts) => {
-    const { db, sqlite } = openDb(opts.db);
-    const flowRepo = new DrizzleFlowRepository(db);
-    const gateRepo = new DrizzleGateRepository(db);
-    const seed = await exportSeed(flowRepo, gateRepo);
+    const { db, client } = await openDb(opts.dbUrl);
+    const tenantId = getTenantId();
+    const repos = createScopedRepos(db, tenantId);
+    const seed = await exportSeed(repos.flows, repos.gates);
     const json = JSON.stringify(seed, null, 2);
 
     if (opts.out) {
@@ -175,7 +153,7 @@ program
     } else {
       console.log(json);
     }
-    sqlite.close();
+    await client.end();
   });
 
 // ─── serve ───
@@ -189,7 +167,7 @@ program
     "Host address to bind to (default: 127.0.0.1, use 0.0.0.0 for network access)",
     "127.0.0.1",
   )
-  .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--db-url <url>", "Database URL", DB_URL_DEFAULT)
   .option("--reaper-interval <ms>", "Reaper poll interval in milliseconds", REAPER_INTERVAL_DEFAULT)
   .option("--claim-ttl <ms>", "Claim TTL in milliseconds", CLAIM_TTL_DEFAULT)
   .option("--http-only", "Start HTTP REST server only (no MCP stdio)")
@@ -198,27 +176,17 @@ program
   .option("--http-host <address>", "Host for HTTP REST API", "127.0.0.1")
   .option("--ui", "Enable built-in web UI at /ui")
   .action(async (opts) => {
-    // Litestream: restore from replica if DB missing and replication configured
-    let litestreamMgr: LitestreamManager | undefined;
-    if (isLitestreamEnabled()) {
-      const lsConfig = buildConfigFromEnv(opts.db);
-      litestreamMgr = new LitestreamManager(lsConfig);
-      litestreamMgr.restore();
-    }
+    const { db, client } = await openDb(opts.dbUrl);
+    const tenantId = getTenantId();
+    const repos = createScopedRepos(db, tenantId);
 
-    const { db, sqlite } = openDb(opts.db);
+    const mutableEntityRepo = repos.entities;
+    const flowRepo = repos.flows;
+    const mutableInvocationRepo = repos.invocations;
+    const gateRepo = repos.gates;
+    const transitionLogRepo = repos.transitionLog;
 
-    // Litestream: start continuous replication
-    if (litestreamMgr) {
-      litestreamMgr.start();
-    }
-    const mutableEntityRepo = new DrizzleEntityRepository(db);
-    const flowRepo = new DrizzleFlowRepository(db);
-    const mutableInvocationRepo = new DrizzleInvocationRepository(db);
-    const gateRepo = new DrizzleGateRepository(db);
-    const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-
-    const domainEventRepo = new DrizzleDomainEventRepository(db);
+    const domainEventRepo = repos.domainEvents;
 
     const useEventSourced = process.env.SILO_EVENT_SOURCED === "true";
     const snapshotInterval = parseInt(process.env.SILO_SNAPSHOT_INTERVAL ?? "10", 10);
@@ -227,7 +195,7 @@ program
     let invocationRepo: IInvocationRepository;
 
     if (useEventSourced) {
-      const snapshotRepo = new DrizzleEntitySnapshotRepository(db);
+      const snapshotRepo = new DrizzleEntitySnapshotRepository(db, tenantId);
       entityRepo = new EventSourcedEntityRepository(mutableEntityRepo, domainEventRepo, snapshotRepo, snapshotInterval);
       invocationRepo = new EventSourcedInvocationRepository(mutableInvocationRepo, domainEventRepo);
       process.stderr.write("[silo] Event-sourced repositories enabled\n");
@@ -252,7 +220,18 @@ program
       transitionLogRepo,
       adapters: new Map(),
       eventEmitter,
-      withTransaction: (fn) => withTransaction(sqlite, fn),
+      withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
+      repoFactory: (tx) => {
+        const r = createScopedRepos(tx, tenantId);
+        return {
+          entityRepo: r.entities,
+          flowRepo: r.flows,
+          invocationRepo: r.invocations,
+          gateRepo: r.gates,
+          transitionLogRepo: r.transitionLog,
+          domainEvents: r.domainEvents,
+        };
+      },
       domainEvents: domainEventRepo,
     });
 
@@ -262,22 +241,34 @@ program
       invocations: invocationRepo,
       gates: gateRepo,
       transitions: transitionLogRepo,
-      eventRepo: new DrizzleEventRepository(db),
+      eventRepo: repos.events,
       domainEvents: domainEventRepo,
       engine,
-      withTransaction: (fn) => withTransaction(sqlite, fn),
+      withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
+      repoFactory: (tx) => {
+        const r = createScopedRepos(tx, tenantId);
+        return {
+          entities: r.entities,
+          flows: r.flows,
+          invocations: r.invocations,
+          gates: r.gates,
+          transitions: r.transitionLog,
+          eventRepo: r.events,
+          domainEvents: r.domainEvents,
+        };
+      },
     };
 
     const reaperInterval = parseInt(opts.reaperInterval, 10);
     if (Number.isNaN(reaperInterval) || reaperInterval < 1000) {
       console.error("--reaper-interval must be a number >= 1000ms");
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
     const claimTtl = parseInt(opts.claimTtl, 10);
     if (Number.isNaN(claimTtl) || claimTtl < 5000) {
       console.error("--claim-ttl must be a number >= 5000ms");
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
     const stopReaper = engine.startReaper(reaperInterval, claimTtl);
@@ -285,7 +276,7 @@ program
     if (opts.httpOnly && opts.mcpOnly) {
       console.error("Cannot use --http-only and --mcp-only together");
       await stopReaper();
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
 
@@ -304,7 +295,7 @@ program
     } catch (err: unknown) {
       console.error((err as Error).message);
       await stopReaper();
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
 
@@ -313,7 +304,7 @@ program
     } catch (err: unknown) {
       console.error((err as Error).message);
       await stopReaper();
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
 
@@ -327,7 +318,7 @@ program
       } catch (err: unknown) {
         console.error((err as Error).message);
         await stopReaper();
-        sqlite.close();
+        await client.end();
         process.exit(1);
       }
       const uiSseAdapter = opts.ui ? new UiSseAdapter() : undefined;
@@ -335,6 +326,21 @@ program
         {
           engine,
           mcpDeps: deps,
+          db,
+          defaultTenantId: tenantId,
+          eventEmitter,
+          withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
+          repoFactory: (tx) => {
+            const r = createScopedRepos(tx, tenantId);
+            return {
+              entityRepo: r.entities,
+              flowRepo: r.flows,
+              invocationRepo: r.invocations,
+              gateRepo: r.gates,
+              transitionLogRepo: r.transitionLog,
+              domainEvents: r.domainEvents,
+            };
+          },
           adminToken,
           workerToken,
           corsOrigins: restCorsResult.origins ?? undefined,
@@ -376,7 +382,7 @@ program
       } catch (err: unknown) {
         console.error((err as Error).message);
         await stopReaper();
-        sqlite.close();
+        await client.end();
         process.exit(1);
       }
       const allowedOriginSet: Set<string> | null = corsResult.origins ? new Set(corsResult.origins) : null;
@@ -391,7 +397,7 @@ program
             res.setHeader("Vary", "Origin");
             res.setHeader("Access-Control-Allow-Origin", origin);
             res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Id");
+            res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Id, X-Tenant-Id");
           }
         }
 
@@ -413,12 +419,74 @@ program
             transports.delete(transport.sessionId);
             sessionTokens.delete(transport.sessionId);
           });
+          // Resolve tenant for this SSE session (header or default).
+          // Validate format AND require admin auth to select a non-default tenant.
+          const rawTenant =
+            (Array.isArray(req.headers["x-tenant-id"]) ? req.headers["x-tenant-id"][0] : req.headers["x-tenant-id"]) ??
+            tenantId;
+          const isAdmin = adminToken != null && callerToken != null && tokensMatch(adminToken, callerToken);
+          const validatedTenant = /^[a-zA-Z0-9_-]{1,64}$/.test(rawTenant) ? rawTenant : tenantId;
+          const sessionTenantId = validatedTenant !== tenantId && !isAdmin ? tenantId : validatedTenant;
+          let sessionDeps = deps;
+          if (sessionTenantId !== tenantId) {
+            const sessionRepos = createScopedRepos(db, sessionTenantId);
+            // Each tenant session gets its own event emitter to prevent cross-tenant event leakage.
+            const sessionEmitter = new EventEmitter();
+            sessionEmitter.register(new DomainEventPersistAdapter(sessionRepos.domainEvents));
+            const sessionEngine = new Engine({
+              entityRepo: sessionRepos.entities,
+              flowRepo: sessionRepos.flows,
+              invocationRepo: sessionRepos.invocations,
+              gateRepo: sessionRepos.gates,
+              transitionLogRepo: sessionRepos.transitionLog,
+              adapters: new Map(),
+              eventEmitter: sessionEmitter,
+              withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
+              repoFactory: (tx) => {
+                const r = createScopedRepos(tx, sessionTenantId);
+                return {
+                  entityRepo: r.entities,
+                  flowRepo: r.flows,
+                  invocationRepo: r.invocations,
+                  gateRepo: r.gates,
+                  transitionLogRepo: r.transitionLog,
+                  domainEvents: r.domainEvents,
+                };
+              },
+              domainEvents: sessionRepos.domainEvents,
+            });
+            // Start a reaper for this tenant so stale claims get cleaned up.
+            sessionEngine.startReaper(reaperInterval, claimTtl);
+            sessionDeps = {
+              entities: sessionRepos.entities,
+              flows: sessionRepos.flows,
+              invocations: sessionRepos.invocations,
+              gates: sessionRepos.gates,
+              transitions: sessionRepos.transitionLog,
+              eventRepo: sessionRepos.events,
+              domainEvents: sessionRepos.domainEvents,
+              engine: sessionEngine,
+              withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
+              repoFactory: (tx) => {
+                const r = createScopedRepos(tx, sessionTenantId);
+                return {
+                  entities: r.entities,
+                  flows: r.flows,
+                  invocations: r.invocations,
+                  gates: r.gates,
+                  transitions: r.transitionLog,
+                  eventRepo: r.events,
+                  domainEvents: r.domainEvents,
+                };
+              },
+            };
+          }
           const mcpOpts: McpServerOpts = {
             adminToken,
             workerToken,
             callerToken,
           };
-          const server = createMcpServer(deps, mcpOpts);
+          const server = createMcpServer(sessionDeps, mcpOpts);
           await server.connect(transport);
         } else if (req.url?.startsWith("/messages") && req.method === "POST") {
           const url = new URL(req.url, `http://localhost:${port}`);
@@ -444,12 +512,7 @@ program
 
       const shutdown = makeShutdownHandler({
         stopReaper,
-        closeables: [
-          ...(litestreamMgr ? [litestreamMgr] : []),
-          { close: () => restHttpServer?.close() },
-          httpServer,
-          sqlite,
-        ],
+        closeables: [{ close: () => restHttpServer?.close() }, httpServer, { close: () => void client.end() }],
       });
       process.once("SIGINT", shutdown);
       process.once("SIGTERM", shutdown);
@@ -458,7 +521,7 @@ program
       console.error("Starting MCP server on stdio...");
       const cleanup = makeShutdownHandler({
         stopReaper,
-        closeables: [...(litestreamMgr ? [litestreamMgr] : []), sqlite],
+        closeables: [{ close: () => void client.end() }],
       });
       process.once("SIGINT", cleanup);
       process.once("SIGTERM", cleanup);
@@ -468,7 +531,7 @@ program
       // HTTP-only mode — keep process alive
       const cleanup = makeShutdownHandler({
         stopReaper,
-        closeables: [...(litestreamMgr ? [litestreamMgr] : []), { close: () => restHttpServer?.close() }, sqlite],
+        closeables: [{ close: () => restHttpServer?.close() }, { close: () => void client.end() }],
       });
       process.once("SIGINT", cleanup);
       process.once("SIGTERM", cleanup);
@@ -482,19 +545,21 @@ program
   .option("--flow <name>", "Filter by flow name")
   .option("--state <name>", "Filter by state")
   .option("--json", "Output as JSON")
-  .option("--db <path>", "Database path", DB_DEFAULT)
+  .option("--db-url <url>", "Database URL", DB_URL_DEFAULT)
   .action(async (opts) => {
-    const { db, sqlite } = openDb(opts.db);
-    const flowRepo = new DrizzleFlowRepository(db);
-    const entityRepo = new DrizzleEntityRepository(db);
-    const invocationRepo = new DrizzleInvocationRepository(db);
+    const { db, client } = await openDb(opts.dbUrl);
+    const tenantId = getTenantId();
+    const repos = createScopedRepos(db, tenantId);
+    const flowRepo = repos.flows;
+    const entityRepo = repos.entities;
+    const invocationRepo = repos.invocations;
 
     const allFlows = await flowRepo.listAll();
     const targetFlows = opts.flow ? allFlows.filter((f) => f.name === opts.flow) : allFlows;
 
     if (targetFlows.length === 0 && opts.flow) {
       console.error(`Flow not found: ${opts.flow}`);
-      sqlite.close();
+      await client.end();
       process.exit(1);
     }
 
@@ -531,7 +596,7 @@ program
       console.log(`Pending claims: ${pendingClaims}`);
     }
 
-    sqlite.close();
+    await client.end();
   });
 
 /**
@@ -589,12 +654,8 @@ export function makeShutdownHandler(opts: {
   };
 }
 
-export function extractBearerToken(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const lower = header.toLowerCase();
-  if (!lower.startsWith("bearer ")) return undefined;
-  return header.slice(7).trim() || undefined;
-}
+// extractBearerToken is re-exported from ../auth.js
+export { extractBearerToken } from "../auth.js";
 
 /**
  * Resolves the MCP session ID for POST /messages routing.

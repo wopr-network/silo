@@ -60,6 +60,16 @@ export interface EngineStatus {
   versionDistribution: Record<string, Record<string, number>>;
 }
 
+/** Repos bundle used inside a transaction. Created from tx handle via repoFactory. */
+export interface TransactionRepos {
+  entityRepo: IEntityRepository;
+  flowRepo: IFlowRepository;
+  invocationRepo: IInvocationRepository;
+  gateRepo: IGateRepository;
+  transitionLogRepo: ITransitionLogRepository;
+  domainEvents?: IDomainEventRepository;
+}
+
 export interface EngineDeps {
   entityRepo: IEntityRepository;
   flowRepo: IFlowRepository;
@@ -69,8 +79,12 @@ export interface EngineDeps {
   adapters: Map<string, unknown>;
   eventEmitter: IEventBusAdapter;
   logger?: Logger;
-  /** Optional transaction wrapper from the database layer. When provided, processSignal runs inside a single transaction and events are flushed only after successful commit. */
-  withTransaction?: <T>(fn: () => T | Promise<T>) => Promise<T>;
+  /** Optional transaction wrapper. Receives the Drizzle tx handle so the callback can create tx-bound repos. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  withTransaction?: <T>(fn: (tx: any) => T | Promise<T>) => Promise<T>;
+  /** Factory to create tenant-scoped repos bound to a transaction handle. Required when withTransaction is provided. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  repoFactory?: (txDb: any) => TransactionRepos;
   /** Optional domain event repository. When provided, claimWork uses CAS on the event log to prevent concurrent claim races. */
   domainEvents?: IDomainEventRepository;
 }
@@ -84,7 +98,10 @@ export class Engine {
   readonly adapters: Map<string, unknown>;
   private eventEmitter: IEventBusAdapter;
   private readonly logger: Logger;
-  private readonly withTransactionFn: (<T>(fn: () => T | Promise<T>) => Promise<T>) | null;
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  private readonly withTransactionFn: (<T>(fn: (tx: any) => T | Promise<T>) => Promise<T>) | null;
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  private readonly repoFactory: ((txDb: any) => TransactionRepos) | null;
   private readonly domainEventRepo: IDomainEventRepository | null;
   private drainingWorkers = new Set<string>();
 
@@ -98,6 +115,7 @@ export class Engine {
     this.eventEmitter = deps.eventEmitter;
     this.logger = deps.logger ?? consoleLogger;
     this.withTransactionFn = deps.withTransaction ?? null;
+    this.repoFactory = deps.repoFactory ?? null;
     this.domainEventRepo = deps.domainEvents ?? null;
   }
 
@@ -137,9 +155,11 @@ export class Engine {
     if (this.withTransactionFn) {
       // Run DB writes inside a transaction; events are buffered and only
       // flushed to real subscribers after successful COMMIT.
-      const result = await this.withTransactionFn(() =>
-        this._processSignalInner(entityId, signal, artifacts, triggeringInvocationId, bufferingEmitter),
-      );
+      // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+      const result = await this.withTransactionFn(async (tx: any) => {
+        const txRepos = this.repoFactory?.(tx) ?? null;
+        return this._processSignalInner(entityId, signal, artifacts, triggeringInvocationId, bufferingEmitter, txRepos);
+      });
       for (const event of pendingEvents) {
         await this.eventEmitter.emit(event);
       }
@@ -165,9 +185,17 @@ export class Engine {
     artifacts?: Artifacts,
     triggeringInvocationId?: string,
     emitter: IEventBusAdapter = this.eventEmitter,
+    txRepos?: TransactionRepos | null,
   ): Promise<ProcessSignalResult> {
+    // When running inside a transaction, use tx-bound repos; otherwise use instance repos.
+    const entityRepo = txRepos?.entityRepo ?? this.entityRepo;
+    const flowRepo = txRepos?.flowRepo ?? this.flowRepo;
+    const invocationRepo = txRepos?.invocationRepo ?? this.invocationRepo;
+    const gateRepo = txRepos?.gateRepo ?? this.gateRepo;
+    const transitionLogRepo = txRepos?.transitionLogRepo ?? this.transitionLogRepo;
+
     // 1. Load entity
-    let entity = await this.entityRepo.get(entityId);
+    let entity = await entityRepo.get(entityId);
     if (!entity) throw new NotFoundError(`Entity "${entityId}" not found`);
 
     if (entity.state === "cancelled") {
@@ -175,7 +203,7 @@ export class Engine {
     }
 
     // 2. Load flow at entity's pinned version
-    const flow = await this.flowRepo.getAtVersion(entity.flowId, entity.flowVersion);
+    const flow = await flowRepo.getAtVersion(entity.flowId, entity.flowVersion);
     if (!flow) throw new NotFoundError(`Flow "${entity.flowId}" version ${entity.flowVersion} not found`);
 
     // 3. Find transition
@@ -194,7 +222,7 @@ export class Engine {
 
     // 4. Evaluate gate — returns a routing decision or a block result to return immediately.
     const routing = transition.gateId
-      ? await this.resolveGate(transition.gateId, entity, flow)
+      ? await this.resolveGate(transition.gateId, entity, flow, txRepos)
       : { kind: "proceed" as const, gatesPassed: [] as string[] };
 
     if (routing.kind === "block") {
@@ -215,12 +243,12 @@ export class Engine {
         typeof entity.artifacts?.merge_blocked_count === "number" ? entity.artifacts.merge_blocked_count : 0
       ) as number;
       const newCount = prevCount + 1;
-      await this.entityRepo.updateArtifacts(entityId, { merge_blocked_count: newCount });
+      await entityRepo.updateArtifacts(entityId, { merge_blocked_count: newCount });
       if (newCount >= MERGE_BLOCKED_THRESHOLD) {
         const stuckState = flow.states.find((s) => s.name === "stuck");
         if (stuckState) {
           toState = "stuck";
-          await this.entityRepo.updateArtifacts(entityId, {
+          await entityRepo.updateArtifacts(entityId, {
             merge_blocked_message: MERGE_BLOCKED_STUCK_MESSAGE,
           });
           this.logger.warn(`[engine] Entity ${entityId} merge-blocked ${newCount} times, transitioning to stuck`);
@@ -238,7 +266,7 @@ export class Engine {
       const onExitResult = await executeOnExit(departingStateDef.onExit, entity);
       if (onExitResult.error) {
         this.logger.warn(`[engine] onExit failed for entity ${entityId} state ${entity.state}: ${onExitResult.error}`);
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "onExit.failed",
           entityId,
           state: entity.state,
@@ -246,7 +274,7 @@ export class Engine {
           emittedAt: new Date(),
         });
       } else {
-        await this.eventEmitter.emit({
+        await emitter.emit({
           type: "onExit.completed",
           entityId,
           state: entity.state,
@@ -256,10 +284,10 @@ export class Engine {
     }
 
     // 5. Transition entity
-    let updated = await this.entityRepo.transition(entityId, toState, trigger, artifacts);
+    let updated = await entityRepo.transition(entityId, toState, trigger, artifacts);
 
     // Clear gate_failures on successful transition so stale failures don't bleed into future agent prompts
-    await this.entityRepo.updateArtifacts(entityId, { gate_failures: [] });
+    await entityRepo.updateArtifacts(entityId, { gate_failures: [] });
     // Keep the in-memory entity in sync so buildInvocation sees the cleared failures
     updated = { ...updated, artifacts: { ...updated.artifacts, gate_failures: [] } };
 
@@ -290,13 +318,13 @@ export class Engine {
       const currentArtifacts = updated.artifacts ?? {};
       const hasStaleKeys = keysToRemove.some((k) => currentArtifacts[k] !== undefined);
       if (hasStaleKeys) {
-        await this.entityRepo.removeArtifactKeys(entityId, keysToRemove);
+        await entityRepo.removeArtifactKeys(entityId, keysToRemove);
         // Refresh in-memory entity so executeOnEnter sees cleared artifacts
-        const refreshed = await this.entityRepo.get(entityId);
+        const refreshed = await entityRepo.get(entityId);
         if (refreshed) updated = refreshed;
       }
 
-      const onEnterResult = await executeOnEnter(newStateDef.onEnter, updated, this.entityRepo);
+      const onEnterResult = await executeOnEnter(newStateDef.onEnter, updated, entityRepo);
       if (onEnterResult.skipped) {
         await emitter.emit({
           type: "onEnter.skipped",
@@ -312,7 +340,7 @@ export class Engine {
           error: onEnterResult.error,
           emittedAt: new Date(),
         });
-        await this.transitionLogRepo.record({
+        await transitionLogRepo.record({
           entityId,
           fromState: entity.state,
           toState,
@@ -337,7 +365,7 @@ export class Engine {
           emittedAt: new Date(),
         });
         // Refresh entity so invocation builder sees new artifacts
-        const refreshed = await this.entityRepo.get(entityId);
+        const refreshed = await entityRepo.get(entityId);
         if (refreshed) {
           updated = refreshed;
         }
@@ -346,15 +374,15 @@ export class Engine {
 
     // 7. Create invocation if new state has a prompt template
     if (newStateDef?.promptTemplate) {
-      const canCreate = await this.checkConcurrency(flow, entity);
+      const canCreate = await this.checkConcurrency(flow, entity, txRepos);
       if (canCreate) {
-        const [invocations, gateResults] = await Promise.all([
-          this.invocationRepo.findByEntity(updated.id),
-          this.gateRepo.resultsFor(updated.id),
+        const [invs, gResults] = await Promise.all([
+          invocationRepo.findByEntity(updated.id),
+          gateRepo.resultsFor(updated.id),
         ]);
-        const enriched: EnrichedEntity = { ...updated, invocations, gateResults };
+        const enriched: EnrichedEntity = { ...updated, invocations: invs, gateResults: gResults };
         const build = await buildInvocation(newStateDef, enriched, this.adapters, flow, this.logger);
-        const invocation = await this.invocationRepo.create(
+        const invocation = await invocationRepo.create(
           entityId,
           toState,
           build.prompt,
@@ -378,7 +406,7 @@ export class Engine {
 
     // 8. Record transition log with the TRIGGERING invocation (the one that reported the signal).
     //    The next invocation (result.invocationId) is already recorded in the invocations table.
-    await this.transitionLogRepo.record({
+    await transitionLogRepo.record({
       entityId,
       fromState: entity.state,
       toState,
@@ -388,7 +416,13 @@ export class Engine {
     });
 
     // 9. Spawn child flows
-    const spawned = await executeSpawn({ spawnFlow }, updated, this.flowRepo, this.entityRepo, this.logger);
+    const spawned = await executeSpawn(
+      { spawnFlow },
+      updated,
+      txRepos?.flowRepo ?? this.flowRepo,
+      txRepos?.entityRepo ?? this.entityRepo,
+      this.logger,
+    );
     if (spawned) {
       result.spawned = [spawned.id];
       await emitter.emit({
@@ -419,6 +453,7 @@ export class Engine {
     gateId: string,
     entity: Entity,
     flow: Flow,
+    txRepos?: TransactionRepos | null,
   ): Promise<
     | { kind: "proceed"; gatesPassed: string[] }
     | { kind: "redirect"; toState: string; trigger: string; gatesPassed: string[] }
@@ -432,7 +467,10 @@ export class Engine {
         gatesPassed: string[];
       }
   > {
-    const gate = await this.gateRepo.get(gateId);
+    const gateRepo = txRepos?.gateRepo ?? this.gateRepo;
+    const entityRepo = txRepos?.entityRepo ?? this.entityRepo;
+
+    const gate = await gateRepo.get(gateId);
     if (!gate) throw new NotFoundError(`Gate "${gateId}" not found`);
 
     this.logger.info(`[engine] evaluating gate "${gate.name}" for entity ${entity.id}`, {
@@ -443,7 +481,7 @@ export class Engine {
       entityArtifactKeys: Object.keys(entity.artifacts ?? {}),
     });
 
-    const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
+    const gateResult = await evaluateGate(gate, entity, gateRepo, flow.gateTimeoutMs);
 
     this.logger.debug(`[engine] gate "${gate.name}" result`, {
       entityId: entity.id,
@@ -452,7 +490,6 @@ export class Engine {
       outcome: gateResult.outcome,
       message: gateResult.message,
     });
-
     const namedOutcome = gateResult.outcome && gate.outcomes ? gate.outcomes[gateResult.outcome] : undefined;
 
     this.logger.debug(`[engine] gate "${gate.name}" routing`, {
@@ -502,7 +539,7 @@ export class Engine {
     const priorFailures = Array.isArray(entity.artifacts?.gate_failures)
       ? (entity.artifacts.gate_failures as Array<Record<string, unknown>>)
       : [];
-    await this.entityRepo.updateArtifacts(entity.id, {
+    await entityRepo.updateArtifacts(entity.id, {
       gate_failures: [
         ...priorFailures,
         { gateId: gate.id, gateName: gate.name, output: gateResult.output, failedAt: new Date().toISOString() },
@@ -1009,10 +1046,12 @@ export class Engine {
     };
   }
 
-  private async checkConcurrency(flow: Flow, entity: Entity): Promise<boolean> {
+  private async checkConcurrency(flow: Flow, entity: Entity, txRepos?: TransactionRepos | null): Promise<boolean> {
     if (flow.maxConcurrent <= 0 && flow.maxConcurrentPerRepo <= 0) return true;
+    const invocationRepo = txRepos?.invocationRepo ?? this.invocationRepo;
+    const entityRepo = txRepos?.entityRepo ?? this.entityRepo;
 
-    const allInvocations = await this.invocationRepo.findByFlow(flow.id);
+    const allInvocations = await invocationRepo.findByFlow(flow.id);
     // Count active AND pending (unclaimed, not yet started) invocations
     const activeOrPending = allInvocations.filter((i) => !i.completedAt && !i.failedAt);
 
@@ -1022,7 +1061,7 @@ export class Engine {
       // Identify invocations for entities sharing the same repo ref as this entity.
       // Fetch each unique entity involved in active/pending invocations to compare refs.
       const uniqueEntityIds = [...new Set(activeOrPending.map((i) => i.entityId))];
-      const peerEntities = await Promise.all(uniqueEntityIds.map((id) => this.entityRepo.get(id)));
+      const peerEntities = await Promise.all(uniqueEntityIds.map((id) => entityRepo.get(id)));
       const repoCount = peerEntities.filter((peer) => {
         if (!peer?.refs || !entity.refs) return false;
         // Two entities share the same repo if any ref adapter+id pair matches

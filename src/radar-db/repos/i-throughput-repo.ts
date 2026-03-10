@@ -5,7 +5,7 @@ export interface ThroughputStats {
 }
 
 export interface IThroughputRepo {
-  record(outcome: "completed" | "failed", durationMs: number): void;
-  getStats(): ThroughputStats;
-  pruneOlderThan(cutoff: number): void;
+  record(outcome: "completed" | "failed", durationMs: number): void | Promise<void>;
+  getStats(): ThroughputStats | Promise<ThroughputStats>;
+  pruneOlderThan(cutoff: number): void | Promise<void>;
 }

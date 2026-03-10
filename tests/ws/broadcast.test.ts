@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import { WebSocket } from "ws";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
+import { createTestDb, type TestDb } from "../helpers/pg-test-db.js";
 import { DrizzleEntityRepository } from "../../src/repositories/drizzle/entity.repo.js";
 import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
 import { DrizzleInvocationRepository } from "../../src/repositories/drizzle/invocation.repo.js";
@@ -15,31 +12,7 @@ import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { WebSocketBroadcaster } from "../../src/ws/broadcast.js";
 import type { EngineEvent } from "../../src/engine/event-types.js";
 
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
-
-function makeEngine() {
-	const sqlite = new Database(":memory:");
-	sqlite.pragma("journal_mode = WAL");
-	sqlite.pragma("foreign_keys = ON");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-	const entityRepo = new DrizzleEntityRepository(db);
-	const flowRepo = new DrizzleFlowRepository(db);
-	const invocationRepo = new DrizzleInvocationRepository(db);
-	const gateRepo = new DrizzleGateRepository(db);
-	const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-	const eventEmitter = new EventEmitter();
-	const engine = new Engine({
-		entityRepo,
-		flowRepo,
-		invocationRepo,
-		gateRepo,
-		transitionLogRepo,
-		adapters: new Map(),
-		eventEmitter,
-	});
-	return { engine, eventEmitter, sqlite };
-}
+const TEST_TENANT = "test-tenant";
 
 interface WsClient {
 	ws: WebSocket;
@@ -79,6 +52,8 @@ function connectWs(port: number, token?: string): Promise<WsClient> {
 }
 
 describe("WebSocketBroadcaster", () => {
+	let db: TestDb;
+	let dbClose: () => Promise<void>;
 	let server: http.Server;
 	let broadcaster: WebSocketBroadcaster;
 	let port: number;
@@ -87,7 +62,26 @@ describe("WebSocketBroadcaster", () => {
 
 	beforeEach(async () => {
 		closers = [];
-		const { engine } = makeEngine();
+		const res = await createTestDb();
+		db = res.db;
+		dbClose = res.close;
+
+		const entityRepo = new DrizzleEntityRepository(db, TEST_TENANT);
+		const flowRepo = new DrizzleFlowRepository(db, TEST_TENANT);
+		const invocationRepo = new DrizzleInvocationRepository(db, TEST_TENANT);
+		const gateRepo = new DrizzleGateRepository(db, TEST_TENANT);
+		const transitionLogRepo = new DrizzleTransitionLogRepository(db, TEST_TENANT);
+		const eventEmitter = new EventEmitter();
+		const engine = new Engine({
+			entityRepo,
+			flowRepo,
+			invocationRepo,
+			gateRepo,
+			transitionLogRepo,
+			adapters: new Map(),
+			eventEmitter,
+		});
+
 		server = http.createServer();
 		broadcaster = new WebSocketBroadcaster({ server, engine, adminToken: ADMIN_TOKEN });
 		port = await new Promise<number>((resolve) => {
@@ -101,6 +95,7 @@ describe("WebSocketBroadcaster", () => {
 		for (const close of closers) close();
 		await broadcaster.close();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
+		await dbClose();
 	});
 
 	it("rejects connection without token", async () => {

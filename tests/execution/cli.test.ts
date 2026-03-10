@@ -58,45 +58,41 @@ const validSeed = {
   ],
 };
 
+// CLI subprocess tests that require a running Postgres instance are skipped
+// in unit-test mode. They run in integration-test mode with SILO_DB_URL set.
+const hasPostgres = !!process.env.SILO_DB_URL;
+
 describe("CLI", () => {
-  it("init --seed loads a seed file", () => {
+  it.skipIf(!hasPostgres)("init --seed loads a seed file", () => {
     const seedPath = writeSeedFile(validSeed);
-    const dbPath = join(tmpdir(), `cli-db-${Date.now()}.db`);
-    const output = run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    const output = run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
     expect(output).toContain("flows: 1");
     expect(output).toContain("gates: 1");
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("init --seed --force drops existing data first", () => {
+  it.skipIf(!hasPostgres)("init --seed --force drops existing data first", () => {
     const seedPath = writeSeedFile(validSeed);
-    const dbPath = join(tmpdir(), `cli-force-${Date.now()}.db`);
-    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
-    const output = run(["init", "--seed", seedPath, "--force"], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
+    const output = run(["init", "--seed", seedPath, "--force", "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
     expect(output).toContain("flows: 1");
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("export outputs valid JSON to stdout", () => {
+  it.skipIf(!hasPostgres)("export outputs valid JSON to stdout", () => {
     const seedPath = writeSeedFile(validSeed);
-    const dbPath = join(tmpdir(), `cli-export-${Date.now()}.db`);
-    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
-    const output = run(["export"], { SILO_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
+    const output = run(["export", "--db-url", process.env.SILO_DB_URL!]);
     const parsed = JSON.parse(output);
     expect(parsed.flows).toHaveLength(1);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("export --out writes to file", { timeout: 15000 }, () => {
+  it.skipIf(!hasPostgres)("export --out writes to file", { timeout: 15000 }, () => {
     const seedPath = writeSeedFile(validSeed);
-    const dbPath = join(tmpdir(), `cli-export-file-${Date.now()}.db`);
     const outPath = join(tmpdir(), `cli-export-${Date.now()}.json`);
-    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
-    run(["export", "--out", outPath], { SILO_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
+    run(["export", "--out", outPath, "--db-url", process.env.SILO_DB_URL!]);
     const content = readFileSync(outPath, "utf-8");
     const parsed = JSON.parse(content);
     expect(parsed.flows).toHaveLength(1);
-    if (existsSync(dbPath)) rmSync(dbPath);
     if (existsSync(outPath)) rmSync(outPath);
   }, 15000);
 
@@ -110,22 +106,20 @@ describe("CLI", () => {
     expect(output).toContain("--transport");
     expect(output).toContain("--port");
     expect(output).toContain("--host");
-    expect(output).toContain("--db");
+    expect(output).toContain("--db-url");
   });
 
-  it("SSE server returns CORS headers for localhost origin", async () => {
-    const dbPath = join(tmpdir(), `cli-cors-${Date.now()}.db`);
+  it.skipIf(!hasPostgres)("SSE server returns CORS headers for localhost origin", async () => {
     const seedPath = writeSeedFile(validSeed);
+    const dbUrl = process.env.SILO_DB_URL!;
     try {
-      run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+      run(["init", "--seed", seedPath, "--db-url", dbUrl], { SILO_SEED_ROOT: tmpdir() });
 
-      // Use port 0 to let the OS pick an ephemeral port
-      const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--mcp-only", "--db", dbPath], {
+      const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--mcp-only", "--db-url", dbUrl], {
         cwd: join(import.meta.dirname, "../.."),
-        env: { ...process.env, SILO_DB_PATH: dbPath, SILO_ADMIN_TOKEN: "test-token", SILO_WORKER_TOKEN: "test-worker-token" },
+        env: { ...process.env, SILO_DB_URL: dbUrl, SILO_ADMIN_TOKEN: "test-token", SILO_WORKER_TOKEN: "test-worker-token" },
       });
 
-      // Poll until server is ready instead of fixed sleep
       let port: number | undefined;
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("Server did not start in time")), 10000);
@@ -167,7 +161,6 @@ describe("CLI", () => {
         child.kill("SIGTERM");
       }
     } finally {
-      if (existsSync(dbPath)) rmSync(dbPath);
       if (existsSync(seedPath)) rmSync(seedPath);
     }
   }, 15000);
@@ -177,26 +170,22 @@ describe("CLI", () => {
     expect(output).toContain("--flow");
     expect(output).toContain("--state");
     expect(output).toContain("--json");
-    expect(output).toContain("--db");
+    expect(output).toContain("--db-url");
   });
 
-  it("status prints table for initialized db", () => {
-    const dbPath = join(tmpdir(), `cli-status-${Date.now()}.db`);
+  it.skipIf(!hasPostgres)("status prints table for initialized db", () => {
     const seedPath = writeSeedFile(validSeed);
-    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
-    const output = run(["status"], { SILO_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
+    const output = run(["status", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toContain("pr-review");
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("status --json outputs valid JSON", { timeout: 15000 }, () => {
-    const dbPath = join(tmpdir(), `cli-status-json-${Date.now()}.db`);
+  it.skipIf(!hasPostgres)("status --json outputs valid JSON", { timeout: 15000 }, () => {
     const seedPath = writeSeedFile(validSeed);
-    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
-    const output = run(["status", "--json"], { SILO_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath, "--db-url", process.env.SILO_DB_URL!], { SILO_SEED_ROOT: tmpdir() });
+    const output = run(["status", "--json", "--db-url", process.env.SILO_DB_URL!]);
     const parsed = JSON.parse(output);
     expect(parsed).toHaveProperty("flows");
-    if (existsSync(dbPath)) rmSync(dbPath);
   }, 15000);
 
 });
@@ -357,39 +346,29 @@ describe("validateWorkerToken", () => {
 });
 
 describe("CLI validation", () => {
-  it("serve rejects non-numeric --reaper-interval", () => {
-    const dbPath = join(tmpdir(), `cli-serve-nan-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--reaper-interval", "abc"], { SILO_DB_PATH: dbPath });
+  it.skipIf(!hasPostgres)("serve rejects non-numeric --reaper-interval", () => {
+    const output = runExpectFail(["serve", "--reaper-interval", "abc", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toMatch(/reaper-interval/i);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("serve rejects --reaper-interval below 1000", () => {
-    const dbPath = join(tmpdir(), `cli-serve-low-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--reaper-interval", "500"], { SILO_DB_PATH: dbPath });
+  it.skipIf(!hasPostgres)("serve rejects --reaper-interval below 1000", () => {
+    const output = runExpectFail(["serve", "--reaper-interval", "500", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toMatch(/reaper-interval/i);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("serve rejects non-numeric --claim-ttl", () => {
-    const dbPath = join(tmpdir(), `cli-serve-ttl-nan-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--claim-ttl", "abc"], { SILO_DB_PATH: dbPath });
+  it.skipIf(!hasPostgres)("serve rejects non-numeric --claim-ttl", () => {
+    const output = runExpectFail(["serve", "--claim-ttl", "abc", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toMatch(/claim-ttl/i);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("serve rejects --claim-ttl below 5000", () => {
-    const dbPath = join(tmpdir(), `cli-serve-ttl-low-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--claim-ttl", "1000"], { SILO_DB_PATH: dbPath });
+  it.skipIf(!hasPostgres)("serve rejects --claim-ttl below 5000", () => {
+    const output = runExpectFail(["serve", "--claim-ttl", "1000", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toMatch(/claim-ttl/i);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
-  it("serve rejects --http-only and --mcp-only together", () => {
-    const dbPath = join(tmpdir(), `cli-serve-both-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--http-only", "--mcp-only"], { SILO_DB_PATH: dbPath });
+  it.skipIf(!hasPostgres)("serve rejects --http-only and --mcp-only together", () => {
+    const output = runExpectFail(["serve", "--http-only", "--mcp-only", "--db-url", process.env.SILO_DB_URL!]);
     expect(output).toMatch(/http-only.*mcp-only|Cannot use/i);
-    if (existsSync(dbPath)) rmSync(dbPath);
   });
 
 });

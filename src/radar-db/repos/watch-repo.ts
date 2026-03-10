@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { RadarDb } from "../index.js";
 import { watches } from "../schema.js";
 
@@ -46,44 +46,53 @@ function toRow(raw: typeof watches.$inferSelect): WatchRow {
 }
 
 export class WatchRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
-  create(input: CreateWatchInput): WatchRow {
+  async create(input: CreateWatchInput): Promise<WatchRow> {
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
-    this.db
-      .insert(watches)
-      .values({
-        id,
-        sourceId: input.sourceId,
-        name: input.name,
-        filter: JSON.stringify(input.filter),
-        action: input.action,
-        actionConfig: JSON.stringify(input.actionConfig),
-        enabled: input.enabled ?? true,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    const row = this.db.select().from(watches).where(eq(watches.id, id)).get();
+    await this.db.insert(watches).values({
+      id,
+      tenantId: this.tenantId,
+      sourceId: input.sourceId,
+      name: input.name,
+      filter: JSON.stringify(input.filter),
+      action: input.action,
+      actionConfig: JSON.stringify(input.actionConfig),
+      enabled: input.enabled ?? true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await this.db.select().from(watches).where(eq(watches.id, id));
     if (!row) throw new Error("Insert failed");
     return toRow(row);
   }
 
-  getById(id: string): WatchRow | undefined {
-    const row = this.db.select().from(watches).where(eq(watches.id, id)).get();
+  async getById(id: string): Promise<WatchRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(watches)
+      .where(and(eq(watches.id, id), eq(watches.tenantId, this.tenantId)));
     return row ? toRow(row) : undefined;
   }
 
-  listBySource(sourceId: string): WatchRow[] {
-    return this.db.select().from(watches).where(eq(watches.sourceId, sourceId)).all().map(toRow);
+  async listBySource(sourceId: string): Promise<WatchRow[]> {
+    const rows = await this.db
+      .select()
+      .from(watches)
+      .where(and(eq(watches.sourceId, sourceId), eq(watches.tenantId, this.tenantId)));
+    return rows.map(toRow);
   }
 
-  list(): WatchRow[] {
-    return this.db.select().from(watches).all().map(toRow);
+  async list(): Promise<WatchRow[]> {
+    const rows = await this.db.select().from(watches).where(eq(watches.tenantId, this.tenantId));
+    return rows.map(toRow);
   }
 
-  update(id: string, input: UpdateWatchInput): WatchRow | undefined {
+  async update(id: string, input: UpdateWatchInput): Promise<WatchRow | undefined> {
     const now = Math.floor(Date.now() / 1000);
     const values: Partial<typeof watches.$inferInsert> = { updatedAt: now };
     if (input.name !== undefined) values.name = input.name;
@@ -91,11 +100,14 @@ export class WatchRepo {
     if (input.action !== undefined) values.action = input.action;
     if (input.actionConfig !== undefined) values.actionConfig = JSON.stringify(input.actionConfig);
     if (input.enabled !== undefined) values.enabled = input.enabled;
-    this.db.update(watches).set(values).where(eq(watches.id, id)).run();
+    await this.db
+      .update(watches)
+      .set(values)
+      .where(and(eq(watches.id, id), eq(watches.tenantId, this.tenantId)));
     return this.getById(id);
   }
 
-  delete(id: string): void {
-    this.db.delete(watches).where(eq(watches.id, id)).run();
+  async delete(id: string): Promise<void> {
+    await this.db.delete(watches).where(and(eq(watches.id, id), eq(watches.tenantId, this.tenantId)));
   }
 }

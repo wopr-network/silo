@@ -1,0 +1,1 @@
+CREATE INDEX "entity_map_source_id_idx" ON "entity_map" USING btree ("source_id");

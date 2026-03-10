@@ -1,26 +1,29 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { PGlite } from "@electric-sql/pglite";
+import { createTestDb, type TestDb } from "../helpers/pg-test-db.js";
 import { DrizzleDomainEventRepository } from "../../src/repositories/drizzle/domain-event.repo.js";
 
+const TENANT = "t_test";
+
 describe("DrizzleDomainEventRepository CAS", () => {
-  let sqlite: InstanceType<typeof Database>;
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let db: TestDb;
+  let client: PGlite;
+  let close: () => Promise<void>;
   let repo: DrizzleDomainEventRepository;
 
-  beforeEach(() => {
-    sqlite = new Database(":memory:");
-    db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: "drizzle" });
-    sqlite.exec(
-      `INSERT INTO flow_definitions (id, name, initial_state) VALUES ('f1', 'test', 'open')`,
+  beforeEach(async () => {
+    ({ db, client, close } = await createTestDb());
+    await client.exec(
+      `INSERT INTO flow_definitions (id, tenant_id, name, initial_state) VALUES ('f1', '${TENANT}', 'test', 'open')`,
     );
-    sqlite.exec(
-      `INSERT INTO entities (id, flow_id, state, created_at, updated_at) VALUES ('e1', 'f1', 'open', 0, 0)`,
+    await client.exec(
+      `INSERT INTO entities (id, tenant_id, flow_id, state, created_at, updated_at) VALUES ('e1', '${TENANT}', 'f1', 'open', 0, 0)`,
     );
-    repo = new DrizzleDomainEventRepository(db);
+    repo = new DrizzleDomainEventRepository(db, TENANT);
+  });
+
+  afterEach(async () => {
+    await close();
   });
 
   it("getLastSequence returns 0 for entity with no events", async () => {

@@ -4,32 +4,28 @@
  * Replaces the old node:http + custom Router server.
  * Serves norad (dashboard), workers (claim/report), and admin tooling.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import type { Engine } from "../engine/engine.js";
+import { extractBearerToken, tokensMatch } from "../auth.js";
+import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";
+import { Engine } from "../engine/engine.js";
+import { EventEmitter } from "../engine/event-emitter.js";
 import type { EngineEvent, IEventBusAdapter } from "../engine/event-types.js";
-import type { McpServerDeps } from "../execution/mcp-helpers.js";
+import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
+import { createScopedRepos } from "../repositories/scoped-repos.js";
 import { UI_HTML } from "../ui/index.html.js";
 
-// ─── Auth helpers ───
+// ─── Tenant ID validation ───
 
-function extractBearerToken(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const lower = header.toLowerCase();
-  if (!lower.startsWith("bearer ")) return undefined;
-  return header.slice(7).trim() || undefined;
-}
+const TENANT_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
-function tokensMatch(a: string, b: string): boolean {
-  const hashA = createHash("sha256").update(a.trim()).digest();
-  const hashB = createHash("sha256").update(b.trim()).digest();
-  return timingSafeEqual(hashA, hashB);
+function isValidTenantId(id: string): boolean {
+  return TENANT_ID_RE.test(id);
 }
 
 // ─── SSE adapter for Hono streaming ───
@@ -109,6 +105,19 @@ function mcpResultToResponse(result: { content: { type: string; text: string }[]
 export interface HonoServerDeps {
   engine: Engine;
   mcpDeps: McpServerDeps;
+  /** Raw drizzle db handle — enables per-request tenant scoping via x-tenant-id header. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (postgres-js + PGlite)
+  db?: any;
+  /** Tenant ID used when x-tenant-id header is absent. Defaults to "default". */
+  defaultTenantId?: string;
+  /** Shared event emitter — reused by all tenant engines. */
+  eventEmitter?: IEventBusAdapter;
+  /** Shared transaction wrapper — reused by all tenant engines. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  withTransaction?: <T>(fn: (tx: any) => T | Promise<T>) => Promise<T>;
+  /** Factory to create repos from a tx handle, for proper transaction scoping. */
+  // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+  repoFactory?: (txDb: any) => import("../engine/engine.js").TransactionRepos;
   adminToken?: string;
   workerToken?: string;
   corsOrigins?: string[];
@@ -123,8 +132,111 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   const app = new Hono();
   const log = deps.logger ?? consoleLogger;
 
-  // Ensure engine is set on mcpDeps
+  // ─── Tenant resolution ───
+  const defaultTenantId = deps.defaultTenantId ?? "default";
+  const MAX_TENANT_CACHE = 64;
+  const tenantCache = new Map<string, { engine: Engine; mcpDeps: McpServerDeps; stopReaper?: () => Promise<void> }>();
+  // Pre-populate boot tenant (has running reaper, event-sourced wrappers, etc.)
   deps.mcpDeps.engine = deps.engine;
+  tenantCache.set(defaultTenantId, { engine: deps.engine, mcpDeps: deps.mcpDeps });
+
+  async function evictOldestTenant(): Promise<void> {
+    // Evict the oldest non-default entry (Map iteration order = insertion order).
+    for (const [key, entry] of tenantCache) {
+      if (key === defaultTenantId) continue;
+      if (entry.stopReaper) await entry.stopReaper().catch(() => {});
+      tenantCache.delete(key);
+      return;
+    }
+  }
+
+  async function getTenantEntry(tenantId: string): Promise<{ engine: Engine; mcpDeps: McpServerDeps }> {
+    const cached = tenantCache.get(tenantId);
+    if (cached) {
+      // Promote to most-recently-used (Map iteration order = insertion order).
+      tenantCache.delete(tenantId);
+      tenantCache.set(tenantId, cached);
+      return cached;
+    }
+    if (!deps.db) {
+      // biome-ignore lint/style/noNonNullAssertion: boot tenant always pre-populated
+      return tenantCache.get(defaultTenantId)!;
+    }
+    // Evict least-recently-used if cache is full to prevent unbounded growth.
+    if (tenantCache.size >= MAX_TENANT_CACHE) {
+      await evictOldestTenant();
+    }
+    const repos = createScopedRepos(deps.db, tenantId);
+    // Each tenant gets its own event emitter to prevent cross-tenant event leakage.
+    const tenantEmitter = new EventEmitter();
+    tenantEmitter.register(new DomainEventPersistAdapter(repos.domainEvents));
+    const engine = new Engine({
+      entityRepo: repos.entities,
+      flowRepo: repos.flows,
+      invocationRepo: repos.invocations,
+      gateRepo: repos.gates,
+      transitionLogRepo: repos.transitionLog,
+      adapters: deps.engine.adapters,
+      eventEmitter: tenantEmitter,
+      withTransaction: deps.withTransaction,
+      repoFactory: deps.db
+        ? // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
+          (tx: any) => {
+            const r = createScopedRepos(tx, tenantId);
+            return {
+              entityRepo: r.entities,
+              flowRepo: r.flows,
+              invocationRepo: r.invocations,
+              gateRepo: r.gates,
+              transitionLogRepo: r.transitionLog,
+              domainEvents: r.domainEvents,
+            };
+          }
+        : undefined,
+      domainEvents: repos.domainEvents,
+    });
+    // Start a reaper for this tenant so stale claims get cleaned up.
+    const stopReaper = engine.startReaper(30_000);
+    const mcpDeps: McpServerDeps = {
+      entities: repos.entities,
+      flows: repos.flows,
+      invocations: repos.invocations,
+      gates: repos.gates,
+      transitions: repos.transitionLog,
+      eventRepo: repos.events,
+      domainEvents: repos.domainEvents,
+      engine,
+      withTransaction: deps.withTransaction,
+    };
+    tenantCache.set(tenantId, { engine, mcpDeps, stopReaper });
+    return { engine, mcpDeps };
+  }
+
+  function isAdminAuthed(c: import("hono").Context): boolean {
+    const configuredToken = deps.adminToken?.trim() || undefined;
+    if (!configuredToken) return false;
+    const callerToken = extractBearerToken(c.req.header("authorization"));
+    if (!callerToken) return false;
+    return tokensMatch(configuredToken, callerToken);
+  }
+
+  function resolveTenantId(c: import("hono").Context): string {
+    const raw = c.req.header("x-tenant-id");
+    if (!raw) return defaultTenantId;
+    if (!isValidTenantId(raw)) return defaultTenantId;
+    // Only admin-authenticated requests may select a non-default tenant.
+    // Workers and unauthenticated callers are locked to the default tenant.
+    if (raw !== defaultTenantId && !isAdminAuthed(c)) return defaultTenantId;
+    return raw;
+  }
+
+  async function getEngine(c: import("hono").Context): Promise<Engine> {
+    return (await getTenantEntry(resolveTenantId(c))).engine;
+  }
+
+  async function getMcpDeps(c: import("hono").Context): Promise<McpServerDeps> {
+    return (await getTenantEntry(resolveTenantId(c))).mcpDeps;
+  }
 
   // ─── CORS ───
   if (deps.corsOrigins && deps.corsOrigins.length > 0) {
@@ -133,7 +245,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       cors({
         origin: deps.corsOrigins,
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "X-Tenant-Id"],
       }),
     );
   } else {
@@ -153,7 +265,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
           return undefined as unknown as string;
         },
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "X-Tenant-Id"],
       }),
     );
   }
@@ -197,7 +309,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
 
   // ─── Status ───
   app.get("/api/status", async (c) => {
-    const status = await deps.engine.getStatus();
+    const status = await (await getEngine(c)).getStatus();
     return c.json(status);
   });
 
@@ -206,7 +318,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string };
-    const result = await callToolHandler(deps.mcpDeps, "flow.claim", args);
+    const result = await callToolHandler(await getMcpDeps(c), "flow.claim", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -216,7 +328,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string, flow: c.req.param("flow") };
-    const result = await callToolHandler(deps.mcpDeps, "flow.claim", args);
+    const result = await callToolHandler(await getMcpDeps(c), "flow.claim", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -231,7 +343,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     };
     if (body.worker_id) args.worker_id = body.worker_id;
     if (body.artifacts) args.artifacts = body.artifacts;
-    const result = await callToolHandler(deps.mcpDeps, "flow.report", args);
+    const result = await callToolHandler(await getMcpDeps(c), "flow.report", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -241,7 +353,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { entity_id: c.req.param("id"), error: body.error as string };
-    const result = await callToolHandler(deps.mcpDeps, "flow.fail", args);
+    const result = await callToolHandler(await getMcpDeps(c), "flow.fail", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -255,7 +367,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     const payload = body.payload as Record<string, unknown> | undefined;
     if (!flowName) return c.json({ error: "Missing required field: flow" }, 400);
     try {
-      const entity = await deps.engine.createEntity(flowName, refs, payload);
+      const entity = await (await getEngine(c)).createEntity(flowName, refs, payload);
       return c.json(entity as unknown as Record<string, unknown>, 201);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -265,7 +377,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   app.get("/api/entities/:id", async (c) => {
-    const result = await callToolHandler(deps.mcpDeps, "query.entity", { id: c.req.param("id") });
+    const result = await callToolHandler(await getMcpDeps(c), "query.entity", { id: c.req.param("id") });
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -280,19 +392,19 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       const limit = parseInt(limitStr, 10);
       if (!Number.isNaN(limit) && limit > 0) args.limit = limit;
     }
-    const result = await callToolHandler(deps.mcpDeps, "query.entities", args);
+    const result = await callToolHandler(await getMcpDeps(c), "query.entities", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
 
   // ─── Flow definitions ───
   app.get("/api/flows", async (c) => {
-    const flows = await deps.mcpDeps.flows.listAll();
+    const flows = await (await getMcpDeps(c)).flows.listAll();
     return c.json(flows as unknown as Record<string, unknown>[]);
   });
 
   app.get("/api/flows/:id", async (c) => {
-    const result = await callToolHandler(deps.mcpDeps, "query.flow", { name: c.req.param("id") });
+    const result = await callToolHandler(await getMcpDeps(c), "query.flow", { name: c.req.param("id") });
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
@@ -305,13 +417,13 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
     const flowName = c.req.param("id");
-    const existing = await deps.mcpDeps.flows.getByName(flowName);
+    const existing = await (await getMcpDeps(c)).flows.getByName(flowName);
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const toolName = existing ? "admin.flow.update" : "admin.flow.create";
     const args = existing
       ? { flow_name: flowName, definition: body.definition, description: body.description }
       : { name: flowName, definition: body.definition, description: body.description };
-    const result = await callToolHandler(deps.mcpDeps, toolName, args, {
+    const result = await callToolHandler(await getMcpDeps(c), toolName, args, {
       adminToken: deps.adminToken,
       callerToken,
     });
@@ -329,7 +441,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/flows/:flow/pause", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.flow.pause",
       { flow_name: c.req.param("flow") },
       { adminToken: deps.adminToken, callerToken },
@@ -341,7 +453,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/flows/:flow/resume", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.flow.resume",
       { flow_name: c.req.param("flow") },
       { adminToken: deps.adminToken, callerToken },
@@ -353,7 +465,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/entities/:id/cancel", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.entity.cancel",
       { entity_id: c.req.param("id") },
       { adminToken: deps.adminToken, callerToken },
@@ -371,7 +483,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.entity.reset",
       { entity_id: c.req.param("id"), target_state: body.target_state as string },
       { adminToken: deps.adminToken, callerToken },
@@ -383,7 +495,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/workers/:worker_id/drain", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.worker.drain",
       { worker_id: c.req.param("worker_id") },
       { adminToken: deps.adminToken, callerToken },
@@ -395,7 +507,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/workers/:worker_id/undrain", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.worker.undrain",
       { worker_id: c.req.param("worker_id") },
       { adminToken: deps.adminToken, callerToken },
@@ -407,7 +519,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   admin.post("/entities/:id/gates/:gateName/rerun", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
     const result = await callToolHandler(
-      deps.mcpDeps,
+      await getMcpDeps(c),
       "admin.gate.rerun",
       { entity_id: c.req.param("id"), gate_name: c.req.param("gateName") },
       { adminToken: deps.adminToken, callerToken },
@@ -433,19 +545,19 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       if (limitStr !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
         return c.json({ error: "invalid limit parameter" }, 400);
       }
-      const evts = await deps.mcpDeps.eventRepo.findByEntity(id, limit);
+      const evts = await (await getMcpDeps(c)).eventRepo.findByEntity(id, limit);
       return c.json(evts as unknown as Record<string, unknown>[]);
     });
 
     ui.get("/entity/:id/invocations", requireAdminAuth(), async (c) => {
       const id = c.req.param("id") as string;
-      const invocations = await deps.mcpDeps.invocations.findByEntity(id);
+      const invocations = await (await getMcpDeps(c)).invocations.findByEntity(id);
       return c.json(invocations as unknown as Record<string, unknown>[]);
     });
 
     ui.get("/entity/:id/gates", requireAdminAuth(), async (c) => {
       const id = c.req.param("id") as string;
-      const results = await deps.mcpDeps.gates.resultsFor(id);
+      const results = await (await getMcpDeps(c)).gates.resultsFor(id);
       return c.json(results as unknown as Record<string, unknown>[]);
     });
 
@@ -455,7 +567,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       if (limitStr !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
         return c.json({ error: "invalid limit parameter" }, 400);
       }
-      const evts = await deps.mcpDeps.eventRepo.findRecent(limit);
+      const evts = await (await getMcpDeps(c)).eventRepo.findRecent(limit);
       return c.json(evts as unknown as Record<string, unknown>[]);
     });
 

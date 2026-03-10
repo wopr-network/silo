@@ -39,54 +39,56 @@ function toRow(raw: typeof sources.$inferSelect): SourceRow {
 }
 
 export class SourceRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
-  create(input: CreateSourceInput): SourceRow {
+  async create(input: CreateSourceInput): Promise<SourceRow> {
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
-    this.db
-      .insert(sources)
-      .values({
-        id,
-        name: input.name,
-        type: input.type,
-        config: JSON.stringify(input.config),
-        enabled: input.enabled ?? true,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    const row = this.db.select().from(sources).where(eq(sources.id, id)).get();
+    await this.db.insert(sources).values({
+      id,
+      tenantId: this.tenantId,
+      name: input.name,
+      type: input.type,
+      config: JSON.stringify(input.config),
+      enabled: input.enabled ?? true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [row] = await this.db.select().from(sources).where(eq(sources.id, id));
     if (!row) throw new Error("Insert failed");
     return toRow(row);
   }
 
-  getById(id: string): SourceRow | undefined {
-    const row = this.db.select().from(sources).where(eq(sources.id, id)).get();
+  async getById(id: string): Promise<SourceRow | undefined> {
+    const [row] = await this.db.select().from(sources).where(eq(sources.id, id));
     return row ? toRow(row) : undefined;
   }
 
-  getByName(name: string): SourceRow | undefined {
-    const row = this.db.select().from(sources).where(eq(sources.name, name)).get();
+  async getByName(name: string): Promise<SourceRow | undefined> {
+    const [row] = await this.db.select().from(sources).where(eq(sources.name, name));
     return row ? toRow(row) : undefined;
   }
 
-  list(): SourceRow[] {
-    return this.db.select().from(sources).all().map(toRow);
+  async list(): Promise<SourceRow[]> {
+    const rows = await this.db.select().from(sources);
+    return rows.map(toRow);
   }
 
-  update(id: string, input: UpdateSourceInput): SourceRow | undefined {
+  async update(id: string, input: UpdateSourceInput): Promise<SourceRow | undefined> {
     const now = Math.floor(Date.now() / 1000);
     const values: Partial<typeof sources.$inferInsert> = { updatedAt: now };
     if (input.name !== undefined) values.name = input.name;
     if (input.type !== undefined) values.type = input.type;
     if (input.config !== undefined) values.config = JSON.stringify(input.config);
     if (input.enabled !== undefined) values.enabled = input.enabled;
-    this.db.update(sources).set(values).where(eq(sources.id, id)).run();
+    await this.db.update(sources).set(values).where(eq(sources.id, id));
     return this.getById(id);
   }
 
-  delete(id: string): void {
-    this.db.delete(sources).where(eq(sources.id, id)).run();
+  async delete(id: string): Promise<void> {
+    await this.db.delete(sources).where(eq(sources.id, id));
   }
 }

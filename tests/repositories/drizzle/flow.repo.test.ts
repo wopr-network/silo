@@ -1,25 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleFlowRepository } from "../../../src/repositories/drizzle/flow.repo.js";
 import type { IFlowRepository } from "../../../src/repositories/interfaces.js";
 
-let sqlite: Database.Database;
-let db: ReturnType<typeof drizzle>;
+const TENANT = "test-tenant";
+
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: IFlowRepository;
 
-beforeEach(() => {
-  sqlite = new Database(":memory:");
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  db = drizzle(sqlite);
-  migrate(db, { migrationsFolder: "./drizzle" });
-  repo = new DrizzleFlowRepository(db);
+beforeEach(async () => {
+  const t = await createTestDb();
+  db = t.db;
+  close = t.close;
+  repo = new DrizzleFlowRepository(db, TENANT);
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleFlowRepository", () => {

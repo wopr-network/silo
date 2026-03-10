@@ -1,8 +1,6 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { createTestDb, type TestDb } from "./helpers/pg-test-db.js";
 import * as schema from "../src/repositories/drizzle/schema.js";
 import { DrizzleFlowRepository } from "../src/repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../src/repositories/drizzle/gate.repo.js";
@@ -12,6 +10,8 @@ import { DrizzleInvocationRepository } from "../src/repositories/drizzle/invocat
 import { callToolHandler } from "../src/execution/mcp-server.js";
 import type { McpServerDeps } from "../src/execution/mcp-server.js";
 import type { ITransitionLogRepository } from "../src/repositories/interfaces.js";
+
+const TEST_TENANT = "test-tenant";
 
 function makeTransitionRepo(): ITransitionLogRepository {
   return {
@@ -29,25 +29,30 @@ function makeTransitionRepo(): ITransitionLogRepository {
 }
 
 describe("admin MCP tools", () => {
-  let db: ReturnType<typeof drizzle<typeof schema>>;
-  let sqlite: Database.Database;
+  let db: TestDb;
+  let close: () => Promise<void>;
   let deps: McpServerDeps;
 
-  beforeEach(() => {
-    sqlite = new Database(":memory:");
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-    db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: "./drizzle" });
+  beforeEach(async () => {
+    const res = await createTestDb();
+    db = res.db;
+    close = res.close;
 
     deps = {
-      entities: new DrizzleEntityRepository(db as any),
-      flows: new DrizzleFlowRepository(db as any),
-      invocations: new DrizzleInvocationRepository(db as any),
-      gates: new DrizzleGateRepository(db as any),
+      entities: new DrizzleEntityRepository(db, TEST_TENANT),
+      flows: new DrizzleFlowRepository(db, TEST_TENANT),
+      invocations: new DrizzleInvocationRepository(db, TEST_TENANT),
+      gates: new DrizzleGateRepository(db, TEST_TENANT),
       transitions: makeTransitionRepo(),
-      eventRepo: new DrizzleEventRepository(db as any),
+      eventRepo: new DrizzleEventRepository(db, TEST_TENANT),
     };
+  });
+
+  afterEach(async () => {
+    // Yield to let fire-and-forget emitDefinitionChanged inserts complete
+    // before closing PGlite (avoids WASM "null function" errors on teardown).
+    await new Promise((r) => setTimeout(r, 50));
+    await close();
   });
 
   it("admin.flow.create creates a flow", async () => {
@@ -215,22 +220,20 @@ describe("admin MCP tools", () => {
     });
 
     const flow = await deps.flows.getByName("test-flow");
-    const versions = db
+    const versions = await db
       .select()
       .from(schema.flowVersions)
-      .where(eq(schema.flowVersions.flowId, flow!.id))
-      .all();
+      .where(eq(schema.flowVersions.flowId, flow!.id));
     expect(versions.length).toBeGreaterThanOrEqual(1);
   });
 
   it("mutations emit definition.changed events", async () => {
     await callToolHandler(deps, "admin.flow.create", { name: "test-flow", initialState: "open", states: [{ name: "open" }] });
 
-    const eventRows = db
+    const eventRows = await db
       .select()
       .from(schema.events)
-      .where(eq(schema.events.type, "definition.changed"))
-      .all();
+      .where(eq(schema.events.type, "definition.changed"));
     expect(eventRows.length).toBeGreaterThanOrEqual(1);
   });
 

@@ -1,5 +1,4 @@
 import { and, eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { NotFoundError } from "../../errors.js";
 import type {
   CreateFlowInput,
@@ -17,10 +16,7 @@ import type {
   UpdateStateInput,
   UpdateTransitionInput,
 } from "../interfaces.js";
-import type * as schema from "./schema.js";
 import { flowDefinitions, flowVersions, stateDefinitions, transitionRules } from "./schema.js";
-
-type Db = BetterSQLite3Database<typeof schema>;
 
 function toDate(v: number | null | undefined): Date | null {
   return v != null ? new Date(v) : null;
@@ -84,23 +80,25 @@ function rowToFlow(r: typeof flowDefinitions.$inferSelect, states: State[], tran
   };
 }
 
-export class DrizzleFlowRepository implements IFlowRepository {
-  constructor(private db: Db) {}
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver compat (PGlite, node-postgres, etc.)
+type Db = any;
 
-  private hydrateFlow(row: typeof flowDefinitions.$inferSelect): Flow {
-    const states = this.db
+export class DrizzleFlowRepository implements IFlowRepository {
+  constructor(
+    private db: Db,
+    private tenantId: string,
+  ) {}
+
+  private async hydrateFlow(row: typeof flowDefinitions.$inferSelect): Promise<Flow> {
+    const stateRows = await this.db
       .select()
       .from(stateDefinitions)
-      .where(eq(stateDefinitions.flowId, row.id))
-      .all()
-      .map(rowToState);
-    const transitions = this.db
+      .where(and(eq(stateDefinitions.flowId, row.id), eq(stateDefinitions.tenantId, this.tenantId)));
+    const transitionRows = await this.db
       .select()
       .from(transitionRules)
-      .where(eq(transitionRules.flowId, row.id))
-      .all()
-      .map(rowToTransition);
-    return rowToFlow(row, states, transitions);
+      .where(and(eq(transitionRules.flowId, row.id), eq(transitionRules.tenantId, this.tenantId)));
+    return rowToFlow(row, stateRows.map(rowToState), transitionRows.map(rowToTransition));
   }
 
   async create(input: CreateFlowInput): Promise<Flow> {
@@ -108,6 +106,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     const id = crypto.randomUUID();
     const row = {
       id,
+      tenantId: this.tenantId,
       name: input.name,
       description: input.description ?? null,
       entitySchema: (input.entitySchema ?? null) as Record<string, unknown> | null,
@@ -122,22 +121,28 @@ export class DrizzleFlowRepository implements IFlowRepository {
       discipline: input.discipline ?? null,
       defaultModelTier: input.defaultModelTier ?? null,
       timeoutPrompt: input.timeoutPrompt ?? null,
-      paused: input.paused ? 1 : 0,
+      paused: input.paused ?? false,
       createdAt: now,
       updatedAt: now,
     };
-    this.db.insert(flowDefinitions).values(row).run();
+    await this.db.insert(flowDefinitions).values(row);
     return rowToFlow(row, [], []);
   }
 
   async get(id: string): Promise<Flow | null> {
-    const rows = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.id, id)).all();
+    const rows = await this.db
+      .select()
+      .from(flowDefinitions)
+      .where(and(eq(flowDefinitions.id, id), eq(flowDefinitions.tenantId, this.tenantId)));
     if (rows.length === 0) return null;
     return this.hydrateFlow(rows[0]);
   }
 
   async getByName(name: string): Promise<Flow | null> {
-    const rows = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.name, name)).all();
+    const rows = await this.db
+      .select()
+      .from(flowDefinitions)
+      .where(and(eq(flowDefinitions.name, name), eq(flowDefinitions.tenantId, this.tenantId)));
     if (rows.length === 0) return null;
     return this.hydrateFlow(rows[0]);
   }
@@ -147,11 +152,16 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (!current) return null;
     if (current.version === version) return current;
 
-    const rows = this.db
+    const rows = await this.db
       .select()
       .from(flowVersions)
-      .where(and(eq(flowVersions.flowId, flowId), eq(flowVersions.version, version)))
-      .all();
+      .where(
+        and(
+          eq(flowVersions.flowId, flowId),
+          eq(flowVersions.version, version),
+          eq(flowVersions.tenantId, this.tenantId),
+        ),
+      );
     if (rows.length === 0) return null;
 
     const snap = rows[0].snapshot as {
@@ -224,8 +234,12 @@ export class DrizzleFlowRepository implements IFlowRepository {
   }
 
   async list(): Promise<Flow[]> {
-    const rows = this.db.select().from(flowDefinitions).all();
-    return rows.map((row) => this.hydrateFlow(row));
+    const rows = await this.db.select().from(flowDefinitions).where(eq(flowDefinitions.tenantId, this.tenantId));
+    const results: Flow[] = [];
+    for (const row of rows) {
+      results.push(await this.hydrateFlow(row));
+    }
+    return results;
   }
 
   async listAll(): Promise<Flow[]> {
@@ -234,7 +248,10 @@ export class DrizzleFlowRepository implements IFlowRepository {
 
   async update(id: string, changes: UpdateFlowInput): Promise<Flow> {
     const now = Date.now();
-    const current = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.id, id)).all();
+    const current = await this.db
+      .select()
+      .from(flowDefinitions)
+      .where(and(eq(flowDefinitions.id, id), eq(flowDefinitions.tenantId, this.tenantId)));
     if (current.length === 0) throw new NotFoundError(`Flow not found: ${id}`);
 
     const updateValues: Record<string, unknown> = { updatedAt: now };
@@ -252,11 +269,17 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.discipline !== undefined) updateValues.discipline = changes.discipline;
     if (changes.defaultModelTier !== undefined) updateValues.defaultModelTier = changes.defaultModelTier;
     if (changes.timeoutPrompt !== undefined) updateValues.timeoutPrompt = changes.timeoutPrompt;
-    if (changes.paused !== undefined) updateValues.paused = changes.paused ? 1 : 0;
+    if (changes.paused !== undefined) updateValues.paused = changes.paused;
 
-    this.db.update(flowDefinitions).set(updateValues).where(eq(flowDefinitions.id, id)).run();
+    await this.db
+      .update(flowDefinitions)
+      .set(updateValues)
+      .where(and(eq(flowDefinitions.id, id), eq(flowDefinitions.tenantId, this.tenantId)));
 
-    const updated = this.db.select().from(flowDefinitions).where(eq(flowDefinitions.id, id)).all();
+    const updated = await this.db
+      .select()
+      .from(flowDefinitions)
+      .where(and(eq(flowDefinitions.id, id), eq(flowDefinitions.tenantId, this.tenantId)));
     return this.hydrateFlow(updated[0]);
   }
 
@@ -264,6 +287,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     const id = crypto.randomUUID();
     const row = {
       id,
+      tenantId: this.tenantId,
       flowId,
       name: state.name,
       agentRole: state.agentRole || null,
@@ -276,15 +300,16 @@ export class DrizzleFlowRepository implements IFlowRepository {
       retryAfterMs: state.retryAfterMs ?? null,
       meta: (state.meta ?? null) as Record<string, unknown> | null,
     };
-    this.db.transaction((tx) => {
-      tx.insert(stateDefinitions).values(row).run();
-      tx.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, flowId)).run();
+    await this.db.transaction(async (tx: Db) => {
+      await tx.insert(stateDefinitions).values(row);
+      await tx.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, flowId));
     });
     return rowToState(row);
   }
 
   async updateState(stateId: string, changes: UpdateStateInput): Promise<State> {
-    const existing = this.db.select().from(stateDefinitions).where(eq(stateDefinitions.id, stateId)).all();
+    const cond = and(eq(stateDefinitions.id, stateId), eq(stateDefinitions.tenantId, this.tenantId));
+    const existing = await this.db.select().from(stateDefinitions).where(cond);
     if (existing.length === 0) throw new NotFoundError(`State not found: ${stateId}`);
 
     const updateValues: Record<string, unknown> = {};
@@ -300,11 +325,11 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.meta !== undefined) updateValues.meta = changes.meta;
 
     if (Object.keys(updateValues).length > 0) {
-      this.db.update(stateDefinitions).set(updateValues).where(eq(stateDefinitions.id, stateId)).run();
+      await this.db.update(stateDefinitions).set(updateValues).where(cond);
     }
 
-    const rows = this.db.select().from(stateDefinitions).where(eq(stateDefinitions.id, stateId)).all();
-    this.db.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, rows[0].flowId)).run();
+    const rows = await this.db.select().from(stateDefinitions).where(cond);
+    await this.db.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, rows[0].flowId));
 
     return rowToState(rows[0]);
   }
@@ -314,6 +339,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
     const id = crypto.randomUUID();
     const row = {
       id,
+      tenantId: this.tenantId,
       flowId,
       fromState: transition.fromState,
       toState: transition.toState,
@@ -325,15 +351,16 @@ export class DrizzleFlowRepository implements IFlowRepository {
       spawnTemplate: transition.spawnTemplate ?? null,
       createdAt: now,
     };
-    this.db.transaction((tx) => {
-      tx.insert(transitionRules).values(row).run();
-      tx.update(flowDefinitions).set({ updatedAt: now }).where(eq(flowDefinitions.id, flowId)).run();
+    await this.db.transaction(async (tx: Db) => {
+      await tx.insert(transitionRules).values(row);
+      await tx.update(flowDefinitions).set({ updatedAt: now }).where(eq(flowDefinitions.id, flowId));
     });
     return rowToTransition(row);
   }
 
   async updateTransition(transitionId: string, changes: UpdateTransitionInput): Promise<Transition> {
-    const existing = this.db.select().from(transitionRules).where(eq(transitionRules.id, transitionId)).all();
+    const cond = and(eq(transitionRules.id, transitionId), eq(transitionRules.tenantId, this.tenantId));
+    const existing = await this.db.select().from(transitionRules).where(cond);
     if (existing.length === 0) throw new NotFoundError(`Transition not found: ${transitionId}`);
 
     const updateValues: Record<string, unknown> = {};
@@ -347,11 +374,11 @@ export class DrizzleFlowRepository implements IFlowRepository {
     if (changes.spawnTemplate !== undefined) updateValues.spawnTemplate = changes.spawnTemplate;
 
     if (Object.keys(updateValues).length > 0) {
-      this.db.update(transitionRules).set(updateValues).where(eq(transitionRules.id, transitionId)).run();
+      await this.db.update(transitionRules).set(updateValues).where(cond);
     }
 
-    const rows = this.db.select().from(transitionRules).where(eq(transitionRules.id, transitionId)).all();
-    this.db.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, rows[0].flowId)).run();
+    const rows = await this.db.select().from(transitionRules).where(cond);
+    await this.db.update(flowDefinitions).set({ updatedAt: Date.now() }).where(eq(flowDefinitions.id, rows[0].flowId));
 
     return rowToTransition(rows[0]);
   }
@@ -384,27 +411,29 @@ export class DrizzleFlowRepository implements IFlowRepository {
       transitions: flow.transitions,
     };
 
-    const nextVersion = this.db.transaction((tx) => {
-      const existing = tx.select().from(flowVersions).where(eq(flowVersions.flowId, flowId)).all();
-      const maxVersion = existing.reduce((max, r) => Math.max(max, r.version), 0);
+    const nextVersion = await this.db.transaction(async (tx: Db) => {
+      const existing = await tx
+        .select()
+        .from(flowVersions)
+        .where(and(eq(flowVersions.flowId, flowId), eq(flowVersions.tenantId, this.tenantId)));
+      const maxVersion = existing.reduce((max: number, r: { version: number }) => Math.max(max, r.version), 0);
       const version = maxVersion + 1;
 
-      tx.insert(flowVersions)
-        .values({
-          id,
-          flowId,
-          version,
-          snapshot: snapshotData as Record<string, unknown>,
-          changedBy: null,
-          changeReason: null,
-          createdAt: now,
-        })
-        .run();
+      await tx.insert(flowVersions).values({
+        id,
+        tenantId: this.tenantId,
+        flowId,
+        version,
+        snapshot: snapshotData as Record<string, unknown>,
+        changedBy: null,
+        changeReason: null,
+        createdAt: now,
+      });
 
-      tx.update(flowDefinitions)
+      await tx
+        .update(flowDefinitions)
         .set({ version: version + 1, updatedAt: now })
-        .where(eq(flowDefinitions.id, flowId))
-        .run();
+        .where(eq(flowDefinitions.id, flowId));
 
       return version;
     });
@@ -421,11 +450,16 @@ export class DrizzleFlowRepository implements IFlowRepository {
   }
 
   async restore(flowId: string, version: number): Promise<void> {
-    const versionRows = this.db
+    const versionRows = await this.db
       .select()
       .from(flowVersions)
-      .where(and(eq(flowVersions.flowId, flowId), eq(flowVersions.version, version)))
-      .all();
+      .where(
+        and(
+          eq(flowVersions.flowId, flowId),
+          eq(flowVersions.version, version),
+          eq(flowVersions.tenantId, this.tenantId),
+        ),
+      );
     if (versionRows.length === 0) throw new NotFoundError(`Version ${version} not found for flow ${flowId}`);
 
     const snap = versionRows[0].snapshot as {
@@ -447,47 +481,50 @@ export class DrizzleFlowRepository implements IFlowRepository {
       transitions: Transition[];
     };
 
-    this.db.transaction((tx) => {
-      tx.delete(transitionRules).where(eq(transitionRules.flowId, flowId)).run();
-      tx.delete(stateDefinitions).where(eq(stateDefinitions.flowId, flowId)).run();
+    await this.db.transaction(async (tx: Db) => {
+      await tx
+        .delete(transitionRules)
+        .where(and(eq(transitionRules.flowId, flowId), eq(transitionRules.tenantId, this.tenantId)));
+      await tx
+        .delete(stateDefinitions)
+        .where(and(eq(stateDefinitions.flowId, flowId), eq(stateDefinitions.tenantId, this.tenantId)));
 
       for (const s of snap.states) {
-        tx.insert(stateDefinitions)
-          .values({
-            id: s.id,
-            flowId,
-            name: s.name,
-            agentRole: s.agentRole || null,
-            modelTier: s.modelTier,
-            mode: s.mode ?? "passive",
-            promptTemplate: s.promptTemplate,
-            constraints: s.constraints as Record<string, unknown> | null,
-            onEnter: (s.onEnter ?? null) as OnEnterConfig | null,
-            onExit: (s.onExit ?? null) as OnExitConfig | null,
-            retryAfterMs: s.retryAfterMs ?? null,
-          })
-          .run();
+        await tx.insert(stateDefinitions).values({
+          id: s.id,
+          tenantId: this.tenantId,
+          flowId,
+          name: s.name,
+          agentRole: s.agentRole || null,
+          modelTier: s.modelTier,
+          mode: s.mode ?? "passive",
+          promptTemplate: s.promptTemplate,
+          constraints: s.constraints as Record<string, unknown> | null,
+          onEnter: (s.onEnter ?? null) as OnEnterConfig | null,
+          onExit: (s.onExit ?? null) as OnExitConfig | null,
+          retryAfterMs: s.retryAfterMs ?? null,
+        });
       }
 
       for (const t of snap.transitions) {
-        tx.insert(transitionRules)
-          .values({
-            id: t.id,
-            flowId,
-            fromState: t.fromState,
-            toState: t.toState,
-            trigger: t.trigger,
-            gateId: t.gateId,
-            condition: t.condition,
-            priority: t.priority ?? 0,
-            spawnFlow: t.spawnFlow,
-            spawnTemplate: t.spawnTemplate,
-            createdAt: t.createdAt ? new Date(t.createdAt).getTime() : null,
-          })
-          .run();
+        await tx.insert(transitionRules).values({
+          id: t.id,
+          tenantId: this.tenantId,
+          flowId,
+          fromState: t.fromState,
+          toState: t.toState,
+          trigger: t.trigger,
+          gateId: t.gateId,
+          condition: t.condition,
+          priority: t.priority ?? 0,
+          spawnFlow: t.spawnFlow,
+          spawnTemplate: t.spawnTemplate,
+          createdAt: t.createdAt ? new Date(t.createdAt).getTime() : null,
+        });
       }
 
-      tx.update(flowDefinitions)
+      await tx
+        .update(flowDefinitions)
         .set({
           name: snap.name,
           description: snap.description,
@@ -505,8 +542,7 @@ export class DrizzleFlowRepository implements IFlowRepository {
           timeoutPrompt: snap.timeoutPrompt,
           updatedAt: Date.now(),
         })
-        .where(eq(flowDefinitions.id, flowId))
-        .run();
+        .where(eq(flowDefinitions.id, flowId));
     });
   }
 }

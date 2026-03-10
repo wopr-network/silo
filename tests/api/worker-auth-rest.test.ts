@@ -1,43 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import http from "node:http";
 import { serve } from "@hono/node-server";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
-import { DrizzleEntityRepository } from "../../src/repositories/drizzle/entity.repo.js";
-import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
-import { DrizzleInvocationRepository } from "../../src/repositories/drizzle/invocation.repo.js";
-import { DrizzleGateRepository } from "../../src/repositories/drizzle/gate.repo.js";
-import { DrizzleTransitionLogRepository } from "../../src/repositories/drizzle/transition-log.repo.js";
-import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.repo.js";
+import { createTestDb } from "../helpers/pg-test-db.js";
+import { createScopedRepos } from "../../src/repositories/scoped-repos.js";
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { createHonoApp, type HonoServerDeps } from "../../src/api/hono-server.js";
 
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
-
-function makeTestDeps(workerToken?: string): HonoServerDeps & { stopReaper: () => Promise<void>; sqlite: Database.Database } {
-  const sqlite = new Database(":memory:");
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-
-  const entityRepo = new DrizzleEntityRepository(db);
-  const flowRepo = new DrizzleFlowRepository(db);
-  const invocationRepo = new DrizzleInvocationRepository(db);
-  const gateRepo = new DrizzleGateRepository(db);
-  const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-  const eventRepo = new DrizzleEventRepository(db);
+async function makeTestDeps(workerToken?: string): Promise<HonoServerDeps & { stopReaper: () => Promise<void>; close: () => Promise<void> }> {
+  const { db, close } = await createTestDb();
+  const repos = createScopedRepos(db, "test-tenant");
   const eventEmitter = new EventEmitter();
 
   const engine = new Engine({
-    entityRepo,
-    flowRepo,
-    invocationRepo,
-    gateRepo,
-    transitionLogRepo,
+    entityRepo: repos.entities,
+    flowRepo: repos.flows,
+    invocationRepo: repos.invocations,
+    gateRepo: repos.gates,
+    transitionLogRepo: repos.transitionLog,
     adapters: new Map(),
     eventEmitter,
   });
@@ -45,16 +25,16 @@ function makeTestDeps(workerToken?: string): HonoServerDeps & { stopReaper: () =
   const stopReaper = engine.startReaper(5000, 300000);
 
   const mcpDeps = {
-    entities: entityRepo,
-    flows: flowRepo,
-    invocations: invocationRepo,
-    gates: gateRepo,
-    transitions: transitionLogRepo,
-    eventRepo,
+    entities: repos.entities,
+    flows: repos.flows,
+    invocations: repos.invocations,
+    gates: repos.gates,
+    transitions: repos.transitionLog,
+    eventRepo: repos.events,
     engine,
   };
 
-  return { engine, mcpDeps, adminToken: undefined, workerToken, stopReaper, sqlite };
+  return { engine, mcpDeps, adminToken: undefined, workerToken, stopReaper, close };
 }
 
 async function request(port: number, method: string, path: string, body?: unknown, token?: string) {
@@ -88,10 +68,10 @@ async function request(port: number, method: string, path: string, body?: unknow
 describe("REST worker auth", () => {
   let server: http.Server;
   let port: number;
-  let deps: ReturnType<typeof makeTestDeps>;
+  let deps: Awaited<ReturnType<typeof makeTestDeps>>;
 
   beforeAll(async () => {
-    deps = makeTestDeps("worker-secret-456");
+    deps = await makeTestDeps("worker-secret-456");
     const app = createHonoApp(deps);
     server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }) as http.Server;
     await new Promise<void>((resolve) => {
@@ -104,7 +84,7 @@ describe("REST worker auth", () => {
   afterAll(async () => {
     server.close();
     await deps.stopReaper();
-    deps.sqlite.close();
+    await deps.close();
   });
 
   it("POST /api/flows/test/claim returns 401 without token", async () => {

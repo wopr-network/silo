@@ -35,65 +35,81 @@ function toRow(raw: typeof workers.$inferSelect): WorkerRow {
 }
 
 export class WorkerRepo implements IWorkerRepo {
-  constructor(private db: RadarDb) {}
+  constructor(
+    private db: RadarDb,
+    private tenantId: string = "default",
+  ) {}
 
   async register(input: RegisterWorkerInput): Promise<WorkerRow> {
     const id = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
-    this.db
-      .insert(workers)
-      .values({
-        id,
-        name: input.name,
-        type: input.type,
-        discipline: input.discipline,
-        status: "idle",
-        config: input.config ? JSON.stringify(input.config) : null,
-        lastHeartbeat: now,
-        createdAt: now,
-      })
-      .run();
-    const row = this.db.select().from(workers).where(eq(workers.id, id)).get();
+    await this.db.insert(workers).values({
+      id,
+      tenantId: this.tenantId,
+      name: input.name,
+      type: input.type,
+      discipline: input.discipline,
+      status: "idle",
+      config: input.config ? JSON.stringify(input.config) : null,
+      lastHeartbeat: now,
+      createdAt: now,
+    });
+    const [row] = await this.db.select().from(workers).where(eq(workers.id, id));
     if (!row) throw new Error("Insert failed");
     return toRow(row);
   }
 
   async deregister(id: string): Promise<void> {
-    this.db.delete(workers).where(eq(workers.id, id)).run();
+    await this.db.delete(workers).where(and(eq(workers.id, id), eq(workers.tenantId, this.tenantId)));
   }
 
   async heartbeat(id: string): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
-    const row = this.db.select().from(workers).where(eq(workers.id, id)).get();
+    const cond = and(eq(workers.id, id), eq(workers.tenantId, this.tenantId));
+    const [row] = await this.db.select().from(workers).where(cond);
     if (!row) throw new Error(`Unknown worker: ${id}`);
-    this.db.update(workers).set({ lastHeartbeat: now }).where(eq(workers.id, id)).run();
+    await this.db.update(workers).set({ lastHeartbeat: now }).where(cond);
   }
 
   async setStatus(id: string, status: string): Promise<void> {
-    const row = this.db.select().from(workers).where(eq(workers.id, id)).get();
+    const cond = and(eq(workers.id, id), eq(workers.tenantId, this.tenantId));
+    const [row] = await this.db.select().from(workers).where(cond);
     if (!row) throw new Error(`Worker ${id} not found`);
-    this.db.update(workers).set({ status }).where(eq(workers.id, id)).run();
+    await this.db.update(workers).set({ status }).where(cond);
   }
 
   async getById(id: string): Promise<WorkerRow | undefined> {
-    const row = this.db.select().from(workers).where(eq(workers.id, id)).get();
+    const [row] = await this.db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, id), eq(workers.tenantId, this.tenantId)));
     return row ? toRow(row) : undefined;
   }
 
   async list(): Promise<WorkerRow[]> {
-    return this.db.select().from(workers).all().map(toRow);
+    const rows = await this.db.select().from(workers).where(eq(workers.tenantId, this.tenantId));
+    return rows.map(toRow);
   }
 
   async listByStatus(status: string): Promise<WorkerRow[]> {
-    return this.db.select().from(workers).where(eq(workers.status, status)).all().map(toRow);
+    const rows = await this.db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.status, status), eq(workers.tenantId, this.tenantId)));
+    return rows.map(toRow);
   }
 
   async findStale(cutoffEpochSec: number): Promise<WorkerRow[]> {
-    return this.db
+    const rows = await this.db
       .select()
       .from(workers)
-      .where(and(lt(workers.lastHeartbeat, cutoffEpochSec), ne(workers.status, "offline")))
-      .all()
-      .map(toRow);
+      .where(
+        and(
+          lt(workers.lastHeartbeat, cutoffEpochSec),
+          ne(workers.status, "offline"),
+          eq(workers.tenantId, this.tenantId),
+        ),
+      );
+    return rows.map(toRow);
   }
 }

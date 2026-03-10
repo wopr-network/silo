@@ -1,33 +1,41 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { bootstrap } from "../../../src/main.js";
 import { DrizzleInvocationRepository } from "../../../src/repositories/drizzle/invocation.repo.js";
 import { entities, flowDefinitions, invocations } from "../../../src/repositories/drizzle/schema.js";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 
-let db: BetterSQLite3Database;
-let sqlite: Database.Database;
+const TENANT = "test-tenant";
+
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: DrizzleInvocationRepository;
 
 async function seedEntity(flowId = "flow-1", entityId = "ent-1") {
-  db.insert(flowDefinitions)
-    .values({ id: flowId, name: `flow-${flowId}`, initialState: "init" })
-    .run();
-  db.insert(entities)
-    .values({ id: entityId, flowId, state: "init", createdAt: Date.now(), updatedAt: Date.now() })
-    .run();
+  await db.insert(flowDefinitions).values({
+    id: flowId,
+    tenantId: TENANT,
+    name: `flow-${flowId}`,
+    initialState: "init",
+  });
+  await db.insert(entities).values({
+    id: entityId,
+    tenantId: TENANT,
+    flowId,
+    state: "init",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
 }
 
-beforeEach(() => {
-  const result = bootstrap(":memory:");
-  db = result.db as BetterSQLite3Database;
-  sqlite = result.sqlite;
-  repo = new DrizzleInvocationRepository(db);
+beforeEach(async () => {
+  const result = await createTestDb();
+  db = result.db;
+  close = result.close;
+  repo = new DrizzleInvocationRepository(db, TENANT);
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleInvocationRepository", () => {
@@ -173,10 +181,10 @@ describe("DrizzleInvocationRepository", () => {
       const inv = await repo.create("ent-1", "review", "Review", "active", 1000);
       await repo.claim(inv.id, "agent-1");
 
-      db.update(invocations)
+      await db
+        .update(invocations)
         .set({ claimedAt: Date.now() - 2000 })
-        .where(eq(invocations.id, inv.id))
-        .run();
+        .where(eq(invocations.id, inv.id));
 
       const expired = await repo.reapExpired();
       expect(expired).toHaveLength(1);
@@ -201,10 +209,10 @@ describe("DrizzleInvocationRepository", () => {
       await repo.claim(inv.id, "agent-1");
       await repo.complete(inv.id, "done");
 
-      db.update(invocations)
+      await db
+        .update(invocations)
         .set({ claimedAt: Date.now() - 2000 })
-        .where(eq(invocations.id, inv.id))
-        .run();
+        .where(eq(invocations.id, inv.id));
 
       const expired = await repo.reapExpired();
       expect(expired).toHaveLength(0);

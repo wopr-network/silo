@@ -1,8 +1,6 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestDb, type TestDb } from "./helpers/pg-test-db.js";
 import * as schema from "../src/repositories/drizzle/schema.js";
 import { entities as entitiesTable } from "../src/repositories/drizzle/schema.js";
 import { DrizzleFlowRepository } from "../src/repositories/drizzle/flow.repo.js";
@@ -16,13 +14,15 @@ import { EventEmitter } from "../src/engine/event-emitter.js";
 import { callToolHandler } from "../src/execution/mcp-server.js";
 import type { McpServerDeps } from "../src/execution/mcp-server.js";
 
-function makeDeps(db: ReturnType<typeof drizzle<typeof schema>>) {
-  const entityRepo = new DrizzleEntityRepository(db as any);
-  const flowRepo = new DrizzleFlowRepository(db as any);
-  const invocationRepo = new DrizzleInvocationRepository(db as any);
-  const gateRepo = new DrizzleGateRepository(db as any);
-  const transitionLogRepo = new DrizzleTransitionLogRepository(db as any);
-  const eventRepo = new DrizzleEventRepository(db as any);
+const TEST_TENANT = "test-tenant";
+
+function makeDeps(db: TestDb) {
+  const entityRepo = new DrizzleEntityRepository(db, TEST_TENANT);
+  const flowRepo = new DrizzleFlowRepository(db, TEST_TENANT);
+  const invocationRepo = new DrizzleInvocationRepository(db, TEST_TENANT);
+  const gateRepo = new DrizzleGateRepository(db, TEST_TENANT);
+  const transitionLogRepo = new DrizzleTransitionLogRepository(db, TEST_TENANT);
+  const eventRepo = new DrizzleEventRepository(db, TEST_TENANT);
   const eventEmitter = new EventEmitter();
   const engine = new Engine({
     entityRepo,
@@ -46,23 +46,26 @@ function makeDeps(db: ReturnType<typeof drizzle<typeof schema>>) {
 }
 
 describe("flow versioning", () => {
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let db: TestDb;
+  let close: () => Promise<void>;
   let deps: McpServerDeps;
   let flowRepo: DrizzleFlowRepository;
   let entityRepo: DrizzleEntityRepository;
   let engine: Engine;
 
-  beforeEach(() => {
-    const sqlite = new Database(":memory:");
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-    db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: "./drizzle" });
+  beforeEach(async () => {
+    const res = await createTestDb();
+    db = res.db;
+    close = res.close;
     const made = makeDeps(db);
     deps = made.deps;
     engine = made.engine;
     flowRepo = made.flowRepo;
     entityRepo = made.entityRepo;
+  });
+
+  afterEach(async () => {
+    await close();
   });
 
   it("getAtVersion returns snapshot for old version", async () => {

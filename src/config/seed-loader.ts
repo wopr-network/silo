@@ -1,15 +1,8 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
-import { sql } from "drizzle-orm";
-// BetterSQLite3Database is imported here (outside a DrizzleFooRepository file) because
-// seed-loader.ts wraps seed loading in a synchronous SQLite transaction via db.run(sql`BEGIN/COMMIT/ROLLBACK`).
-// The Db type parameter is needed to type the optional `db` field in LoadSeedOptions.
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type * as schema from "../repositories/drizzle/schema.js";
+import type { Db } from "../main.js";
 import type { IFlowRepository, IGateRepository } from "../repositories/interfaces.js";
 import { SeedFileSchema } from "./zod-schemas.js";
-
-type Db = BetterSQLite3Database<typeof schema>;
 
 export interface LoadSeedOptions {
   allowedRoot?: string;
@@ -80,10 +73,8 @@ async function parseSeedAndLoad(
   db?: Db,
 ): Promise<LoadSeedResult> {
   const parsed = SeedFileSchema.parse(json);
-  // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
-  if (db) db.run(sql`BEGIN`);
 
-  try {
+  const doLoad = async () => {
     // 1. Create gates first (transitions reference them by name)
     const gateNameToId = new Map<string, string>();
     for (const g of parsed.gates) {
@@ -154,19 +145,15 @@ async function parseSeedAndLoad(
       }
     }
 
-    // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
-    if (db) db.run(sql`COMMIT`);
     return {
       flows: parsed.flows.length,
       gates: parsed.gates.length,
     };
-  } catch (err) {
-    try {
-      // raw-sql: transaction boundary — drizzle better-sqlite3 sync driver
-      if (db) db.run(sql`ROLLBACK`);
-    } catch {
-      // ignore rollback errors — original error takes priority
-    }
-    throw err;
+  };
+
+  // Wrap in a Postgres transaction if db is provided
+  if (db) {
+    return db.transaction(async () => doLoad());
   }
+  return doLoad();
 }

@@ -4,16 +4,8 @@ import { WebSocket } from "ws";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import * as schema from "../../src/repositories/drizzle/schema.js";
-import { DrizzleEntityRepository } from "../../src/repositories/drizzle/entity.repo.js";
-import { DrizzleFlowRepository } from "../../src/repositories/drizzle/flow.repo.js";
-import { DrizzleInvocationRepository } from "../../src/repositories/drizzle/invocation.repo.js";
-import { DrizzleGateRepository } from "../../src/repositories/drizzle/gate.repo.js";
-import { DrizzleTransitionLogRepository } from "../../src/repositories/drizzle/transition-log.repo.js";
-import { DrizzleEventRepository } from "../../src/repositories/drizzle/event.repo.js";
+import { createTestDb } from "../helpers/pg-test-db.js";
+import { createScopedRepos, type ScopedRepos } from "../../src/repositories/scoped-repos.js";
 import { Engine } from "../../src/engine/engine.js";
 import { EventEmitter } from "../../src/engine/event-emitter.js";
 import { WebSocketBroadcaster } from "../../src/ws/broadcast.js";
@@ -22,58 +14,41 @@ import { loadSeed } from "../../src/config/seed-loader.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const MIGRATIONS_FOLDER = new URL("../../drizzle", import.meta.url).pathname;
 const ADMIN_TOKEN = "e2e-admin-token";
 const WORKER_TOKEN = "e2e-worker-token";
 
 interface E2EContext {
-	sqlite: Database.Database;
+	close: () => Promise<void>;
 	engine: Engine;
-	entityRepo: DrizzleEntityRepository;
-	flowRepo: DrizzleFlowRepository;
-	invocationRepo: DrizzleInvocationRepository;
-	gateRepo: DrizzleGateRepository;
-	transitionLogRepo: DrizzleTransitionLogRepository;
-	eventRepo: DrizzleEventRepository;
+	repos: ScopedRepos;
 	eventEmitter: EventEmitter;
 	broadcaster: WebSocketBroadcaster;
 	server: http.Server;
 	port: number;
-	db: ReturnType<typeof drizzle>;
 }
 
 async function setupE2E(): Promise<E2EContext> {
-	const sqlite = new Database(":memory:");
-	sqlite.pragma("journal_mode = WAL");
-	sqlite.pragma("foreign_keys = ON");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-
-	const entityRepo = new DrizzleEntityRepository(db);
-	const flowRepo = new DrizzleFlowRepository(db);
-	const invocationRepo = new DrizzleInvocationRepository(db);
-	const gateRepo = new DrizzleGateRepository(db);
-	const transitionLogRepo = new DrizzleTransitionLogRepository(db);
-	const eventRepo = new DrizzleEventRepository(db);
+	const { db, close } = await createTestDb();
+	const repos = createScopedRepos(db, "test-tenant");
 	const eventEmitter = new EventEmitter();
 
 	const engine = new Engine({
-		entityRepo,
-		flowRepo,
-		invocationRepo,
-		gateRepo,
-		transitionLogRepo,
+		entityRepo: repos.entities,
+		flowRepo: repos.flows,
+		invocationRepo: repos.invocations,
+		gateRepo: repos.gates,
+		transitionLogRepo: repos.transitionLog,
 		adapters: new Map(),
 		eventEmitter,
 	});
 
 	const mcpDeps = {
-		entities: entityRepo,
-		flows: flowRepo,
-		invocations: invocationRepo,
-		gates: gateRepo,
-		transitions: transitionLogRepo,
-		eventRepo,
+		entities: repos.entities,
+		flows: repos.flows,
+		invocations: repos.invocations,
+		gates: repos.gates,
+		transitions: repos.transitionLog,
+		eventRepo: repos.events,
 		engine,
 	};
 
@@ -96,26 +71,20 @@ async function setupE2E(): Promise<E2EContext> {
 	const port = (server.address() as { port: number }).port;
 
 	return {
-		sqlite,
+		close,
 		engine,
-		entityRepo,
-		flowRepo,
-		invocationRepo,
-		gateRepo,
-		transitionLogRepo,
-		eventRepo,
+		repos,
 		eventEmitter,
 		broadcaster,
 		server,
 		port,
-		db,
 	};
 }
 
 async function teardownE2E(ctx: E2EContext): Promise<void> {
 	ctx.broadcaster.close();
 	await new Promise<void>((r) => ctx.server.close(() => r()));
-	ctx.sqlite.close();
+	await ctx.close();
 }
 
 /**
@@ -183,7 +152,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 	describe("Group 1: entity lifecycle happy path", () => {
 		it("create entity via REST → engine signal → claim → gate pass → done", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			// 1. Create entity via POST /api/entities — starts in backlog (passive)
 			const createRes = await fetch(`http://127.0.0.1:${ctx.port}/api/entities`, {
@@ -247,7 +216,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 			expect(finalEntity.state).toBe("done");
 
 			// 7. Verify transition log
-			const history = await ctx.transitionLogRepo.historyFor(entity.id);
+			const history = await ctx.repos.transitionLog.historyFor(entity.id);
 			expect(history.length).toBeGreaterThanOrEqual(3);
 			const toStates = history.map((h) => h.toState);
 			expect(toStates).toContain("coding");
@@ -261,7 +230,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 	describe("Group 2: WebSocket broadcast during transitions", () => {
 		it("WS client receives events in order during entity lifecycle", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			// Connect WS before creating entity
 			const { ws, messages } = await connectWS(ctx.port);
@@ -325,7 +294,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 	describe("Group 3: admin controls", () => {
 		it("pause flow prevents claiming, resume re-enables it", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			// Create entity and move to coding (claimable active state)
 			const createRes = await fetch(`http://127.0.0.1:${ctx.port}/api/entities`, {
@@ -361,8 +330,8 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 
 			// Resume via flowRepo directly (the REST resume endpoint has a validation
 			// bug in the underlying tool handler that is tracked separately)
-			const flow = await ctx.flowRepo.getByName("e2e-pipeline");
-			await ctx.flowRepo.update(flow!.id, { paused: false });
+			const flow = await ctx.repos.flows.getByName("e2e-pipeline");
+			await ctx.repos.flows.update(flow!.id, { paused: false });
 
 			// Claim should now succeed
 			const claimRes2 = await fetch(`http://127.0.0.1:${ctx.port}/api/claim`, {
@@ -377,7 +346,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 
 		it("cancel entity via admin REST moves it to cancelled state", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			const createRes = await fetch(`http://127.0.0.1:${ctx.port}/api/entities`, {
 				method: "POST",
@@ -408,7 +377,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 
 		it("reset entity via admin REST moves it to target state", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			const createRes = await fetch(`http://127.0.0.1:${ctx.port}/api/entities`, {
 				method: "POST",
@@ -447,7 +416,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 				__dirname,
 				"../../tests/engine/fixtures/timeout-gate-flow.seed.json",
 			);
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			// Create entity — starts in pending (passive)
 			const createRes = await fetch(`http://127.0.0.1:${ctx.port}/api/entities`, {
@@ -477,7 +446,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 
 		it("check_back when no work available", async () => {
 			const seedPath = resolve(__dirname, "fixtures/e2e-flow.seed.json");
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			// Claim with no entities in active state — should get check_back
 			const claimRes = await fetch(`http://127.0.0.1:${ctx.port}/api/claim`, {
@@ -499,7 +468,7 @@ describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 				__dirname,
 				"../../tests/engine/fixtures/timeout-gate-flow.seed.json",
 			);
-			await loadSeed(seedPath, ctx.flowRepo, ctx.gateRepo, { db: ctx.db });
+			await loadSeed(seedPath, ctx.repos.flows, ctx.repos.gates, {});
 
 			const { ws, messages } = await connectWS(ctx.port);
 

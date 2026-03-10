@@ -1,35 +1,55 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type Database from "better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { bootstrap } from "../../../src/main.js";
+import { randomUUID } from "node:crypto";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleTransitionLogRepository } from "../../../src/repositories/drizzle/transition-log.repo.js";
-import { DrizzleFlowRepository } from "../../../src/repositories/drizzle/flow.repo.js";
-import { DrizzleEntityRepository } from "../../../src/repositories/drizzle/entity.repo.js";
+import { entities, flowDefinitions } from "../../../src/repositories/drizzle/schema.js";
 
-let db: BetterSQLite3Database;
-let sqlite: Database.Database;
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: DrizzleTransitionLogRepository;
 let entityId1: string;
 let entityId2: string;
 
-beforeEach(async () => {
-  const res = bootstrap(":memory:");
-  db = res.db;
-  sqlite = res.sqlite;
-  repo = new DrizzleTransitionLogRepository(db);
+const TENANT = "test-tenant";
+const FLOW_ID = "flow-1";
 
-  // Seed flow + entities for FK constraints on entity_history
-  const flowRepo = new DrizzleFlowRepository(db);
-  const entityRepo = new DrizzleEntityRepository(db);
-  const flow = await flowRepo.create({ name: "test-flow", initialState: "open" });
-  const e1 = await entityRepo.create(flow.id, "open");
-  const e2 = await entityRepo.create(flow.id, "open");
-  entityId1 = e1.id;
-  entityId2 = e2.id;
+async function seedFlowAndEntities() {
+  await db.insert(flowDefinitions).values({
+    id: FLOW_ID,
+    tenantId: TENANT,
+    name: "test-flow",
+    initialState: "open",
+  });
+  entityId1 = randomUUID();
+  entityId2 = randomUUID();
+  await db.insert(entities).values({
+    id: entityId1,
+    tenantId: TENANT,
+    flowId: FLOW_ID,
+    state: "open",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  await db.insert(entities).values({
+    id: entityId2,
+    tenantId: TENANT,
+    flowId: FLOW_ID,
+    state: "open",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+}
+
+beforeEach(async () => {
+  const testDb = await createTestDb();
+  db = testDb.db;
+  close = testDb.close;
+  repo = new DrizzleTransitionLogRepository(db, TENANT);
+  await seedFlowAndEntities();
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleTransitionLogRepository", () => {

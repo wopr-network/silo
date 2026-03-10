@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type Database from "better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { bootstrap } from "../../../src/main.js";
+import { createTestDb, type TestDb } from "../../helpers/pg-test-db.js";
 import { DrizzleEntitySnapshotRepository } from "../../../src/repositories/drizzle/entity-snapshot.repo.js";
 import type { Entity } from "../../../src/repositories/interfaces.js";
 
-let db: BetterSQLite3Database;
-let sqlite: Database.Database;
+let db: TestDb;
+let close: () => Promise<void>;
 let repo: DrizzleEntitySnapshotRepository;
+
+const TENANT = "test-tenant";
 
 function makeEntity(overrides: Partial<Entity> = {}): Entity {
   return {
@@ -25,19 +25,20 @@ function makeEntity(overrides: Partial<Entity> = {}): Entity {
     affinityWorkerId: null,
     affinityRole: null,
     affinityExpiresAt: null,
+    parentEntityId: null,
     ...overrides,
   };
 }
 
-beforeEach(() => {
-  const res = bootstrap(":memory:");
-  db = res.db;
-  sqlite = res.sqlite;
-  repo = new DrizzleEntitySnapshotRepository(db);
+beforeEach(async () => {
+  const testDb = await createTestDb();
+  db = testDb.db;
+  close = testDb.close;
+  repo = new DrizzleEntitySnapshotRepository(db, TENANT);
 });
 
-afterEach(() => {
-  sqlite.close();
+afterEach(async () => {
+  await close();
 });
 
 describe("DrizzleEntitySnapshotRepository", () => {
