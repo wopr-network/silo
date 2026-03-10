@@ -54,8 +54,11 @@ export class Ingestor {
 
   private async handleUpdate(event: IngestEvent): Promise<void> {
     const entityId = this.entityMapRepo.findEntityId(event.sourceId, event.externalId);
-    if (entityId === undefined || entityId === "__pending__") {
+    if (entityId === undefined) {
       return;
+    }
+    if (entityId === "__pending__") {
+      throw new Error(`Entity for ${event.sourceId}/${event.externalId} is still being created — retry later`);
     }
 
     await this.defcon.report({

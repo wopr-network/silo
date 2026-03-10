@@ -56,7 +56,16 @@ function ensureSeedTables(db: RadarDb): void {
 }
 
 // Keys that hold credentials — expanded only at use time, never persisted expanded.
-const SENSITIVE_KEYS = new Set(["token"]);
+const SENSITIVE_KEYS = new Set([
+  "token",
+  "password",
+  "secret",
+  "apiKey",
+  "apikey",
+  "api_key",
+  "clientSecret",
+  "client_secret",
+]);
 
 export function expandEnvVarsInValue(value: unknown, key?: string): unknown {
   if (SENSITIVE_KEYS.has(key ?? "")) {

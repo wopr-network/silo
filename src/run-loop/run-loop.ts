@@ -329,6 +329,10 @@ export class RunLoop {
         if (response.next_action === "continue") {
           const basePrompt = response.prompt ?? originalPrompt;
           currentPrompt = activityHistory ? `${activityHistory}\n\n---\n${basePrompt}` : basePrompt;
+          // Update templateContext from the engine so the next dispatch uses fresh context
+          if ("context" in response && response.context != null) {
+            (claim as Record<string, unknown>).context = response.context;
+          }
           currentSignal = undefined;
           currentArtifacts = undefined;
           continue;

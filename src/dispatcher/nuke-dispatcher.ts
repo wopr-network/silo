@@ -21,141 +21,6 @@ interface NukeSseEvent {
   [key: string]: unknown;
 }
 
-// One container per entityId — lives across continue dispatches
-const containers = new Map<string, ContainerHandle>();
-
-// In-flight launches keyed by entityId — prevents duplicate containers on concurrent dispatch
-const inFlight = new Map<string, Promise<ContainerHandle>>();
-
-async function launchContainer(
-  entityId: string,
-  image: string,
-  opts: {
-    claudeCredentialsPath?: string;
-    ghTokenPath?: string;
-    network?: string;
-    agentsDir?: string;
-    linearApiKey?: string;
-  },
-): Promise<ContainerHandle> {
-  const containerPort = DEFAULT_NUKE_PORT;
-  const name = `nuke-${entityId.slice(0, 12)}-${randomUUID().slice(0, 6)}`;
-
-  const args = [
-    "run",
-    "-d",
-    "--name",
-    name,
-    "-p",
-    `0:${containerPort}`, // random host port
-    "--label",
-    `nuke.entity=${entityId}`,
-  ];
-
-  if (opts.network) {
-    args.push("--network", opts.network);
-  }
-  if (opts.claudeCredentialsPath) {
-    args.push("-v", `${opts.claudeCredentialsPath}:/run/secrets/claude-credentials:ro`);
-  }
-  if (opts.ghTokenPath) {
-    args.push("-v", `${opts.ghTokenPath}:/run/secrets/gh-token:ro`);
-  }
-  if (opts.agentsDir) {
-    args.push("-v", `${opts.agentsDir}:/run/agents:ro`);
-  }
-  if (opts.linearApiKey) {
-    args.push("-e", `LINEAR_API_KEY=${opts.linearApiKey}`);
-  }
-
-  args.push(image);
-
-  const { stdout: runOut } = await execFileAsync("docker", args);
-  const containerId = runOut.trim();
-
-  // Wait for the host port to be assigned; clean up on any failure
-  const maxWait = 15_000;
-  const start = Date.now();
-  let hostPort: number | null = null;
-
-  try {
-    while (Date.now() - start < maxWait) {
-      try {
-        const { stdout: inspectOut } = await execFileAsync("docker", ["inspect", containerId]);
-        const inspect = JSON.parse(inspectOut) as Array<{
-          NetworkSettings?: {
-            Ports?: Record<string, Array<{ HostPort?: string }>>;
-          };
-        }>;
-        const portMap = inspect[0]?.NetworkSettings?.Ports?.[`${containerPort}/tcp`];
-        if (portMap?.[0]?.HostPort) {
-          hostPort = Number(portMap[0].HostPort);
-          break;
-        }
-      } catch {
-        // retry
-      }
-      await new Promise<void>((r) => setTimeout(r, 500));
-    }
-
-    if (!hostPort) {
-      throw new Error(`Container ${containerId} did not expose port within ${maxWait}ms`);
-    }
-
-    // Wait for /health — throw if container never becomes healthy
-    const healthStart = Date.now();
-    let healthy = false;
-    while (Date.now() - healthStart < maxWait) {
-      try {
-        const res = await fetch(`http://127.0.0.1:${hostPort}/health`);
-        if (res.ok) {
-          healthy = true;
-          break;
-        }
-      } catch {
-        // retry
-      }
-      await new Promise<void>((r) => setTimeout(r, 500));
-    }
-
-    if (!healthy) {
-      throw new Error(`Container ${containerId} did not become healthy within ${maxWait}ms`);
-    }
-  } catch (err) {
-    // Orphan cleanup: container was started but post-launch setup failed
-    try {
-      await execFileAsync("docker", ["rm", "-f", containerId]);
-    } catch {
-      // best effort
-    }
-    throw err;
-  }
-
-  const handle: ContainerHandle = { containerId, hostPort, sessionId: null };
-  containers.set(entityId, handle);
-
-  logger.info(`[nuke] container launched`, {
-    entityId,
-    containerId: containerId.slice(0, 12),
-    hostPort,
-    image,
-  });
-
-  return handle;
-}
-
-async function stopContainer(entityId: string): Promise<void> {
-  const handle = containers.get(entityId);
-  if (!handle) return;
-  containers.delete(entityId);
-  try {
-    await execFileAsync("docker", ["rm", "-f", handle.containerId]);
-    logger.info(`[nuke] container stopped`, { entityId, containerId: handle.containerId.slice(0, 12) });
-  } catch {
-    // best effort
-  }
-}
-
 export interface NukeDispatcherOpts {
   image?: string;
   claudeCredentialsPath?: string;
@@ -168,6 +33,8 @@ export class NukeDispatcher implements Dispatcher {
   private claudeCredentialsPath?: string;
   private ghTokenPath?: string;
   private network?: string;
+  private containers = new Map<string, ContainerHandle>();
+  private inFlight = new Map<string, Promise<ContainerHandle>>();
 
   constructor(
     private activityRepo: IEntityActivityRepo,
@@ -179,24 +46,153 @@ export class NukeDispatcher implements Dispatcher {
     this.network = opts.network ?? process.env.NUKE_NETWORK;
   }
 
+  private async launchContainer(
+    entityId: string,
+    image: string,
+    opts: {
+      claudeCredentialsPath?: string;
+      ghTokenPath?: string;
+      network?: string;
+      agentsDir?: string;
+      linearApiKey?: string;
+    },
+  ): Promise<ContainerHandle> {
+    const containerPort = DEFAULT_NUKE_PORT;
+    const name = `nuke-${entityId.slice(0, 12)}-${randomUUID().slice(0, 6)}`;
+
+    const args = [
+      "run",
+      "-d",
+      "--name",
+      name,
+      "-p",
+      `0:${containerPort}`, // random host port
+      "--label",
+      `nuke.entity=${entityId}`,
+    ];
+
+    if (opts.network) {
+      args.push("--network", opts.network);
+    }
+    if (opts.claudeCredentialsPath) {
+      args.push("-v", `${opts.claudeCredentialsPath}:/run/secrets/claude-credentials:ro`);
+    }
+    if (opts.ghTokenPath) {
+      args.push("-v", `${opts.ghTokenPath}:/run/secrets/gh-token:ro`);
+    }
+    if (opts.agentsDir) {
+      args.push("-v", `${opts.agentsDir}:/run/agents:ro`);
+    }
+    if (opts.linearApiKey) {
+      args.push("-e", "LINEAR_API_KEY");
+    }
+
+    args.push(image);
+
+    const { stdout: runOut } = await execFileAsync("docker", args);
+    const containerId = runOut.trim();
+
+    // Wait for the host port to be assigned; clean up on any failure
+    const maxWait = 15_000;
+    const start = Date.now();
+    let hostPort: number | null = null;
+
+    try {
+      while (Date.now() - start < maxWait) {
+        try {
+          const { stdout: inspectOut } = await execFileAsync("docker", ["inspect", containerId]);
+          const inspect = JSON.parse(inspectOut) as Array<{
+            NetworkSettings?: {
+              Ports?: Record<string, Array<{ HostPort?: string }>>;
+            };
+          }>;
+          const portMap = inspect[0]?.NetworkSettings?.Ports?.[`${containerPort}/tcp`];
+          if (portMap?.[0]?.HostPort) {
+            hostPort = Number(portMap[0].HostPort);
+            break;
+          }
+        } catch {
+          // retry
+        }
+        await new Promise<void>((r) => setTimeout(r, 500));
+      }
+
+      if (!hostPort) {
+        throw new Error(`Container ${containerId} did not expose port within ${maxWait}ms`);
+      }
+
+      // Wait for /health — throw if container never becomes healthy
+      const healthStart = Date.now();
+      let healthy = false;
+      while (Date.now() - healthStart < maxWait) {
+        try {
+          const res = await fetch(`http://127.0.0.1:${hostPort}/health`);
+          if (res.ok) {
+            healthy = true;
+            break;
+          }
+        } catch {
+          // retry
+        }
+        await new Promise<void>((r) => setTimeout(r, 500));
+      }
+
+      if (!healthy) {
+        throw new Error(`Container ${containerId} did not become healthy within ${maxWait}ms`);
+      }
+    } catch (err) {
+      // Orphan cleanup: container was started but post-launch setup failed
+      try {
+        await execFileAsync("docker", ["rm", "-f", containerId]);
+      } catch {
+        // best effort
+      }
+      throw err;
+    }
+
+    const handle: ContainerHandle = { containerId, hostPort, sessionId: null };
+    this.containers.set(entityId, handle);
+
+    logger.info(`[nuke] container launched`, {
+      entityId,
+      containerId: containerId.slice(0, 12),
+      hostPort,
+      image,
+    });
+
+    return handle;
+  }
+
+  private async stopContainer(entityId: string): Promise<void> {
+    const handle = this.containers.get(entityId);
+    if (!handle) return;
+    this.containers.delete(entityId);
+    try {
+      await execFileAsync("docker", ["rm", "-f", handle.containerId]);
+      logger.info(`[nuke] container stopped`, { entityId, containerId: handle.containerId.slice(0, 12) });
+    } catch {
+      // best effort
+    }
+  }
+
   async dispatch(prompt: string, opts: DispatchOpts): Promise<WorkerResult> {
     const { entityId, workerId, modelTier, timeout = DEFAULT_TIMEOUT_MS } = opts;
 
     // Get or launch container; use in-flight map to prevent duplicate launches
-    let handle = containers.get(entityId);
+    let handle = this.containers.get(entityId);
     if (!handle) {
-      let launch = inFlight.get(entityId);
+      let launch = this.inFlight.get(entityId);
       if (!launch) {
-        launch = launchContainer(entityId, this.image, {
+        launch = this.launchContainer(entityId, this.image, {
           claudeCredentialsPath: this.claudeCredentialsPath,
           ghTokenPath: this.ghTokenPath,
           network: this.network,
           agentsDir: process.env.RADAR_AGENTS_DIR,
           linearApiKey: process.env.LINEAR_API_KEY,
         }).finally(() => {
-          inFlight.delete(entityId);
+          this.inFlight.delete(entityId);
         });
-        inFlight.set(entityId, launch);
+        this.inFlight.set(entityId, launch);
       }
       try {
         handle = await launch;
@@ -289,6 +285,23 @@ export class NukeDispatcher implements Dispatcher {
         }
       }
 
+      // Drain remaining buffer after stream ends
+      if (buffer.trim()) {
+        const line = buffer.trim();
+        if (line.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(line.slice(6)) as NukeSseEvent;
+            if (event.type === "result") {
+              signal = (event.signal as string) ?? "crash";
+              artifacts = (event.artifacts as Record<string, unknown>) ?? {};
+              exitCode = event.isError ? 1 : 0;
+            }
+          } catch {
+            // malformed final line
+          }
+        }
+      }
+
       logger.info(`[nuke] dispatch complete`, { entityId, signal, exitCode });
       return { signal, artifacts, exitCode };
     } catch (err) {
@@ -301,7 +314,7 @@ export class NukeDispatcher implements Dispatcher {
         error: err instanceof Error ? err.message : String(err),
       });
       // Container may have crashed — remove so next dispatch gets a fresh one
-      await stopContainer(entityId);
+      await this.stopContainer(entityId);
       return {
         signal: "crash",
         artifacts: { error: err instanceof Error ? err.message : String(err) },
@@ -314,15 +327,15 @@ export class NukeDispatcher implements Dispatcher {
 
   /** Stop and remove the container for an entity (called on flow complete). */
   async stopEntity(entityId: string): Promise<void> {
-    await stopContainer(entityId);
+    await this.stopContainer(entityId);
   }
 
   /** Stop all running containers (shutdown hook). */
   async stopAll(): Promise<void> {
     // Drain in-flight launches first to avoid orphaning containers
-    await Promise.allSettled([...inFlight.values()]);
-    const ids = [...containers.keys()];
-    await Promise.all(ids.map((id) => stopContainer(id)));
+    await Promise.allSettled([...this.inFlight.values()]);
+    const ids = [...this.containers.keys()];
+    await Promise.all(ids.map((id) => this.stopContainer(id)));
   }
 
   private async safeInsert(

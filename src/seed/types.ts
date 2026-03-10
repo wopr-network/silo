@@ -52,6 +52,13 @@ export const SeedFlowSchema = z
   .strict()
   .superRefine((flow, ctx) => {
     const stateNames = new Set(flow.states.map((s) => s.name));
+    if (!stateNames.has(flow.initialState)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `initialState "${flow.initialState}" is not in states`,
+        path: ["initialState"],
+      });
+    }
     for (let i = 0; i < flow.transitions.length; i++) {
       const t = flow.transitions[i];
       if (!stateNames.has(t.fromState)) {

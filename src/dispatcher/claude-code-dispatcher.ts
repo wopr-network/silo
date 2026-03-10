@@ -6,11 +6,11 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_SCAN_LINES = 200;
 
 async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
-  const chunks: (Buffer | string)[] = [];
+  const buffers: Buffer[] = [];
   for await (const chunk of stream) {
-    chunks.push(chunk as Buffer | string);
+    buffers.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf-8"));
   }
-  return chunks.map((c) => (Buffer.isBuffer(c) ? c.toString("utf-8") : String(c))).join("");
+  return Buffer.concat(buffers).toString("utf-8");
 }
 
 export class ClaudeCodeDispatcher implements Dispatcher {

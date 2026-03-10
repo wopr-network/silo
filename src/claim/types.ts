@@ -1,7 +1,7 @@
 import type { ClaimResponse } from "../api/wire-types.js";
 
 export interface ExternalClaimRequest {
-  workerId?: string;
+  worker_id?: string;
   workerType?: string;
   discipline?: string;
   role: string;
@@ -9,7 +9,7 @@ export interface ExternalClaimRequest {
 }
 
 export interface ExternalClaimResponse {
-  workerId: string;
+  worker_id: string;
   claim: ClaimResponse;
   worker_notice?: string;
 }

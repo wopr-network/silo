@@ -9,7 +9,14 @@ function generateWorkerName(): string {
   return `auto-${randomUUID().slice(0, 8)}`;
 }
 
-export class InMemoryWorkerRepo {
+export interface IWorkerRepo {
+  create(opts: { type?: string; discipline?: string }): Worker;
+  get(id: string): Worker | undefined;
+  touch(id: string): void;
+  list(): Worker[];
+}
+
+export class InMemoryWorkerRepo implements IWorkerRepo {
   private workers: Map<string, Worker> = new Map();
 
   create(opts: { type?: string; discipline?: string }): Worker {

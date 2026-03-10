@@ -148,6 +148,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
 
   // ─── Auth middleware factories ───
 
+  // biome-ignore lint/suspicious/noConfusingVoidType: Hono middleware next() returns void
   function requireWorkerAuth(): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
     return async (c, next) => {
       const configuredToken = deps.workerToken?.trim() || undefined;
@@ -160,6 +161,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     };
   }
 
+  // biome-ignore lint/suspicious/noConfusingVoidType: Hono middleware next() returns void
   function requireAdminAuth(): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
     return async (c, next) => {
       const configuredToken = deps.adminToken?.trim() || undefined;

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import Handlebars from "handlebars";
 import { logger } from "../logger.js";
 import type { IEntityActivityRepo } from "../radar-db/repos/entity-activity-repo.js";
@@ -25,7 +25,8 @@ function loadAgentMd(agentsDir: string, agentRole: string): string | null {
   }
   const resolvedDir = resolve(agentsDir);
   const resolvedFile = resolve(join(resolvedDir, `${agentRole}.md`));
-  if (!resolvedFile.startsWith(`${resolvedDir}/`) && resolvedFile !== resolvedDir) {
+  const rel = relative(resolvedDir, resolvedFile);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
     logger.warn(`[claude] agentRole path "${resolvedFile}" escapes agentsDir — skipping MD load`);
     return null;
   }

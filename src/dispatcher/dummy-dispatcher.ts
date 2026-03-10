@@ -15,10 +15,10 @@ export class DummyDispatcher implements Dispatcher {
   async dispatch(_prompt: string, opts: DispatchOpts): Promise<WorkerResult> {
     const { entityId, workerId: slotId } = opts;
 
-    this.activityRepo.insert({ entityId, slotId, type: "start", data: {} });
+    await this.activityRepo.insert({ entityId, slotId, type: "start", data: {} });
     await sleep(DELAY_MS);
 
-    this.activityRepo.insert({
+    await this.activityRepo.insert({
       entityId,
       slotId,
       type: "tool_use",
@@ -26,7 +26,7 @@ export class DummyDispatcher implements Dispatcher {
     });
     await sleep(DELAY_MS);
 
-    this.activityRepo.insert({
+    await this.activityRepo.insert({
       entityId,
       slotId,
       type: "tool_use",
@@ -34,7 +34,7 @@ export class DummyDispatcher implements Dispatcher {
     });
     await sleep(DELAY_MS);
 
-    this.activityRepo.insert({
+    await this.activityRepo.insert({
       entityId,
       slotId,
       type: "text",
@@ -44,7 +44,7 @@ export class DummyDispatcher implements Dispatcher {
     });
     await sleep(DELAY_MS);
 
-    this.activityRepo.insert({
+    await this.activityRepo.insert({
       entityId,
       slotId,
       type: "result",

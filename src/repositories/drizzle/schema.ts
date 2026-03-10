@@ -326,7 +326,9 @@ export const entityMap = sqliteTable(
   "entity_map",
   {
     id: text("id").primaryKey(),
-    sourceId: text("source_id").notNull(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
     externalId: text("external_id").notNull(),
     entityId: text("entity_id").notNull(),
     createdAt: integer("created_at").notNull(),

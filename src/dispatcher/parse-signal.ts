@@ -63,7 +63,7 @@ const SIGNAL_PATTERNS: SignalPattern[] = [
   },
 ];
 
-const ARTIFACTS_PATTERN = /<!--\s*ARTIFACTS:\s*(\{.*\})\s*-->/;
+const ARTIFACTS_PATTERN = /<!--\s*ARTIFACTS:\s*(\{.*?\})\s*-->/;
 
 export function parseArtifacts(output: string): Record<string, unknown> {
   const lines = output.split("\n").reverse();

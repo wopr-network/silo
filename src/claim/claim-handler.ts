@@ -9,7 +9,7 @@ export class ClaimHandler {
   ) {}
 
   async handle(req: ExternalClaimRequest): Promise<ExternalClaimResponse> {
-    let workerId = req.workerId;
+    let workerId = req.worker_id;
     let notice: string | undefined;
 
     if (!workerId || !this.workers.get(workerId)) {
@@ -18,7 +18,7 @@ export class ClaimHandler {
         discipline: req.discipline,
       });
       workerId = worker.id;
-      notice = `Your workerId is ${workerId}. Include it in all subsequent calls.`;
+      notice = `Your worker_id is ${workerId}. Include it in all subsequent calls.`;
     } else {
       this.workers.touch(workerId);
     }
@@ -30,7 +30,7 @@ export class ClaimHandler {
     });
 
     const response: ExternalClaimResponse = {
-      workerId,
+      worker_id: workerId,
       claim,
     };
     if (notice) {

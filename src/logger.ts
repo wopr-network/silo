@@ -31,7 +31,14 @@ const consoleTransport = new winston.transports.Console({
   format: winston.format.combine(
     winston.format.colorize(),
     winston.format.printf(({ timestamp, level, message, ...meta }) => {
-      const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : "";
+      let metaStr = "";
+      if (Object.keys(meta).length) {
+        try {
+          metaStr = ` ${JSON.stringify(meta)}`;
+        } catch {
+          metaStr = ` [unserializable meta]`;
+        }
+      }
       return `${String(timestamp)} ${level}: ${String(message)}${metaStr}`;
     }),
   ),
