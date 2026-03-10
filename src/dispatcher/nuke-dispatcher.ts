@@ -75,7 +75,7 @@ export class NukeDispatcher implements Dispatcher {
       args.push("--network", opts.network);
     }
     if (opts.claudeCredentialsPath) {
-      args.push("-v", `${opts.claudeCredentialsPath}:/run/secrets/claude-credentials:ro`);
+      args.push("-v", `${opts.claudeCredentialsPath}:/home/nuke/.claude/credentials.json:ro`);
     }
     if (opts.ghTokenPath) {
       args.push("-v", `${opts.ghTokenPath}:/run/secrets/gh-token:ro`);
