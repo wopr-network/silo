@@ -222,7 +222,9 @@ export class DirectFlowEngine implements IFlowEngine {
       // Auto-claim the next invocation for the same worker so the RunLoop
       // can report against it without a separate claim round-trip.
       if (result.invocationId && workerId) {
-        await this.invocations.claim(result.invocationId, workerId).catch(() => {});
+        await this.invocations.claim(result.invocationId, workerId).catch((err) => {
+          this.logger.warn(`[direct-engine] auto-claim failed for invocation ${result.invocationId}`, err);
+        });
       }
       // Look up model_tier and agent_role for the new state so the run-loop
       // can switch models when transitioning (e.g. opus architect → sonnet fixer).

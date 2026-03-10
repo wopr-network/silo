@@ -444,18 +444,17 @@ export class Engine {
 
     const gateResult = await evaluateGate(gate, entity, this.gateRepo, flow.gateTimeoutMs);
 
-    this.logger.info(`[engine] gate "${gate.name}" result`, {
+    this.logger.debug(`[engine] gate "${gate.name}" result`, {
       entityId: entity.id,
       passed: gateResult.passed,
       timedOut: gateResult.timedOut,
       outcome: gateResult.outcome,
       message: gateResult.message,
-      output: gateResult.output,
     });
 
     const namedOutcome = gateResult.outcome && gate.outcomes ? gate.outcomes[gateResult.outcome] : undefined;
 
-    this.logger.info(`[engine] gate "${gate.name}" routing`, {
+    this.logger.debug(`[engine] gate "${gate.name}" routing`, {
       entityId: entity.id,
       outcome: gateResult.outcome ?? "(none)",
       hasOutcomesMap: !!gate.outcomes,

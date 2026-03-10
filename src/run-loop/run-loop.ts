@@ -314,6 +314,7 @@ export class RunLoop {
             entityId: claim.entity_id,
             signal: currentSignal,
             artifacts: currentArtifacts,
+            workerId,
           });
         } catch (err) {
           if (!this.signal.aborted) {

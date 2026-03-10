@@ -127,8 +127,9 @@ export async function evaluateGate(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-    } else {
-      logger.warn(`[gate] "${gate.name}" no JSON outcome in stdout`, {
+    } else if (gate.outcomes && Object.keys(gate.outcomes).length > 0) {
+      // Only warn when the gate declares structured outcomes but no JSON was found
+      logger.warn(`[gate] "${gate.name}" expected JSON outcome in stdout but none was found`, {
         entityId: entity.id,
         lastLine: lastLine ?? "(empty)",
       });
