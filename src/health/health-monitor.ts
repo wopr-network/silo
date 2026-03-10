@@ -1,18 +1,18 @@
-import type { DefconClient } from "../defcon-client/client.js";
 import { logger } from "../logger.js";
 import type { Pool } from "../pool/pool.js";
+import type { SiloClient } from "../silo-client/client.js";
 import type { HealthMonitorConfig } from "./types.js";
 
 export class HealthMonitor {
   private pool: Pool;
-  private defcon: DefconClient;
+  private silo: SiloClient;
   private config: HealthMonitorConfig;
   private timer: ReturnType<typeof setInterval> | null = null;
   private checking = false;
 
-  constructor(pool: Pool, defcon: DefconClient, config: HealthMonitorConfig) {
+  constructor(pool: Pool, silo: SiloClient, config: HealthMonitorConfig) {
     this.pool = pool;
-    this.defcon = defcon;
+    this.silo = silo;
     this.config = config;
   }
 
@@ -48,7 +48,7 @@ export class HealthMonitor {
 
       if (slot.entityId) {
         try {
-          await this.defcon.report({
+          await this.silo.report({
             entityId: slot.entityId,
             signal: "fail",
             artifacts: { reason: "worker_timeout" },

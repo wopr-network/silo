@@ -5,19 +5,19 @@ describe("validateAdminToken", () => {
   it("throws when HTTP is active and no admin token is set", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN");
+    ).toThrow("SILO_ADMIN_TOKEN");
   });
 
   it("throws when SSE transport is active and no admin token is set", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: false, transport: "sse" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN");
+    ).toThrow("SILO_ADMIN_TOKEN");
   });
 
   it("throws when both HTTP and SSE are active and no admin token is set", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: true, transport: "sse" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN");
+    ).toThrow("SILO_ADMIN_TOKEN");
   });
 
   it("does not throw when stdio-only (no HTTP, no SSE)", () => {
@@ -43,6 +43,6 @@ describe("validateAdminToken", () => {
     // but the function itself should also reject empty-string tokens from direct callers.
     expect(() =>
       validateAdminToken({ adminToken: "", startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN");
+    ).toThrow("SILO_ADMIN_TOKEN");
   });
 });

@@ -140,7 +140,7 @@ export const SeedFileSchema = z
       }
     }
     // Only validate watch→flow references when flows are defined in this file.
-    // Watches may reference flows defined externally (e.g. in defcon's seed).
+    // Watches may reference flows defined externally (e.g. in silo's seed).
     if (seed.flows.length > 0) {
       const flowNames = new Set(seed.flows.map((f) => f.name));
       for (let i = 0; i < seed.watches.length; i++) {

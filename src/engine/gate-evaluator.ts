@@ -23,7 +23,7 @@ const PROJECT_ROOT = realpathSync(resolve(fileURLToPath(new URL("../..", import.
 const GATES_DIR = realpathSync(resolve(PROJECT_ROOT, "gates")) + sep;
 
 function getSystemDefaultGateTimeout(): number {
-  const parsed = parseInt(process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS ?? "", 10);
+  const parsed = parseInt(process.env.SILO_DEFAULT_GATE_TIMEOUT_MS ?? "", 10);
   return !Number.isNaN(parsed) && parsed > 0 ? parsed : 300000;
 }
 
@@ -147,7 +147,7 @@ export async function evaluateGate(
       // Wrap in try/catch so malformed URLs don't abort the gate without recording a result.
       let ssrfResult: Awaited<ReturnType<typeof checkSsrf>>;
       try {
-        ssrfResult = await checkSsrf(url, process.env.DEFCON_GATE_ALLOWLIST);
+        ssrfResult = await checkSsrf(url, process.env.SILO_GATE_ALLOWLIST);
       } catch (err) {
         passed = false;
         output = `SSRF_BLOCKED: ${err instanceof Error ? err.message : String(err)}`;

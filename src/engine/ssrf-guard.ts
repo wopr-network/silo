@@ -110,7 +110,7 @@ async function resolveHost(hostname: string): Promise<string[]> {
 }
 
 /**
- * Parse the DEFCON_GATE_ALLOWLIST env var value into hostname and CIDR entries.
+ * Parse the SILO_GATE_ALLOWLIST env var value into hostname and CIDR entries.
  */
 function parseAllowlist(allowlist: string): { hostnames: Set<string>; cidrs: string[] } {
   const hostnames = new Set<string>();
@@ -132,7 +132,7 @@ function parseAllowlist(allowlist: string): { hostnames: Set<string>; cidrs: str
  * Check whether a URL is safe to fetch (not targeting private/reserved addresses).
  *
  * @param url - The full HTTPS URL to check
- * @param allowlistEnv - Optional comma-separated allowlist (pass process.env.DEFCON_GATE_ALLOWLIST)
+ * @param allowlistEnv - Optional comma-separated allowlist (pass process.env.SILO_GATE_ALLOWLIST)
  * @returns SsrfCheckResult indicating whether the request should proceed,
  *          including resolvedIps to use for the actual fetch to avoid DNS rebinding TOCTOU.
  */

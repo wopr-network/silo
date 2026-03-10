@@ -1,1 +1,1 @@
-export const DB_PATH = "./defcon.db";
+export const DB_PATH = "./silo.db";

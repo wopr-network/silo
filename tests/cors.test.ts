@@ -14,27 +14,27 @@ describe("resolveCorsOrigin", () => {
     expect(resolveCorsOrigin({ host: "::1", corsEnv: undefined })).toEqual({ origins: null });
   });
 
-  it("throws for non-loopback without DEFCON_CORS_ORIGIN", () => {
-    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: undefined })).toThrow("DEFCON_CORS_ORIGIN");
+  it("throws for non-loopback without SILO_CORS_ORIGIN", () => {
+    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: undefined })).toThrow("SILO_CORS_ORIGIN");
   });
 
-  it("throws for non-loopback with empty DEFCON_CORS_ORIGIN", () => {
-    expect(() => resolveCorsOrigin({ host: "192.168.1.5", corsEnv: "" })).toThrow("DEFCON_CORS_ORIGIN");
+  it("throws for non-loopback with empty SILO_CORS_ORIGIN", () => {
+    expect(() => resolveCorsOrigin({ host: "192.168.1.5", corsEnv: "" })).toThrow("SILO_CORS_ORIGIN");
   });
 
-  it("returns single origin as array for non-loopback with DEFCON_CORS_ORIGIN set", () => {
+  it("returns single origin as array for non-loopback with SILO_CORS_ORIGIN set", () => {
     expect(resolveCorsOrigin({ host: "0.0.0.0", corsEnv: "https://my-app.example.com" })).toEqual({
       origins: ["https://my-app.example.com"],
     });
   });
 
-  it("returns single origin as array for loopback with DEFCON_CORS_ORIGIN set (explicit override)", () => {
+  it("returns single origin as array for loopback with SILO_CORS_ORIGIN set (explicit override)", () => {
     expect(resolveCorsOrigin({ host: "127.0.0.1", corsEnv: "https://my-app.example.com" })).toEqual({
       origins: ["https://my-app.example.com"],
     });
   });
 
-  it("returns multiple origins as array for comma-separated DEFCON_CORS_ORIGIN", () => {
+  it("returns multiple origins as array for comma-separated SILO_CORS_ORIGIN", () => {
     expect(
       resolveCorsOrigin({ host: "0.0.0.0", corsEnv: "https://app.example.com,http://localhost:3000" }),
     ).toEqual({ origins: ["https://app.example.com", "http://localhost:3000"] });

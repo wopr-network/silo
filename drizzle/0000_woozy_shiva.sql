@@ -97,7 +97,7 @@ CREATE TABLE `event_log` (
 	`watch_id` text,
 	`raw_event` text NOT NULL,
 	`action_taken` text,
-	`defcon_response` text,
+	`silo_response` text,
 	`created_at` integer NOT NULL,
 	FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`watch_id`) REFERENCES `watches`(`id`) ON UPDATE no action ON DELETE cascade

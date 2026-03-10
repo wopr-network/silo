@@ -32,7 +32,7 @@ function makeWorkerRepo(id = "worker-1"): IWorkerRepo {
   } as unknown as IWorkerRepo;
 }
 
-function makeDefcon(responses: object[]) {
+function makeSilo(responses: object[]) {
   const iter = responses[Symbol.iterator]();
   return {
     claim: vi.fn().mockImplementation(() => {
@@ -51,7 +51,7 @@ function makeDispatcher(): Dispatcher {
 function makeConfig(overrides: Partial<RunLoopConfig> = {}): RunLoopConfig {
   return {
     pool: new Pool(1),
-    engine: makeDefcon([{ retry_after_ms: 50 }]),
+    engine: makeSilo([{ retry_after_ms: 50 }]),
     dispatcher: makeDispatcher(),
     roles: [{ discipline: "engineering", count: 1 }],
     pollIntervalMs: 5,

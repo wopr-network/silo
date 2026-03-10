@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DefconClient } from "../defcon-client/client.js";
 import { Pool } from "../pool/pool.js";
+import type { SiloClient } from "../silo-client/client.js";
 import { HealthMonitor } from "./health-monitor.js";
 import type { HealthMonitorConfig } from "./types.js";
 
-function makeDefconClient() {
+function makeSiloClient() {
   const reportFn = vi.fn().mockResolvedValue({ next_action: "check_back", message: "ok", retry_after_ms: 1000 });
-  const client = { report: reportFn } as unknown as DefconClient;
+  const client = { report: reportFn } as unknown as SiloClient;
   return { client, reportFn };
 }
 
@@ -26,7 +26,7 @@ describe("HealthMonitor", () => {
 
   it("does nothing when all slots are healthy", async () => {
     const pool = new Pool(4);
-    const { client, reportFn } = makeDefconClient();
+    const { client, reportFn } = makeSiloClient();
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     pool.allocate("s1", "w1", "engineering", "e1", "do stuff");
@@ -41,7 +41,7 @@ describe("HealthMonitor", () => {
 
   it("reaps a dead slot and reports flow.fail", async () => {
     const pool = new Pool(4);
-    const { client, reportFn } = makeDefconClient();
+    const { client, reportFn } = makeSiloClient();
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     pool.allocate("s1", "w1", "engineering", "e1", "do stuff");
@@ -67,7 +67,7 @@ describe("HealthMonitor", () => {
 
   it("does not reap slots in reporting state", async () => {
     const pool = new Pool(4);
-    const { client, reportFn } = makeDefconClient();
+    const { client, reportFn } = makeSiloClient();
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     pool.allocate("s1", "w1", "engineering", "e1", "do stuff");
@@ -87,7 +87,7 @@ describe("HealthMonitor", () => {
 
   it("skips slots with null entityId", async () => {
     const pool = new Pool(4);
-    const { client, reportFn } = makeDefconClient();
+    const { client, reportFn } = makeSiloClient();
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     pool.allocate("s1", "w1", "engineering", "e1", "do stuff");
@@ -103,9 +103,9 @@ describe("HealthMonitor", () => {
     expect(pool.activeSlots()).toHaveLength(0);
   });
 
-  it("catches defcon.report errors without crashing", async () => {
+  it("catches silo.report errors without crashing", async () => {
     const pool = new Pool(4);
-    const { client, reportFn } = makeDefconClient();
+    const { client, reportFn } = makeSiloClient();
     reportFn.mockRejectedValueOnce(new Error("network down"));
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
@@ -120,9 +120,9 @@ describe("HealthMonitor", () => {
     expect(pool.activeSlots()).toHaveLength(0);
   });
 
-  it("does not release slot if heartbeat arrives during defcon.report await", async () => {
+  it("does not release slot if heartbeat arrives during silo.report await", async () => {
     const pool = new Pool(4);
-    // defcon.report takes time; during it, the heartbeat fires and updates lastHeartbeat
+    // silo.report takes time; during it, the heartbeat fires and updates lastHeartbeat
     let resolveReport!: () => void;
     const reportFn = vi.fn().mockImplementation(
       () =>
@@ -130,7 +130,7 @@ describe("HealthMonitor", () => {
           resolveReport = () => resolve({ next_action: "check_back", message: "ok", retry_after_ms: 1000 });
         }),
     );
-    const client = { report: reportFn } as unknown as DefconClient;
+    const client = { report: reportFn } as unknown as SiloClient;
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     pool.allocate("s1", "w1", "engineering", "e1", "do stuff");
@@ -139,13 +139,13 @@ describe("HealthMonitor", () => {
     slot.lastHeartbeat = Date.now() - FAST_CONFIG.deadWorkerThresholdMs - 1;
 
     monitor.start();
-    // Advance enough to trigger check(); defcon.report is now awaiting
+    // Advance enough to trigger check(); silo.report is now awaiting
     await vi.advanceTimersByTimeAsync(FAST_CONFIG.heartbeatIntervalMs + 10);
 
-    // Simulate heartbeat arriving while defcon.report is in flight
+    // Simulate heartbeat arriving while silo.report is in flight
     slot.lastHeartbeat = Date.now();
 
-    // Now resolve defcon.report
+    // Now resolve silo.report
     resolveReport();
     await vi.advanceTimersByTimeAsync(0);
     monitor.stop();
@@ -156,7 +156,7 @@ describe("HealthMonitor", () => {
 
   it("stop() clears the interval", () => {
     const pool = new Pool(4);
-    const { client } = makeDefconClient();
+    const { client } = makeSiloClient();
     const monitor = new HealthMonitor(pool, client, FAST_CONFIG);
 
     monitor.start();

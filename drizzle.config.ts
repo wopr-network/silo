@@ -7,6 +7,6 @@ export default defineConfig({
   dbCredentials: {
     // NOTE: This path must match DB_PATH in src/config/db-path.ts.
     // drizzle-kit runs in a CJS context and cannot import ESM source files directly.
-    url: "./defcon.db",
+    url: "./silo.db",
   },
 });

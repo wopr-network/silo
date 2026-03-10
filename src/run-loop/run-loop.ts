@@ -167,7 +167,7 @@ export class RunLoop {
   }
 
   private async claimAndProcess(slotId: string, workerId: string, discipline: string): Promise<void> {
-    const { engine: defcon, dispatcher, pool, flow } = this.config;
+    const { engine: silo, dispatcher, pool, flow } = this.config;
 
     // Concurrency gate: global per-flow limit
     // Use pendingClaims to prevent TOCTOU: multiple slots checking the count
@@ -183,7 +183,7 @@ export class RunLoop {
     this.pendingClaims++;
     let claim: ClaimResponse;
     try {
-      claim = await defcon.claim({ workerId, role: discipline, flow }, { signal: this.signal });
+      claim = await silo.claim({ workerId, role: discipline, flow }, { signal: this.signal });
     } finally {
       this.pendingClaims--;
     }
@@ -209,7 +209,7 @@ export class RunLoop {
       const repoActive = pool.activeCountByRepo(claimFlow, claimRepo);
       if (repoActive >= this.config.maxConcurrentPerRepo) {
         try {
-          await defcon.report({
+          await silo.report({
             entityId: claim.entity_id,
             signal: "crash",
             artifacts: { error: `per-repo concurrency limit reached for ${claimRepo}` },
@@ -225,7 +225,7 @@ export class RunLoop {
     const slot = pool.allocate(slotId, workerId, discipline, claim.entity_id, claim.prompt, claimFlow, claimRepo);
     if (!slot) {
       try {
-        await defcon.report({
+        await silo.report({
           entityId: claim.entity_id,
           signal: "crash",
           artifacts: { error: "slot unavailable" },
@@ -242,7 +242,7 @@ export class RunLoop {
         rawModelTier === "opus" || rawModelTier === "haiku" ? rawModelTier : "sonnet";
       // agentRole is fixed for the lifetime of this claim. On `continue` responses the
       // new prompt is applied but the agent role stays the same — the next stage's
-      // invocation will be claimed fresh with its own agentRole set by defcon.
+      // invocation will be claimed fresh with its own agentRole set by silo.
       const agentRole = (claimAny.agent_role as string | null | undefined) ?? null;
       const originalPrompt = claim.prompt;
       let currentPrompt = claim.prompt;
@@ -310,7 +310,7 @@ export class RunLoop {
         pool.setState(slotId, "reporting");
         let response: ReportResponse;
         try {
-          response = await defcon.report({
+          response = await silo.report({
             entityId: claim.entity_id,
             signal: currentSignal,
             artifacts: currentArtifacts,

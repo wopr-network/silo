@@ -674,8 +674,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "defcon_response": {
-          "name": "defcon_response",
+        "silo_response": {
+          "name": "silo_response",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

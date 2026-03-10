@@ -3,7 +3,7 @@ import { resolveCorsOrigin } from "../src/cors.js";
 
 describe("CORS origin enforcement (integration)", () => {
   it("non-loopback host without env var throws actionable error", () => {
-    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: undefined })).toThrow(/DEFCON_CORS_ORIGIN must be set/);
+    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: undefined })).toThrow(/SILO_CORS_ORIGIN must be set/);
   });
 
   it("non-loopback host with single origin env var succeeds", () => {
@@ -33,7 +33,7 @@ describe("CORS origin enforcement (integration)", () => {
     }
   });
 
-  it("whitespace-only DEFCON_CORS_ORIGIN treated as unset", () => {
-    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: "   " })).toThrow(/DEFCON_CORS_ORIGIN must be set/);
+  it("whitespace-only SILO_CORS_ORIGIN treated as unset", () => {
+    expect(() => resolveCorsOrigin({ host: "0.0.0.0", corsEnv: "   " })).toThrow(/SILO_CORS_ORIGIN must be set/);
   });
 });

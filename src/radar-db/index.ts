@@ -42,7 +42,7 @@ export function createDb(path: string = ":memory:") {
       watch_id TEXT REFERENCES watches(id) ON DELETE CASCADE,
       raw_event TEXT NOT NULL,
       action_taken TEXT,
-      defcon_response TEXT,
+      silo_response TEXT,
       created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS workers (

@@ -1,10 +1,10 @@
-import type { DefconClient } from "../defcon-client/client.js";
+import type { SiloClient } from "../silo-client/client.js";
 import type { InMemoryWorkerRepo } from "../worker/worker-repo.js";
 import type { ExternalClaimRequest, ExternalClaimResponse } from "./types.js";
 
 export class ClaimHandler {
   constructor(
-    private defcon: DefconClient,
+    private silo: SiloClient,
     private workers: InMemoryWorkerRepo,
   ) {}
 
@@ -23,7 +23,7 @@ export class ClaimHandler {
       this.workers.touch(workerId);
     }
 
-    const claim = await this.defcon.claim({
+    const claim = await this.silo.claim({
       workerId,
       role: req.role,
       flow: req.flow,

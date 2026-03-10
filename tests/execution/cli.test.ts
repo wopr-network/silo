@@ -62,7 +62,7 @@ describe("CLI", () => {
   it("init --seed loads a seed file", () => {
     const seedPath = writeSeedFile(validSeed);
     const dbPath = join(tmpdir(), `cli-db-${Date.now()}.db`);
-    const output = run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
+    const output = run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
     expect(output).toContain("flows: 1");
     expect(output).toContain("gates: 1");
     if (existsSync(dbPath)) rmSync(dbPath);
@@ -71,8 +71,8 @@ describe("CLI", () => {
   it("init --seed --force drops existing data first", () => {
     const seedPath = writeSeedFile(validSeed);
     const dbPath = join(tmpdir(), `cli-force-${Date.now()}.db`);
-    run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
-    const output = run(["init", "--seed", seedPath, "--force"], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
+    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    const output = run(["init", "--seed", seedPath, "--force"], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
     expect(output).toContain("flows: 1");
     if (existsSync(dbPath)) rmSync(dbPath);
   });
@@ -80,8 +80,8 @@ describe("CLI", () => {
   it("export outputs valid JSON to stdout", () => {
     const seedPath = writeSeedFile(validSeed);
     const dbPath = join(tmpdir(), `cli-export-${Date.now()}.db`);
-    run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
-    const output = run(["export"], { DEFCON_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    const output = run(["export"], { SILO_DB_PATH: dbPath });
     const parsed = JSON.parse(output);
     expect(parsed.flows).toHaveLength(1);
     if (existsSync(dbPath)) rmSync(dbPath);
@@ -91,8 +91,8 @@ describe("CLI", () => {
     const seedPath = writeSeedFile(validSeed);
     const dbPath = join(tmpdir(), `cli-export-file-${Date.now()}.db`);
     const outPath = join(tmpdir(), `cli-export-${Date.now()}.json`);
-    run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
-    run(["export", "--out", outPath], { DEFCON_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    run(["export", "--out", outPath], { SILO_DB_PATH: dbPath });
     const content = readFileSync(outPath, "utf-8");
     const parsed = JSON.parse(content);
     expect(parsed.flows).toHaveLength(1);
@@ -117,12 +117,12 @@ describe("CLI", () => {
     const dbPath = join(tmpdir(), `cli-cors-${Date.now()}.db`);
     const seedPath = writeSeedFile(validSeed);
     try {
-      run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
+      run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
 
       // Use port 0 to let the OS pick an ephemeral port
       const child = execFile("npx", ["tsx", CLI, "serve", "--transport", "sse", "--port", "0", "--mcp-only", "--db", dbPath], {
         cwd: join(import.meta.dirname, "../.."),
-        env: { ...process.env, DEFCON_DB_PATH: dbPath, DEFCON_ADMIN_TOKEN: "test-token", DEFCON_WORKER_TOKEN: "test-worker-token" },
+        env: { ...process.env, SILO_DB_PATH: dbPath, SILO_ADMIN_TOKEN: "test-token", SILO_WORKER_TOKEN: "test-worker-token" },
       });
 
       // Poll until server is ready instead of fixed sleep
@@ -183,8 +183,8 @@ describe("CLI", () => {
   it("status prints table for initialized db", () => {
     const dbPath = join(tmpdir(), `cli-status-${Date.now()}.db`);
     const seedPath = writeSeedFile(validSeed);
-    run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
-    const output = run(["status"], { DEFCON_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    const output = run(["status"], { SILO_DB_PATH: dbPath });
     expect(output).toContain("pr-review");
     if (existsSync(dbPath)) rmSync(dbPath);
   });
@@ -192,8 +192,8 @@ describe("CLI", () => {
   it("status --json outputs valid JSON", { timeout: 15000 }, () => {
     const dbPath = join(tmpdir(), `cli-status-json-${Date.now()}.db`);
     const seedPath = writeSeedFile(validSeed);
-    run(["init", "--seed", seedPath], { DEFCON_DB_PATH: dbPath, DEFCON_SEED_ROOT: tmpdir() });
-    const output = run(["status", "--json"], { DEFCON_DB_PATH: dbPath });
+    run(["init", "--seed", seedPath], { SILO_DB_PATH: dbPath, SILO_SEED_ROOT: tmpdir() });
+    const output = run(["status", "--json"], { SILO_DB_PATH: dbPath });
     const parsed = JSON.parse(output);
     expect(parsed).toHaveProperty("flows");
     if (existsSync(dbPath)) rmSync(dbPath);
@@ -278,19 +278,19 @@ describe("validateAdminToken", () => {
   it("throws when HTTP is active and no admin token", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN must be set");
+    ).toThrow("SILO_ADMIN_TOKEN must be set");
   });
 
   it("throws when SSE transport and no admin token", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: false, transport: "sse" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN must be set");
+    ).toThrow("SILO_ADMIN_TOKEN must be set");
   });
 
   it("throws when token is whitespace-only with HTTP active", () => {
     expect(() =>
       validateAdminToken({ adminToken: "   ", startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_ADMIN_TOKEN must be set");
+    ).toThrow("SILO_ADMIN_TOKEN must be set");
   });
 
   it("does not throw for stdio-only without token", () => {
@@ -314,7 +314,7 @@ describe("validateAdminToken", () => {
   it("handles transport with mixed case and whitespace", () => {
     expect(() =>
       validateAdminToken({ adminToken: undefined, startHttp: false, transport: "  SSE  " }),
-    ).toThrow("DEFCON_ADMIN_TOKEN must be set");
+    ).toThrow("SILO_ADMIN_TOKEN must be set");
   });
 });
 
@@ -322,19 +322,19 @@ describe("validateWorkerToken", () => {
   it("throws when HTTP is active and no worker token", () => {
     expect(() =>
       validateWorkerToken({ workerToken: undefined, startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_WORKER_TOKEN must be set");
+    ).toThrow("SILO_WORKER_TOKEN must be set");
   });
 
   it("throws when SSE transport and no worker token", () => {
     expect(() =>
       validateWorkerToken({ workerToken: undefined, startHttp: false, transport: "sse" }),
-    ).toThrow("DEFCON_WORKER_TOKEN must be set");
+    ).toThrow("SILO_WORKER_TOKEN must be set");
   });
 
   it("throws when token is whitespace-only with HTTP active", () => {
     expect(() =>
       validateWorkerToken({ workerToken: "   ", startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_WORKER_TOKEN must be set");
+    ).toThrow("SILO_WORKER_TOKEN must be set");
   });
 
   it("does not throw for stdio-only without token", () => {
@@ -352,42 +352,42 @@ describe("validateWorkerToken", () => {
   it("handles transport with mixed case and whitespace", () => {
     expect(() =>
       validateWorkerToken({ workerToken: undefined, startHttp: false, transport: "  SSE  " }),
-    ).toThrow("DEFCON_WORKER_TOKEN must be set");
+    ).toThrow("SILO_WORKER_TOKEN must be set");
   });
 });
 
 describe("CLI validation", () => {
   it("serve rejects non-numeric --reaper-interval", () => {
     const dbPath = join(tmpdir(), `cli-serve-nan-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--reaper-interval", "abc"], { DEFCON_DB_PATH: dbPath });
+    const output = runExpectFail(["serve", "--reaper-interval", "abc"], { SILO_DB_PATH: dbPath });
     expect(output).toMatch(/reaper-interval/i);
     if (existsSync(dbPath)) rmSync(dbPath);
   });
 
   it("serve rejects --reaper-interval below 1000", () => {
     const dbPath = join(tmpdir(), `cli-serve-low-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--reaper-interval", "500"], { DEFCON_DB_PATH: dbPath });
+    const output = runExpectFail(["serve", "--reaper-interval", "500"], { SILO_DB_PATH: dbPath });
     expect(output).toMatch(/reaper-interval/i);
     if (existsSync(dbPath)) rmSync(dbPath);
   });
 
   it("serve rejects non-numeric --claim-ttl", () => {
     const dbPath = join(tmpdir(), `cli-serve-ttl-nan-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--claim-ttl", "abc"], { DEFCON_DB_PATH: dbPath });
+    const output = runExpectFail(["serve", "--claim-ttl", "abc"], { SILO_DB_PATH: dbPath });
     expect(output).toMatch(/claim-ttl/i);
     if (existsSync(dbPath)) rmSync(dbPath);
   });
 
   it("serve rejects --claim-ttl below 5000", () => {
     const dbPath = join(tmpdir(), `cli-serve-ttl-low-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--claim-ttl", "1000"], { DEFCON_DB_PATH: dbPath });
+    const output = runExpectFail(["serve", "--claim-ttl", "1000"], { SILO_DB_PATH: dbPath });
     expect(output).toMatch(/claim-ttl/i);
     if (existsSync(dbPath)) rmSync(dbPath);
   });
 
   it("serve rejects --http-only and --mcp-only together", () => {
     const dbPath = join(tmpdir(), `cli-serve-both-${Date.now()}.db`);
-    const output = runExpectFail(["serve", "--http-only", "--mcp-only"], { DEFCON_DB_PATH: dbPath });
+    const output = runExpectFail(["serve", "--http-only", "--mcp-only"], { SILO_DB_PATH: dbPath });
     expect(output).toMatch(/http-only.*mcp-only|Cannot use/i);
     if (existsSync(dbPath)) rmSync(dbPath);
   });

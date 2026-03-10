@@ -100,7 +100,7 @@ describe("checkSsrf", () => {
     expect(result.reason).toContain("unresolvable");
   });
 
-  it("allows host in DEFCON_GATE_ALLOWLIST even if private", async () => {
+  it("allows host in SILO_GATE_ALLOWLIST even if private", async () => {
     mockResolve4.mockResolvedValue(["10.0.0.1"]);
     const result = await checkSsrf("https://internal.corp/api", "internal.corp,other.corp");
     expect(result.allowed).toBe(true);

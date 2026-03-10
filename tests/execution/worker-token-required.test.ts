@@ -5,13 +5,13 @@ describe("validateWorkerToken", () => {
   it("throws when HTTP is active and no worker token is set", () => {
     expect(() =>
       validateWorkerToken({ workerToken: undefined, startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_WORKER_TOKEN");
+    ).toThrow("SILO_WORKER_TOKEN");
   });
 
   it("throws when SSE transport is active and no worker token is set", () => {
     expect(() =>
       validateWorkerToken({ workerToken: undefined, startHttp: false, transport: "sse" }),
-    ).toThrow("DEFCON_WORKER_TOKEN");
+    ).toThrow("SILO_WORKER_TOKEN");
   });
 
   it("does not throw when stdio-only (no HTTP, no SSE)", () => {
@@ -29,6 +29,6 @@ describe("validateWorkerToken", () => {
   it("treats empty string worker token as unset (throws for HTTP)", () => {
     expect(() =>
       validateWorkerToken({ workerToken: "", startHttp: true, transport: "stdio" }),
-    ).toThrow("DEFCON_WORKER_TOKEN");
+    ).toThrow("SILO_WORKER_TOKEN");
   });
 });

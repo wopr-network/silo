@@ -45,7 +45,7 @@ describe("worker auth guard", () => {
     expect(result.content[0].text).not.toContain("Unauthorized");
   });
 
-  it("treats empty-string DEFCON_WORKER_TOKEN as unset (open mode)", async () => {
+  it("treats empty-string SILO_WORKER_TOKEN as unset (open mode)", async () => {
     const opts: McpServerOpts = { workerToken: "" };
     const result = await callToolHandler(stubDeps, "flow.claim", { role: "engineering" }, opts);
     expect(result.content[0].text).not.toContain("Unauthorized");
@@ -55,7 +55,7 @@ describe("worker auth guard", () => {
     const opts: McpServerOpts = { workerToken: "worker-secret-123" };
     const result = await callToolHandler(stubDeps, "flow.claim", { role: "engineering" }, opts);
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).not.toContain("DEFCON_WORKER_TOKEN");
+    expect(result.content[0].text).not.toContain("SILO_WORKER_TOKEN");
   });
 
   it("query.* calls remain open even when worker token is configured", async () => {

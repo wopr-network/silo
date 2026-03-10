@@ -7,7 +7,7 @@ export interface AppendEventInput {
   watchId: string | null;
   rawEvent: Record<string, unknown>;
   actionTaken: string | null;
-  defconResponse: Record<string, unknown> | null;
+  siloResponse: Record<string, unknown> | null;
 }
 
 export interface EventLogRow {
@@ -16,7 +16,7 @@ export interface EventLogRow {
   watchId: string | null;
   rawEvent: Record<string, unknown>;
   actionTaken: string | null;
-  defconResponse: Record<string, unknown> | null;
+  siloResponse: Record<string, unknown> | null;
   createdAt: number;
 }
 
@@ -27,7 +27,7 @@ function toRow(raw: typeof eventLog.$inferSelect): EventLogRow {
     watchId: raw.watchId,
     rawEvent: JSON.parse(raw.rawEvent) as Record<string, unknown>,
     actionTaken: raw.actionTaken,
-    defconResponse: raw.defconResponse ? (JSON.parse(raw.defconResponse) as Record<string, unknown>) : null,
+    siloResponse: raw.siloResponse ? (JSON.parse(raw.siloResponse) as Record<string, unknown>) : null,
     createdAt: raw.createdAt,
   };
 }
@@ -46,7 +46,7 @@ export class EventLogRepo {
         watchId: input.watchId,
         rawEvent: JSON.stringify(input.rawEvent),
         actionTaken: input.actionTaken,
-        defconResponse: input.defconResponse ? JSON.stringify(input.defconResponse) : null,
+        siloResponse: input.siloResponse ? JSON.stringify(input.siloResponse) : null,
         createdAt: now,
       })
       .run();

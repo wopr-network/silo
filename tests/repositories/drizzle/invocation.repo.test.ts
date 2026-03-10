@@ -371,7 +371,7 @@ describe("DrizzleInvocationRepository", () => {
   describe("create with context", () => {
     it("should create an invocation with context", async () => {
       await seedEntity();
-      const ctx = { repo: "wopr-network/defcon", branch: "main" };
+      const ctx = { repo: "wopr-network/silo", branch: "main" };
       const inv = await repo.create("ent-1", "review", "Review", "active", 60000, ctx);
       expect(inv.context).toEqual(ctx);
       const fetched = await repo.get(inv.id);

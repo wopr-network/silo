@@ -65,7 +65,7 @@ export const StateDefinitionSchema = z.object({
   onEnter: OnEnterSchema.optional(),
   onExit: OnExitSchema.optional(),
   retryAfterMs: z.number().int().min(0).optional(),
-  /** Opaque metadata passed through to consumers (e.g. radar). Defcon stores but does not interpret. */
+  /** Opaque metadata passed through to consumers (e.g. radar). Silo stores but does not interpret. */
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 

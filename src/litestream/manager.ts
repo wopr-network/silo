@@ -15,16 +15,16 @@ export interface LitestreamConfig {
 }
 
 export function isLitestreamEnabled(): boolean {
-  return !!process.env.DEFCON_LITESTREAM_REPLICA_URL?.trim();
+  return !!process.env.SILO_LITESTREAM_REPLICA_URL?.trim();
 }
 
 export function buildConfigFromEnv(dbPath: string): LitestreamConfig {
-  const replicaUrl = process.env.DEFCON_LITESTREAM_REPLICA_URL ?? "";
-  const accessKeyId = process.env.DEFCON_LITESTREAM_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.DEFCON_LITESTREAM_SECRET_ACCESS_KEY;
+  const replicaUrl = process.env.SILO_LITESTREAM_REPLICA_URL ?? "";
+  const accessKeyId = process.env.SILO_LITESTREAM_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SILO_LITESTREAM_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      "DEFCON_LITESTREAM_ACCESS_KEY_ID and DEFCON_LITESTREAM_SECRET_ACCESS_KEY must be set when DEFCON_LITESTREAM_REPLICA_URL is configured",
+      "SILO_LITESTREAM_ACCESS_KEY_ID and SILO_LITESTREAM_SECRET_ACCESS_KEY must be set when SILO_LITESTREAM_REPLICA_URL is configured",
     );
   }
   return {
@@ -32,10 +32,10 @@ export function buildConfigFromEnv(dbPath: string): LitestreamConfig {
     replicaUrl,
     accessKeyId,
     secretAccessKey,
-    endpoint: process.env.DEFCON_LITESTREAM_ENDPOINT || undefined,
-    region: process.env.DEFCON_LITESTREAM_REGION || "us-east-1",
-    retention: process.env.DEFCON_LITESTREAM_RETENTION || "24h",
-    syncInterval: process.env.DEFCON_LITESTREAM_SYNC_INTERVAL || "1s",
+    endpoint: process.env.SILO_LITESTREAM_ENDPOINT || undefined,
+    region: process.env.SILO_LITESTREAM_REGION || "us-east-1",
+    retention: process.env.SILO_LITESTREAM_RETENTION || "24h",
+    syncInterval: process.env.SILO_LITESTREAM_SYNC_INTERVAL || "1s",
   };
 }
 

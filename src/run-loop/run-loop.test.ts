@@ -16,7 +16,7 @@ function makeActivityRepo(summary: string): IEntityActivityRepo {
   };
 }
 
-function makeDefcon(responses: object[]) {
+function makeSilo(responses: object[]) {
   const iter = responses[Symbol.iterator]();
   return {
     claim: vi.fn().mockImplementation(() => {
@@ -35,7 +35,7 @@ function makeDispatcher(result: WorkerResult): Dispatcher {
 function makeConfig(overrides: Partial<RunLoopConfig> = {}): RunLoopConfig {
   return {
     pool: new Pool(1),
-    engine: makeDefcon([{ retry_after_ms: 50 }]),
+    engine: makeSilo([{ retry_after_ms: 50 }]),
     dispatcher: makeDispatcher({ signal: "pr_created", artifacts: {}, exitCode: 0 }),
     activityRepo: makeActivityRepo(""),
     roles: [{ discipline: "engineering", count: 1 }],
@@ -56,11 +56,11 @@ describe("RunLoop — activity history injection on continue", () => {
       entity_type: "issue",
     };
 
-    // Sequence: first claim → dispatch returns pr_created → defcon.report is called
-    // To test "continue": defcon.report returns next_action: continue, then done
+    // Sequence: first claim → dispatch returns pr_created → silo.report is called
+    // To test "continue": silo.report returns next_action: continue, then done
     let reportCallCount = 0;
     const dispatcher = makeDispatcher({ signal: "pr_created", artifacts: { prNumber: 42 }, exitCode: 0 });
-    const defcon = {
+    const silo = {
       claim: vi.fn().mockResolvedValueOnce(firstClaim).mockResolvedValue({ retry_after_ms: 50 }),
       report: vi.fn().mockImplementation(() => {
         reportCallCount++;
@@ -71,7 +71,7 @@ describe("RunLoop — activity history injection on continue", () => {
       }),
     } as unknown as import("../engine/flow-engine-interface.js").IFlowEngine;
 
-    const config = makeConfig({ pool: new Pool(1), engine: defcon, dispatcher, activityRepo });
+    const config = makeConfig({ pool: new Pool(1), engine: silo, dispatcher, activityRepo });
     const loop = new RunLoop(config);
     loop.start();
 
@@ -97,7 +97,7 @@ describe("RunLoop — activity history injection on continue", () => {
 
     let reportCallCount = 0;
     const dispatcher = makeDispatcher({ signal: "pr_created", artifacts: {}, exitCode: 0 });
-    const defcon = {
+    const silo = {
       claim: vi.fn().mockResolvedValueOnce(firstClaim).mockResolvedValue({ retry_after_ms: 50 }),
       report: vi.fn().mockImplementation(() => {
         reportCallCount++;
@@ -108,7 +108,7 @@ describe("RunLoop — activity history injection on continue", () => {
       }),
     } as unknown as import("../engine/flow-engine-interface.js").IFlowEngine;
 
-    const config = makeConfig({ pool: new Pool(1), engine: defcon, dispatcher, activityRepo });
+    const config = makeConfig({ pool: new Pool(1), engine: silo, dispatcher, activityRepo });
     const loop = new RunLoop(config);
     loop.start();
 
@@ -132,20 +132,20 @@ describe("RunLoop — activityHistory injection on report", () => {
       entity_type: "issue",
     };
 
-    const defcon = {
+    const silo = {
       claim: vi.fn().mockResolvedValueOnce(firstClaim).mockResolvedValue({ retry_after_ms: 50 }),
       report: vi.fn().mockResolvedValue({ next_action: "done" }),
     } as unknown as import("../engine/flow-engine-interface.js").IFlowEngine;
 
     const dispatcher = makeDispatcher({ signal: "pr_created", artifacts: { prNumber: 42 }, exitCode: 0 });
-    const config = makeConfig({ pool: new Pool(1), engine: defcon, dispatcher, activityRepo });
+    const config = makeConfig({ pool: new Pool(1), engine: silo, dispatcher, activityRepo });
     const loop = new RunLoop(config);
     loop.start();
 
-    await vi.waitFor(() => expect(defcon.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await vi.waitFor(() => expect(silo.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
     await loop.stop();
 
-    expect(defcon.report).toHaveBeenCalledWith(
+    expect(silo.report).toHaveBeenCalledWith(
       expect.objectContaining({
         artifacts: expect.objectContaining({
           activityHistory: expect.stringContaining("Prior work on this entity"),
@@ -164,20 +164,20 @@ describe("RunLoop — activityHistory injection on report", () => {
       entity_type: "issue",
     };
 
-    const defcon = {
+    const silo = {
       claim: vi.fn().mockResolvedValueOnce(firstClaim).mockResolvedValue({ retry_after_ms: 50 }),
       report: vi.fn().mockResolvedValue({ next_action: "done" }),
     } as unknown as import("../engine/flow-engine-interface.js").IFlowEngine;
 
     const dispatcher = makeDispatcher({ signal: "pr_created", artifacts: { prNumber: 1 }, exitCode: 0 });
-    const config = makeConfig({ pool: new Pool(1), engine: defcon, dispatcher, activityRepo });
+    const config = makeConfig({ pool: new Pool(1), engine: silo, dispatcher, activityRepo });
     const loop = new RunLoop(config);
     loop.start();
 
-    await vi.waitFor(() => expect(defcon.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await vi.waitFor(() => expect(silo.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
     await loop.stop();
 
-    const reportCall = vi.mocked(defcon.report).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    const reportCall = vi.mocked(silo.report).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
     expect((reportCall?.artifacts as Record<string, unknown> | undefined)?.activityHistory).toBeUndefined();
   });
 
@@ -192,20 +192,20 @@ describe("RunLoop — activityHistory injection on report", () => {
       entity_type: "issue",
     };
 
-    const defcon = {
+    const silo = {
       claim: vi.fn().mockResolvedValueOnce(firstClaim).mockResolvedValue({ retry_after_ms: 50 }),
       report: vi.fn().mockResolvedValue({ next_action: "done" }),
     } as unknown as import("../engine/flow-engine-interface.js").IFlowEngine;
 
     const dispatcher = makeDispatcher({ signal: "pr_created", artifacts: {}, exitCode: 0 });
-    const config = makeConfig({ pool: new Pool(1), engine: defcon, dispatcher, activityRepo });
+    const config = makeConfig({ pool: new Pool(1), engine: silo, dispatcher, activityRepo });
     const loop = new RunLoop(config);
     loop.start();
 
-    await vi.waitFor(() => expect(defcon.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await vi.waitFor(() => expect(silo.report).toHaveBeenCalledTimes(1), { timeout: 3000 });
     await loop.stop();
 
-    const reportCall = vi.mocked(defcon.report).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    const reportCall = vi.mocked(silo.report).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
     const history = (reportCall?.artifacts as Record<string, unknown> | undefined)?.activityHistory as string;
     expect(history.length).toBeLessThanOrEqual(8050);
     expect(history).toContain("[...history truncated]");
@@ -215,7 +215,7 @@ describe("RunLoop — activityHistory injection on report", () => {
 describe("RunLoop — multi-discipline routing", () => {
   it("routes claims with per-slot discipline", async () => {
     const dispatcher = makeDispatcher({ signal: "done", artifacts: {}, exitCode: 0 });
-    const defcon = {
+    const silo = {
       claim: vi
         .fn()
         .mockResolvedValueOnce({ entity_id: "e-eng", prompt: "eng work", flow: "f1" })
@@ -226,7 +226,7 @@ describe("RunLoop — multi-discipline routing", () => {
 
     const config = makeConfig({
       pool: new Pool(2),
-      engine: defcon,
+      engine: silo,
       dispatcher,
       roles: [
         { discipline: "engineering", count: 1 },
@@ -237,10 +237,10 @@ describe("RunLoop — multi-discipline routing", () => {
     const loop = new RunLoop(config);
     loop.start();
 
-    await vi.waitFor(() => expect(defcon.claim).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await vi.waitFor(() => expect(silo.claim).toHaveBeenCalledTimes(2), { timeout: 3000 });
     await loop.stop();
 
-    const claimCalls = vi.mocked(defcon.claim).mock.calls;
+    const claimCalls = vi.mocked(silo.claim).mock.calls;
     const roles = claimCalls.map((c) => (c[0] as { role: string }).role);
     expect(roles).toContain("engineering");
     expect(roles).toContain("devops");

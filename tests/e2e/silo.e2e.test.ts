@@ -167,7 +167,7 @@ function workerHeaders(): Record<string, string> {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("E2E: full-stack defcon flow", { timeout: 15000 }, () => {
+describe("E2E: full-stack silo flow", { timeout: 15000 }, () => {
 	let ctx: E2EContext;
 
 	beforeEach(async () => {

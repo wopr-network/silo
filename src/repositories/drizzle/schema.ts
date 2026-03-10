@@ -39,7 +39,7 @@ export const stateDefinitions = sqliteTable(
     onEnter: text("on_enter", { mode: "json" }),
     onExit: text("on_exit", { mode: "json" }),
     retryAfterMs: integer("retry_after_ms"),
-    /** Opaque metadata passed through to consumers. Defcon stores but does not interpret. */
+    /** Opaque metadata passed through to consumers. Silo stores but does not interpret. */
     meta: text("meta", { mode: "json" }),
   },
   (table) => ({
@@ -302,7 +302,7 @@ export const eventLog = sqliteTable(
     watchId: text("watch_id").references(() => watches.id, { onDelete: "cascade" }),
     rawEvent: text("raw_event").notNull(),
     actionTaken: text("action_taken"),
-    defconResponse: text("defcon_response"),
+    siloResponse: text("silo_response"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({

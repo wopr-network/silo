@@ -1,7 +1,7 @@
-import type { DefconClient } from "../defcon-client/index.js";
 import type { IngestEvent } from "../ingestion/types.js";
 import type { Pool } from "../pool/index.js";
 import type { ThroughputTracker } from "../pool/throughput-tracker.js";
+import type { SiloClient } from "../silo-client/index.js";
 import type { SourceAdapterRegistry } from "../sources/adapter.js";
 import type { IEntityActivityRepo } from "./repos/i-entity-activity-repo.js";
 import type { RegisterWorkerInput, WorkerRow } from "./repos/worker-repo.js";
@@ -55,7 +55,7 @@ export interface AppDeps {
   workerRepo: IWorkerRepo;
   activityRepo: IEntityActivityRepo;
   pool: Pool;
-  defconClient: DefconClient;
+  siloClient: SiloClient;
   adapterRegistry: SourceAdapterRegistry;
   onWebhook: (sourceId: string, event: IngestEvent) => Promise<void>;
   throughputTracker: ThroughputTracker;
@@ -110,6 +110,6 @@ export interface EventLogEntry {
   watch_id: string | null;
   raw_event: unknown;
   action_taken: string | null;
-  defcon_response: unknown;
+  silo_response: unknown;
   created_at: number;
 }

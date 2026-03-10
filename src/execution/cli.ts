@@ -43,10 +43,10 @@ import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
-const DB_DEFAULT = process.env.DEFCON_DB_PATH ?? "./defcon.db";
+const DB_DEFAULT = process.env.SILO_DB_PATH ?? "./silo.db";
 
 /**
- * Validates that DEFCON_ADMIN_TOKEN is set when network transports are active.
+ * Validates that SILO_ADMIN_TOKEN is set when network transports are active.
  * Throws if a network transport (HTTP or SSE) is started without a token.
  * Stdio-only mode is exempt (local, single-user).
  */
@@ -60,15 +60,15 @@ export function validateAdminToken(opts: {
   const networkActive = opts.startHttp || transport === "sse";
   if (networkActive && !token) {
     throw new Error(
-      "DEFCON_ADMIN_TOKEN must be set when using HTTP or SSE transport. " +
+      "SILO_ADMIN_TOKEN must be set when using HTTP or SSE transport. " +
         "Admin tools are accessible over the network and require authentication. " +
-        "Set DEFCON_ADMIN_TOKEN in your environment or use stdio transport for local-only access.",
+        "Set SILO_ADMIN_TOKEN in your environment or use stdio transport for local-only access.",
     );
   }
 }
 
 /**
- * Validates that DEFCON_WORKER_TOKEN is set when network transports are active.
+ * Validates that SILO_WORKER_TOKEN is set when network transports are active.
  * Throws if a network transport (HTTP or SSE) is started without a token.
  * Stdio-only mode is exempt (local, single-user).
  */
@@ -82,9 +82,9 @@ export function validateWorkerToken(opts: {
   const networkActive = opts.startHttp || transport === "sse";
   if (networkActive && !token) {
     throw new Error(
-      "DEFCON_WORKER_TOKEN must be set when using HTTP or SSE transport. " +
+      "SILO_WORKER_TOKEN must be set when using HTTP or SSE transport. " +
         "Worker tools (flow.*) are accessible over the network and require authentication. " +
-        "Set DEFCON_WORKER_TOKEN in your environment or use stdio transport for local-only access.",
+        "Set SILO_WORKER_TOKEN in your environment or use stdio transport for local-only access.",
     );
   }
 }
@@ -147,7 +147,7 @@ program
       db.delete(flowDefinitions).run();
     }
 
-    const seedRoot = process.env.DEFCON_SEED_ROOT;
+    const seedRoot = process.env.SILO_SEED_ROOT;
     const result = await loadSeed(resolve(seedPath), flowRepo, gateRepo, {
       allowedRoot: seedRoot ?? process.cwd(),
       db,
@@ -219,8 +219,8 @@ program
 
     const domainEventRepo = new DrizzleDomainEventRepository(db);
 
-    const useEventSourced = process.env.DEFCON_EVENT_SOURCED === "true";
-    const snapshotInterval = parseInt(process.env.DEFCON_SNAPSHOT_INTERVAL ?? "10", 10);
+    const useEventSourced = process.env.SILO_EVENT_SOURCED === "true";
+    const snapshotInterval = parseInt(process.env.SILO_SNAPSHOT_INTERVAL ?? "10", 10);
 
     let entityRepo: IEntityRepository;
     let invocationRepo: IInvocationRepository;
@@ -288,8 +288,8 @@ program
       process.exit(1);
     }
 
-    const adminToken = process.env.DEFCON_ADMIN_TOKEN || undefined;
-    const workerToken = process.env.DEFCON_WORKER_TOKEN || undefined;
+    const adminToken = process.env.SILO_ADMIN_TOKEN || undefined;
+    const workerToken = process.env.SILO_WORKER_TOKEN || undefined;
 
     const startHttp = !opts.mcpOnly;
     const startMcp = !opts.httpOnly;
@@ -322,7 +322,7 @@ program
       const httpHost = opts.httpHost as string;
       let restCorsResult: ReturnType<typeof resolveCorsOrigin>;
       try {
-        restCorsResult = resolveCorsOrigin({ host: httpHost, corsEnv: process.env.DEFCON_CORS_ORIGIN });
+        restCorsResult = resolveCorsOrigin({ host: httpHost, corsEnv: process.env.SILO_CORS_ORIGIN });
       } catch (err: unknown) {
         console.error((err as Error).message);
         await stopReaper();
@@ -371,7 +371,7 @@ program
       const host = opts.host as string;
       let corsResult: ReturnType<typeof resolveCorsOrigin>;
       try {
-        corsResult = resolveCorsOrigin({ host, corsEnv: process.env.DEFCON_CORS_ORIGIN });
+        corsResult = resolveCorsOrigin({ host, corsEnv: process.env.SILO_CORS_ORIGIN });
       } catch (err: unknown) {
         console.error((err as Error).message);
         await stopReaper();
@@ -382,7 +382,7 @@ program
       const loopbackPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
       const httpServer = http.createServer(async (req, res) => {
-        // CORS: restrict to localhost origins when bound to loopback; require DEFCON_CORS_ORIGIN when bound to non-loopback
+        // CORS: restrict to localhost origins when bound to loopback; require SILO_CORS_ORIGIN when bound to non-loopback
         const origin = req.headers.origin;
         if (origin) {
           const originAllowed = allowedOriginSet ? allowedOriginSet.has(origin) : loopbackPattern.test(origin);

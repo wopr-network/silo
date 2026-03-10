@@ -1,12 +1,12 @@
-export class DefconError extends Error {
+export class SiloError extends Error {
   constructor(msg: string) {
     super(msg);
     this.name = new.target.name;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
-export class NotFoundError extends DefconError {}
-export class ConflictError extends DefconError {}
-export class ValidationError extends DefconError {}
-export class GateError extends DefconError {}
-export class InternalError extends DefconError {}
+export class NotFoundError extends SiloError {}
+export class ConflictError extends SiloError {}
+export class ValidationError extends SiloError {}
+export class GateError extends SiloError {}
+export class InternalError extends SiloError {}

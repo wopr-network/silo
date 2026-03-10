@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveGateTimeout } from "../../src/engine/gate-evaluator.js";
 
 describe("resolveGateTimeout", () => {
-  const originalEnv = process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS;
+  const originalEnv = process.env.SILO_DEFAULT_GATE_TIMEOUT_MS;
 
   afterEach(() => {
     if (originalEnv === undefined) {
-      delete process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS;
+      delete process.env.SILO_DEFAULT_GATE_TIMEOUT_MS;
     } else {
-      process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = originalEnv;
+      process.env.SILO_DEFAULT_GATE_TIMEOUT_MS = originalEnv;
     }
   });
 
@@ -44,18 +44,18 @@ describe("resolveGateTimeout", () => {
     expect(resolveGateTimeout(5000, 999000)).toBe(5000);
   });
 
-  it("respects DEFCON_DEFAULT_GATE_TIMEOUT_MS env var", () => {
-    process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "600000";
+  it("respects SILO_DEFAULT_GATE_TIMEOUT_MS env var", () => {
+    process.env.SILO_DEFAULT_GATE_TIMEOUT_MS = "600000";
     expect(resolveGateTimeout(undefined, undefined)).toBe(600000);
   });
 
-  it("falls back to 300000 when DEFCON_DEFAULT_GATE_TIMEOUT_MS is not a valid number", () => {
-    process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "not-a-number";
+  it("falls back to 300000 when SILO_DEFAULT_GATE_TIMEOUT_MS is not a valid number", () => {
+    process.env.SILO_DEFAULT_GATE_TIMEOUT_MS = "not-a-number";
     expect(resolveGateTimeout(undefined, undefined)).toBe(300000);
   });
 
-  it("falls back to 300000 when DEFCON_DEFAULT_GATE_TIMEOUT_MS is 0", () => {
-    process.env.DEFCON_DEFAULT_GATE_TIMEOUT_MS = "0";
+  it("falls back to 300000 when SILO_DEFAULT_GATE_TIMEOUT_MS is 0", () => {
+    process.env.SILO_DEFAULT_GATE_TIMEOUT_MS = "0";
     expect(resolveGateTimeout(undefined, undefined)).toBe(300000);
   });
 });

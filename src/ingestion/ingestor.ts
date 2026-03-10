@@ -1,14 +1,14 @@
-import type { DefconClient } from "../defcon-client/client.js";
 import type { IEntityMapRepository } from "../radar-db/repos/entity-map-repo.js";
+import type { SiloClient } from "../silo-client/client.js";
 import { type IngestEvent, IngestEventSchema } from "./types.js";
 
 export class Ingestor {
   private entityMapRepo: IEntityMapRepository;
-  private defcon: DefconClient;
+  private silo: SiloClient;
 
-  constructor(entityMapRepo: IEntityMapRepository, defcon: DefconClient) {
+  constructor(entityMapRepo: IEntityMapRepository, silo: SiloClient) {
     this.entityMapRepo = entityMapRepo;
-    this.defcon = defcon;
+    this.silo = silo;
   }
 
   async ingest(raw: unknown): Promise<void> {
@@ -33,7 +33,7 @@ export class Ingestor {
 
     let response: { id: string };
     try {
-      response = await this.defcon.createEntity({
+      response = await this.silo.createEntity({
         flowName: event.flowName,
         ...(event.payload !== undefined ? { payload: event.payload } : {}),
       });
@@ -48,7 +48,7 @@ export class Ingestor {
 
     // Fire the configured signal (e.g. "start") to advance the entity out of its initial state.
     if (event.signal) {
-      await this.defcon.report({ entityId: response.id, signal: event.signal, artifacts: {} });
+      await this.silo.report({ entityId: response.id, signal: event.signal, artifacts: {} });
     }
   }
 
@@ -61,7 +61,7 @@ export class Ingestor {
       throw new Error(`Entity for ${event.sourceId}/${event.externalId} is still being created — retry later`);
     }
 
-    await this.defcon.report({
+    await this.silo.report({
       entityId,
       signal: event.signal ?? "update",
       artifacts: event.payload ?? {},

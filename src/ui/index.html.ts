@@ -3,7 +3,7 @@ export const UI_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DEFCON Dashboard</title>
+<title>Silo Dashboard</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: #0d1117; color: #c9d1d9; font-family: 'Courier New', monospace; font-size: 14px; }
@@ -73,7 +73,7 @@ td.payload-cell.expanded { white-space: pre-wrap; word-break: break-all; }
 
 <div id="auth-overlay">
   <div id="auth-box">
-    <h2>DEFCON</h2>
+    <h2>Silo</h2>
     <p style="color:#8b949e;margin-bottom:16px;font-size:13px;">Enter your admin token to continue.</p>
     <input type="password" id="token-input" placeholder="Admin token" autocomplete="off">
     <div id="auth-error" class="error-msg" style="display:none"></div>
@@ -82,7 +82,7 @@ td.payload-cell.expanded { white-space: pre-wrap; word-break: break-all; }
 </div>
 
 <nav>
-  <h1>DEFCON</h1>
+  <h1>Silo</h1>
   <button class="tab active" onclick="showTab('entity-timeline', this)">Timeline</button>
   <button class="tab" onclick="showTab('flow-graph', this)">Flow Graph</button>
   <button class="tab" onclick="showTab('worker-dashboard', this)">Workers</button>
@@ -153,7 +153,7 @@ function doLogin() {
   const v = document.getElementById('token-input').value.trim();
   if (!v) { showAuthError('Token required'); return; }
   TOKEN = v;
-  sessionStorage.setItem('defcon-token', v);
+  sessionStorage.setItem('silo-token', v);
   verifyToken();
 }
 
@@ -172,7 +172,7 @@ function verifyToken() {
       } else {
         showAuthError('Invalid token');
         TOKEN = '';
-        sessionStorage.removeItem('defcon-token');
+        sessionStorage.removeItem('silo-token');
       }
     })
     .catch(() => showAuthError('Connection failed'));
@@ -454,7 +454,7 @@ function esc(s) {
 
 // ── Init ─────────────────────────────────────────────────────────
 
-const savedToken = sessionStorage.getItem('defcon-token');
+const savedToken = sessionStorage.getItem('silo-token');
 if (savedToken) {
   TOKEN = savedToken;
   document.getElementById('token-input').value = savedToken;
