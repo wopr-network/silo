@@ -60,21 +60,28 @@ export const gateDefinitions = sqliteTable("gate_definitions", {
   outcomes: text("outcomes", { mode: "json" }),
 });
 
-export const transitionRules = sqliteTable("transition_rules", {
-  id: text("id").primaryKey(),
-  flowId: text("flow_id")
-    .notNull()
-    .references(() => flowDefinitions.id),
-  fromState: text("from_state").notNull(),
-  toState: text("to_state").notNull(),
-  trigger: text("trigger").notNull(),
-  gateId: text("gate_id").references(() => gateDefinitions.id),
-  condition: text("condition"),
-  priority: integer("priority").default(0),
-  spawnFlow: text("spawn_flow"),
-  spawnTemplate: text("spawn_template"),
-  createdAt: integer("created_at"),
-});
+export const transitionRules = sqliteTable(
+  "transition_rules",
+  {
+    id: text("id").primaryKey(),
+    flowId: text("flow_id")
+      .notNull()
+      .references(() => flowDefinitions.id),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    trigger: text("trigger").notNull(),
+    gateId: text("gate_id").references(() => gateDefinitions.id),
+    condition: text("condition"),
+    priority: integer("priority").default(0),
+    spawnFlow: text("spawn_flow"),
+    spawnTemplate: text("spawn_template"),
+    createdAt: integer("created_at"),
+  },
+  (table) => ({
+    flowIdx: index("transition_rules_flow_id_idx").on(table.flowId),
+    gateIdx: index("transition_rules_gate_id_idx").on(table.gateId),
+  }),
+);
 
 export const flowVersions = sqliteTable(
   "flow_versions",
@@ -153,18 +160,25 @@ export const invocations = sqliteTable(
   }),
 );
 
-export const gateResults = sqliteTable("gate_results", {
-  id: text("id").primaryKey(),
-  entityId: text("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  gateId: text("gate_id")
-    .notNull()
-    .references(() => gateDefinitions.id),
-  passed: integer("passed").notNull(),
-  output: text("output"),
-  evaluatedAt: integer("evaluated_at"),
-});
+export const gateResults = sqliteTable(
+  "gate_results",
+  {
+    id: text("id").primaryKey(),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entities.id),
+    gateId: text("gate_id")
+      .notNull()
+      .references(() => gateDefinitions.id),
+    passed: integer("passed").notNull(),
+    output: text("output"),
+    evaluatedAt: integer("evaluated_at"),
+  },
+  (table) => ({
+    entityIdx: index("gate_results_entity_id_idx").on(table.entityId),
+    gateIdx: index("gate_results_gate_id_idx").on(table.gateId),
+  }),
+);
 
 export const entityHistory = sqliteTable(
   "entity_history",
@@ -181,6 +195,7 @@ export const entityHistory = sqliteTable(
   },
   (table) => ({
     entityTimestampIdx: index("entity_history_entity_ts_idx").on(table.entityId, table.timestamp),
+    invocationIdx: index("entity_history_invocation_id_idx").on(table.invocationId),
   }),
 );
 
@@ -257,31 +272,44 @@ export const sources = sqliteTable("sources", {
   updatedAt: integer("updated_at").notNull(),
 });
 
-export const watches = sqliteTable("watches", {
-  id: text("id").primaryKey(),
-  sourceId: text("source_id")
-    .notNull()
-    .references(() => sources.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  filter: text("filter").notNull(),
-  action: text("action").notNull(),
-  actionConfig: text("action_config").notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const watches = sqliteTable(
+  "watches",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    filter: text("filter").notNull(),
+    action: text("action").notNull(),
+    actionConfig: text("action_config").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    sourceIdx: index("watches_source_id_idx").on(table.sourceId),
+  }),
+);
 
-export const eventLog = sqliteTable("event_log", {
-  id: text("id").primaryKey(),
-  sourceId: text("source_id")
-    .notNull()
-    .references(() => sources.id, { onDelete: "cascade" }),
-  watchId: text("watch_id").references(() => watches.id, { onDelete: "cascade" }),
-  rawEvent: text("raw_event").notNull(),
-  actionTaken: text("action_taken"),
-  defconResponse: text("defcon_response"),
-  createdAt: integer("created_at").notNull(),
-});
+export const eventLog = sqliteTable(
+  "event_log",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    watchId: text("watch_id").references(() => watches.id, { onDelete: "cascade" }),
+    rawEvent: text("raw_event").notNull(),
+    actionTaken: text("action_taken"),
+    defconResponse: text("defcon_response"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    sourceIdx: index("event_log_source_id_idx").on(table.sourceId),
+    watchIdx: index("event_log_watch_id_idx").on(table.watchId),
+  }),
+);
 
 export const workers = sqliteTable("workers", {
   id: text("id").primaryKey(),

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "748b23e3-8e91-4717-b950-575f59e6b159",
+  "id": "b01e5bcc-48af-448f-8d75-3206a5c1bc18",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "domain_events": {
@@ -373,6 +373,13 @@
             "timestamp"
           ],
           "isUnique": false
+        },
+        "entity_history_invocation_id_idx": {
+          "name": "entity_history_invocation_id_idx",
+          "columns": [
+            "invocation_id"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -456,7 +463,21 @@
           "isUnique": true
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "entity_map_source_id_sources_id_fk": {
+          "name": "entity_map_source_id_sources_id_fk",
+          "tableFrom": "entity_map",
+          "tableTo": "sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -668,7 +689,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "event_log_source_id_idx": {
+          "name": "event_log_source_id_idx",
+          "columns": [
+            "source_id"
+          ],
+          "isUnique": false
+        },
+        "event_log_watch_id_idx": {
+          "name": "event_log_watch_id_idx",
+          "columns": [
+            "watch_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "event_log_source_id_sources_id_fk": {
           "name": "event_log_source_id_sources_id_fk",
@@ -1141,7 +1177,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "gate_results_entity_id_idx": {
+          "name": "gate_results_entity_id_idx",
+          "columns": [
+            "entity_id"
+          ],
+          "isUnique": false
+        },
+        "gate_results_gate_id_idx": {
+          "name": "gate_results_gate_id_idx",
+          "columns": [
+            "gate_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "gate_results_entity_id_entities_id_fk": {
           "name": "gate_results_entity_id_entities_id_fk",
@@ -1640,7 +1691,22 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "transition_rules_flow_id_idx": {
+          "name": "transition_rules_flow_id_idx",
+          "columns": [
+            "flow_id"
+          ],
+          "isUnique": false
+        },
+        "transition_rules_gate_id_idx": {
+          "name": "transition_rules_gate_id_idx",
+          "columns": [
+            "gate_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "transition_rules_flow_id_flow_definitions_id_fk": {
           "name": "transition_rules_flow_id_flow_definitions_id_fk",
@@ -1741,7 +1807,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "watches_source_id_idx": {
+          "name": "watches_source_id_idx",
+          "columns": [
+            "source_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "watches_source_id_sources_id_fk": {
           "name": "watches_source_id_sources_id_fk",

@@ -339,6 +339,9 @@ export class RunLoop {
         }
 
         if (response.next_action === "check_back") {
+          // Reset so the next iteration re-dispatches instead of re-reporting stale results
+          currentSignal = undefined;
+          currentArtifacts = undefined;
           await sleep(response.retry_after_ms, this.signal);
           continue;
         }

@@ -276,6 +276,9 @@ export class NukeDispatcher implements Dispatcher {
               stop_reason: event.stopReason,
               signal,
             });
+            // Result received — no need to keep reading the stream
+            reader.cancel().catch(() => {});
+            break;
           } else if (event.type === "error") {
             logger.error(`[nuke] container error`, { entityId, message: event.message });
             signal = "crash";
@@ -295,6 +298,12 @@ export class NukeDispatcher implements Dispatcher {
               signal = (event.signal as string) ?? "crash";
               artifacts = (event.artifacts as Record<string, unknown>) ?? {};
               exitCode = event.isError ? 1 : 0;
+              await this.safeInsert(entityId, workerId, "result", {
+                subtype: event.subtype,
+                cost_usd: event.costUsd,
+                stop_reason: event.stopReason,
+                signal,
+              });
             }
           } catch {
             // malformed final line
@@ -327,6 +336,11 @@ export class NukeDispatcher implements Dispatcher {
 
   /** Stop and remove the container for an entity (called on flow complete). */
   async stopEntity(entityId: string): Promise<void> {
+    // Wait for any in-flight launch to complete before stopping
+    const launch = this.inFlight.get(entityId);
+    if (launch) {
+      await launch.catch(() => {});
+    }
     await this.stopContainer(entityId);
   }
 

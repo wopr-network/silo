@@ -118,7 +118,7 @@ function openDb(dbPath: string) {
 }
 
 const program = new Command();
-program.name("defcon").version("0.1.0");
+program.name("silo").version("0.1.0");
 
 // ─── init ───
 program
@@ -129,7 +129,7 @@ program
   .action(async (opts) => {
     const seedPath = opts.seed;
     if (typeof seedPath !== "string") {
-      console.log("Usage: defcon init --seed <path> [--force]");
+      console.log("Usage: silo init --seed <path> [--force]");
       return;
     }
 
@@ -231,7 +231,7 @@ program
       const snapshotRepo = new DrizzleEntitySnapshotRepository(db);
       entityRepo = new EventSourcedEntityRepository(mutableEntityRepo, domainEventRepo, snapshotRepo, snapshotInterval);
       invocationRepo = new EventSourcedInvocationRepository(mutableInvocationRepo, domainEventRepo);
-      process.stderr.write("[defcon] Event-sourced repositories enabled\n");
+      process.stderr.write("[silo] Event-sourced repositories enabled\n");
     } else {
       entityRepo = mutableEntityRepo;
       invocationRepo = mutableInvocationRepo;

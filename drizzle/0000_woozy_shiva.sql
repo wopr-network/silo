@@ -57,12 +57,14 @@ CREATE TABLE `entity_history` (
 );
 --> statement-breakpoint
 CREATE INDEX `entity_history_entity_ts_idx` ON `entity_history` (`entity_id`,`timestamp`);--> statement-breakpoint
+CREATE INDEX `entity_history_invocation_id_idx` ON `entity_history` (`invocation_id`);--> statement-breakpoint
 CREATE TABLE `entity_map` (
 	`id` text PRIMARY KEY NOT NULL,
 	`source_id` text NOT NULL,
 	`external_id` text NOT NULL,
 	`entity_id` text NOT NULL,
-	`created_at` integer NOT NULL
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `entity_map_source_external_uniq` ON `entity_map` (`source_id`,`external_id`);--> statement-breakpoint
@@ -101,6 +103,8 @@ CREATE TABLE `event_log` (
 	FOREIGN KEY (`watch_id`) REFERENCES `watches`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `event_log_source_id_idx` ON `event_log` (`source_id`);--> statement-breakpoint
+CREATE INDEX `event_log_watch_id_idx` ON `event_log` (`watch_id`);--> statement-breakpoint
 CREATE TABLE `events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`type` text NOT NULL,
@@ -172,6 +176,8 @@ CREATE TABLE `gate_results` (
 	FOREIGN KEY (`gate_id`) REFERENCES `gate_definitions`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE INDEX `gate_results_entity_id_idx` ON `gate_results` (`entity_id`);--> statement-breakpoint
+CREATE INDEX `gate_results_gate_id_idx` ON `gate_results` (`gate_id`);--> statement-breakpoint
 CREATE TABLE `invocations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`entity_id` text NOT NULL,
@@ -246,6 +252,8 @@ CREATE TABLE `transition_rules` (
 	FOREIGN KEY (`gate_id`) REFERENCES `gate_definitions`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE INDEX `transition_rules_flow_id_idx` ON `transition_rules` (`flow_id`);--> statement-breakpoint
+CREATE INDEX `transition_rules_gate_id_idx` ON `transition_rules` (`gate_id`);--> statement-breakpoint
 CREATE TABLE `watches` (
 	`id` text PRIMARY KEY NOT NULL,
 	`source_id` text NOT NULL,
@@ -259,6 +267,7 @@ CREATE TABLE `watches` (
 	FOREIGN KEY (`source_id`) REFERENCES `sources`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `watches_source_id_idx` ON `watches` (`source_id`);--> statement-breakpoint
 CREATE TABLE `workers` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

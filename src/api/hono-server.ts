@@ -36,6 +36,7 @@ function tokensMatch(a: string, b: string): boolean {
 
 export class HonoSseAdapter implements IEventBusAdapter {
   private controllers = new Set<ReadableStreamDefaultController<string>>();
+  private listeners = new Set<(event: EngineEvent) => Promise<void>>();
 
   addController(ctrl: ReadableStreamDefaultController<string>): void {
     this.controllers.add(ctrl);
@@ -45,8 +46,16 @@ export class HonoSseAdapter implements IEventBusAdapter {
     this.controllers.delete(ctrl);
   }
 
+  addListener(fn: (event: EngineEvent) => Promise<void>): void {
+    this.listeners.add(fn);
+  }
+
+  removeListener(fn: (event: EngineEvent) => Promise<void>): void {
+    this.listeners.delete(fn);
+  }
+
   get clientCount(): number {
-    return this.controllers.size;
+    return this.controllers.size + this.listeners.size;
   }
 
   async emit(event: EngineEvent): Promise<void> {
@@ -59,6 +68,9 @@ export class HonoSseAdapter implements IEventBusAdapter {
       } catch {
         this.controllers.delete(ctrl);
       }
+    }
+    for (const listener of this.listeners) {
+      await listener(event).catch(() => {});
     }
   }
 }
@@ -286,7 +298,12 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   app.put("/api/flows/:id", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
     const flowName = c.req.param("id");
     const existing = await deps.mcpDeps.flows.getByName(flowName);
     const callerToken = extractBearerToken(c.req.header("authorization"));
@@ -347,7 +364,12 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
 
   admin.post("/entities/:id/reset", requireAdminAuth(), async (c) => {
     const callerToken = extractBearerToken(c.req.header("authorization"));
-    const body = await c.req.json().catch(() => ({}));
+    let body: Record<string, unknown>;
+    try {
+      body = (await c.req.json()) as Record<string, unknown>;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
     const result = await callToolHandler(
       deps.mcpDeps,
       "admin.entity.reset",
@@ -466,14 +488,9 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
               data: JSON.stringify({ ...rest, timestamp: emittedAt.toISOString() }),
             });
           };
-          // Register as a listener
-          const originalEmit = deps.sseAdapter.emit.bind(deps.sseAdapter);
-          deps.sseAdapter.emit = async (event: EngineEvent) => {
-            await originalEmit(event);
-            await handler(event).catch(() => {});
-          };
-
+          deps.sseAdapter.addListener(handler);
           await closed;
+          deps.sseAdapter.removeListener(handler);
         } else {
           await closed;
         }
@@ -502,7 +519,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
 export function startHonoServer(
   deps: HonoServerDeps,
   port: number,
-  hostname = "0.0.0.0",
+  hostname = "127.0.0.1",
 ): { app: Hono; server: import("node:http").Server; close: () => void } {
   const app = createHonoApp(deps);
   const httpServer = serve({ fetch: app.fetch, port, hostname }) as import("node:http").Server;

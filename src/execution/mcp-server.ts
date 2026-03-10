@@ -482,7 +482,7 @@ const TOOL_DEFINITIONS = [
 ];
 
 export function createMcpServer(deps: McpServerDeps, opts?: McpServerOpts): Server {
-  const server = new Server({ name: "defcon", version: "0.1.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "silo", version: "0.1.0" }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOL_DEFINITIONS,
