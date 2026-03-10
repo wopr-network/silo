@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ClaimResponse, ReportResponse } from "../api/wire-types.js";
 import { logger } from "../logger.js";
-import { extractRepoFromDescription } from "../sources/linear/repo-extractor.js";
+import { extractReposFromDescription } from "../sources/linear/repo-extractor.js";
 import { safeErrorMessage } from "../sources/sanitize.js";
 import type { RunLoopConfig } from "./types.js";
 
@@ -201,7 +201,7 @@ export class RunLoop {
     });
 
     const claimFlow = claim.flow;
-    const claimRepo = extractRepoFromDescription(claim.prompt);
+    const claimRepo = extractReposFromDescription(claim.prompt)[0] ?? null;
 
     // Concurrency gate: per-repo limit — checked BEFORE allocating a slot
     // so we skip rather than crash the entity

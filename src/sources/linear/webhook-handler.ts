@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import type { IngestEvent } from "../../ingestion/types.js";
-import { extractRepoFromDescription } from "./repo-extractor.js";
+import { extractReposFromDescription } from "./repo-extractor.js";
 
 export interface WebhookWatchConfig {
   sourceId: string;
@@ -58,7 +58,7 @@ export function handleLinearWebhook(payload: unknown, watch: WebhookWatchConfig)
   }
 
   const description = data.description ?? null;
-  const repo = extractRepoFromDescription(description);
+  const repos = extractReposFromDescription(description);
 
   // Map watch action to the flow signal that should fire after entity creation.
   // e.g. "issue.started" → "start" fires the backlog→architecting transition.
@@ -71,6 +71,7 @@ export function handleLinearWebhook(payload: unknown, watch: WebhookWatchConfig)
     flowName: watch.flowName,
     signal,
     payload: {
+      repos,
       refs: {
         linear: {
           id: data.id,
@@ -78,7 +79,7 @@ export function handleLinearWebhook(payload: unknown, watch: WebhookWatchConfig)
           title: data.title,
           description,
         },
-        github: { repo },
+        github: { repo: repos[0] ?? null },
       },
     },
   };

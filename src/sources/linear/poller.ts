@@ -2,7 +2,7 @@ import type { Ingestor } from "../../ingestion/ingestor.js";
 import { logger } from "../../logger.js";
 import { safeErrorMessage } from "../sanitize.js";
 import type { LinearClient } from "./client.js";
-import { extractRepoFromDescription } from "./repo-extractor.js";
+import { extractReposFromDescription } from "./repo-extractor.js";
 import type { LinearSearchIssue } from "./types.js";
 
 export interface LinearWatchConfig {
@@ -104,7 +104,7 @@ export class LinearPoller {
         for (const watch of watches) {
           if (!this.matchesFilter(issue, watch.filter)) continue;
 
-          const repo = extractRepoFromDescription(issue.description);
+          const repos = extractReposFromDescription(issue.description);
 
           try {
             await this.ingestor.ingest({
@@ -113,6 +113,7 @@ export class LinearPoller {
               type: "new",
               flowName: watch.flowName,
               payload: {
+                repos,
                 refs: {
                   linear: {
                     id: issue.id,
@@ -120,7 +121,7 @@ export class LinearPoller {
                     title: issue.title,
                     description: issue.description,
                   },
-                  github: { repo },
+                  github: { repo: repos[0] ?? null },
                 },
               },
             });

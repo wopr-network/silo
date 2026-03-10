@@ -231,6 +231,77 @@ export async function evaluateGate(
   return { passed, timedOut, output };
 }
 
+/**
+ * Evaluate a gate across all repos in the entity's artifacts.prs map.
+ * Calls evaluateGate once per repo/PR pair and ANDs the results.
+ * Falls back to a single evaluateGate call when no prs map exists.
+ */
+export async function evaluateGateForAllRepos(
+  gate: Gate,
+  entity: Entity,
+  gateRepo: IGateRepository,
+  flowGateTimeoutMs?: number | null,
+  evalFn: (
+    gate: Gate,
+    entity: Entity,
+    gateRepo: IGateRepository,
+    timeout?: number | null,
+  ) => Promise<GateEvalResult> = evaluateGate,
+): Promise<GateEvalResult> {
+  const prs = entity.artifacts?.prs;
+
+  // No prs map — single evaluation (backwards compat, or non-PR gate like spec-posted)
+  if (!prs || typeof prs !== "object" || Object.keys(prs as Record<string, unknown>).length === 0) {
+    return evalFn(gate, entity, gateRepo, flowGateTimeoutMs);
+  }
+
+  const entries = Object.entries(prs as Record<string, string>);
+  const results: GateEvalResult[] = [];
+
+  for (const [repoName, prUrl] of entries) {
+    // Extract PR number from URL (e.g. https://github.com/org/repo/pull/123 → 123)
+    const prNumber = prUrl.split("/").pop() ?? "";
+    const fullRepo =
+      (entity.artifacts?.repos as string[] | undefined)?.find((r: string) => r.endsWith(`/${repoName}`)) ?? repoName;
+
+    // Create a per-repo entity view with repo-specific context for template rendering
+    const repoEntity: Entity = {
+      ...entity,
+      artifacts: {
+        ...entity.artifacts,
+        _currentRepo: fullRepo,
+        _currentRepoName: repoName,
+        _currentPrNumber: prNumber,
+        _currentPrUrl: prUrl,
+      },
+    };
+
+    const result = await evalFn(gate, repoEntity, gateRepo, flowGateTimeoutMs);
+    results.push(result);
+
+    // Short-circuit on first failure
+    if (!result.passed) {
+      return {
+        passed: false,
+        timedOut: result.timedOut,
+        output: `[${repoName}] ${result.output}`,
+        outcome: result.outcome,
+        message: result.message,
+      };
+    }
+  }
+
+  // All passed — results is non-empty since we only reach here after iterating entries
+  const lastResult = results[results.length - 1];
+  return {
+    passed: true,
+    timedOut: false,
+    output: results.map((r, i) => `[${entries[i][0]}] ${r.output}`).join("\n"),
+    outcome: lastResult?.outcome,
+    message: lastResult?.message,
+  };
+}
+
 async function runFunction(
   functionRef: string,
   entity: Entity,

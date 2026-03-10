@@ -17,7 +17,7 @@ import type {
 import { DEFAULT_TIMEOUT_PROMPT } from "./constants.js";
 import type { IEventBusAdapter } from "./event-types.js";
 import { executeSpawn } from "./flow-spawner.js";
-import { evaluateGate } from "./gate-evaluator.js";
+import { evaluateGateForAllRepos } from "./gate-evaluator.js";
 import { getHandlebars } from "./handlebars.js";
 import { buildInvocation } from "./invocation-builder.js";
 import { executeOnEnter } from "./on-enter.js";
@@ -481,7 +481,7 @@ export class Engine {
       entityArtifactKeys: Object.keys(entity.artifacts ?? {}),
     });
 
-    const gateResult = await evaluateGate(gate, entity, gateRepo, flow.gateTimeoutMs);
+    const gateResult = await evaluateGateForAllRepos(gate, entity, gateRepo, flow.gateTimeoutMs);
 
     this.logger.debug(`[engine] gate "${gate.name}" result`, {
       entityId: entity.id,
