@@ -69,16 +69,20 @@ export class DirectFlowEngine implements IFlowEngine {
     const prompt = invocation?.prompt ?? "";
     const context = invocation?.context ?? null;
 
-    // Look up state config for modelTier and agentRole
+    // Look up state config for modelTier and agentRole using the entity's
+    // pinned flow version (not latest) so values match the prompt version.
     let model_tier: string | undefined;
     let agent_role: string | undefined;
     if (result.flowName && result.stage) {
-      const flowDef = await this.flows.getByName(result.flowName);
-      if (flowDef) {
-        const state = flowDef.states.find((s) => s.name === result.stage);
-        if (state) {
-          model_tier = state.modelTier ?? undefined;
-          agent_role = state.agentRole ?? undefined;
+      const entity = await this.entities.get(result.entityId);
+      if (entity) {
+        const flowDef = await this.flows.getAtVersion(entity.flowId, entity.flowVersion);
+        if (flowDef) {
+          const state = flowDef.states.find((s) => s.name === result.stage);
+          if (state) {
+            model_tier = state.modelTier ?? undefined;
+            agent_role = state.agentRole ?? undefined;
+          }
         }
       }
     }
@@ -221,19 +225,35 @@ export class DirectFlowEngine implements IFlowEngine {
     if (nextAction === "continue") {
       // Auto-claim the next invocation for the same worker so the RunLoop
       // can report against it without a separate claim round-trip.
+      // If claim fails, fall back to waiting — the RunLoop will re-claim.
+      let claimed = false;
       if (result.invocationId && workerId) {
-        await this.invocations.claim(result.invocationId, workerId).catch((err) => {
+        try {
+          const claimResult = await this.invocations.claim(result.invocationId, workerId);
+          claimed = claimResult !== null;
+        } catch (err) {
           this.logger.warn(`[direct-engine] auto-claim failed for invocation ${result.invocationId}`, err);
-        });
+        }
       }
-      // Look up model_tier and agent_role for the new state so the run-loop
-      // can switch models when transitioning (e.g. opus architect → sonnet fixer).
+
+      if (!claimed) {
+        return {
+          next_action: "completed",
+          new_state: result.newState ?? "",
+          gates_passed: result.gatesPassed,
+          prompt: null,
+          context: null,
+        };
+      }
+
+      // Look up model_tier and agent_role for the new state using the entity's
+      // pinned flow version so values stay consistent with the prompt.
       let next_model_tier: string | undefined;
       let next_agent_role: string | undefined;
       if (result.newState) {
         const entity = await this.entities.get(entityId);
         if (entity) {
-          const flow = await this.flows.get(entity.flowId);
+          const flow = await this.flows.getAtVersion(entity.flowId, entity.flowVersion);
           if (flow) {
             const newStateDef = flow.states.find((s) => s.name === result.newState);
             if (newStateDef) {

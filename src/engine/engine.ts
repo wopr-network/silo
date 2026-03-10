@@ -187,7 +187,9 @@ export class Engine {
     //     (e.g. {{entity.artifacts.prNumber}}) can reference them.
     if (artifacts && Object.keys(artifacts).length > 0) {
       await this.entityRepo.updateArtifacts(entityId, artifacts);
-      entity = { ...entity, artifacts: { ...entity.artifacts, ...artifacts } };
+      const refreshed = await this.entityRepo.get(entityId);
+      if (!refreshed) throw new NotFoundError(`Entity "${entityId}" not found after artifact update`);
+      entity = refreshed;
     }
 
     // 4. Evaluate gate — returns a routing decision or a block result to return immediately.
@@ -437,7 +439,6 @@ export class Engine {
       gateId,
       gateName: gate.name,
       gateType: gate.type,
-      command: gate.command,
       entityState: entity.state,
       entityArtifactKeys: Object.keys(entity.artifacts ?? {}),
     });

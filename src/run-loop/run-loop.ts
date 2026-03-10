@@ -339,24 +339,23 @@ export class RunLoop {
           if ("context" in response && response.context != null) {
             (claim as Record<string, unknown>).context = response.context;
           }
-          // Update model tier if the new state specifies a different one
+          // Update model tier and agent role from the new state, resetting to
+          // defaults when the continue response omits them.
           const resp = response as Record<string, unknown>;
-          if (typeof resp.model_tier === "string") {
-            const newTier = resp.model_tier;
-            if (newTier === "opus" || newTier === "sonnet" || newTier === "haiku") {
-              if (newTier !== modelTier) {
-                logger.info(`[radar] slot ${slotId} model tier changed`, {
-                  from: modelTier,
-                  to: newTier,
-                  newState: resp.new_state,
-                });
-                modelTier = newTier;
-              }
-            }
+          const newTier =
+            typeof resp.model_tier === "string" &&
+            (resp.model_tier === "opus" || resp.model_tier === "sonnet" || resp.model_tier === "haiku")
+              ? resp.model_tier
+              : "sonnet";
+          if (newTier !== modelTier) {
+            logger.info(`[radar] slot ${slotId} model tier changed`, {
+              from: modelTier,
+              to: newTier,
+              newState: resp.new_state,
+            });
+            modelTier = newTier;
           }
-          if (typeof resp.agent_role === "string") {
-            agentRole = resp.agent_role;
-          }
+          agentRole = typeof resp.agent_role === "string" ? resp.agent_role : null;
           currentSignal = undefined;
           currentArtifacts = undefined;
           continue;
