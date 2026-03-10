@@ -8,6 +8,7 @@ import { Command } from "commander";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { startHonoServer, HonoSseAdapter as UiSseAdapter } from "../api/hono-server.js";
+import { DB_PATH } from "../config/db-path.js";
 import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
 import { resolveCorsOrigin } from "../cors.js";
@@ -43,7 +44,7 @@ import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
-const DB_DEFAULT = process.env.SILO_DB_PATH ?? "./silo.db";
+const DB_DEFAULT = DB_PATH;
 
 /**
  * Validates that SILO_ADMIN_TOKEN is set when network transports are active.
