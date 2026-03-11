@@ -176,8 +176,6 @@ export class GitLabVcsAdapter implements IVcsAdapter {
     const MAX_POLL_MS = 30 * 60 * 1000; // 30 minutes
     const deadline = Date.now() + MAX_POLL_MS;
     while (!signal?.aborted && Date.now() < deadline) {
-      await sleep(30_000);
-      if (signal?.aborted || Date.now() >= deadline) break;
       const res = await fetch(`${this.baseUrl}/api/v4/projects/${this.encodedRepo(repo)}/merge_requests/${prNumber}`, {
         headers: this.headers,
         signal,
@@ -186,6 +184,9 @@ export class GitLabVcsAdapter implements IVcsAdapter {
       const mr = (await res.json()) as { state: string };
       if (mr.state === "merged") return { outcome: "merged" };
       if (mr.state === "closed") return { outcome: "closed" };
+      const remainingMs = deadline - Date.now();
+      if (signal?.aborted || remainingMs <= 0) break;
+      await sleep(Math.min(30_000, remainingMs));
     }
 
     return { outcome: "blocked" };
