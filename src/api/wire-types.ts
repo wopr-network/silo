@@ -26,6 +26,8 @@ export type ReportResponse =
       gates_passed?: string[];
       prompt: string | null;
       context: Record<string, unknown> | null;
+      model_tier?: string;
+      agent_role?: string;
     }
   | {
       next_action: "waiting";

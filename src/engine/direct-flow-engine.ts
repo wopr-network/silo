@@ -225,25 +225,33 @@ export class DirectFlowEngine implements IFlowEngine {
     if (nextAction === "continue") {
       // Auto-claim the next invocation for the same worker so the RunLoop
       // can report against it without a separate claim round-trip.
-      // If claim fails, fall back to waiting — the RunLoop will re-claim.
-      let claimed = false;
+      // When workerId is absent, skip auto-claim and fall through to the
+      // continue response — the caller will re-claim on its own.
       if (result.invocationId && workerId) {
+        let claimed = false;
         try {
           const claimResult = await this.invocations.claim(result.invocationId, workerId);
           claimed = claimResult !== null;
         } catch (err) {
           this.logger.warn(`[direct-engine] auto-claim failed for invocation ${result.invocationId}`, err);
         }
-      }
-
-      if (!claimed) {
-        return {
-          next_action: "completed",
-          new_state: result.newState ?? "",
-          gates_passed: result.gatesPassed,
-          prompt: null,
-          context: null,
-        };
+        if (!claimed) {
+          // Claim lost to a race — release the slot so the RunLoop exits its
+          // inner loop and re-claims via claimWork, rather than looping on the
+          // old prompt and hitting "no active invocation" on the next report.
+          this.logger.warn(`[direct-engine] auto-claim race — releasing slot`, {
+            entityId,
+            invocationId: result.invocationId,
+            newState: result.newState,
+          });
+          return {
+            next_action: "completed",
+            new_state: result.newState ?? "",
+            gates_passed: result.gatesPassed,
+            prompt: null,
+            context: null,
+          };
+        }
       }
 
       // Look up model_tier and agent_role for the new state using the entity's
@@ -259,8 +267,22 @@ export class DirectFlowEngine implements IFlowEngine {
             if (newStateDef) {
               next_model_tier = newStateDef.modelTier ?? undefined;
               next_agent_role = newStateDef.agentRole ?? undefined;
+            } else {
+              this.logger.warn(`[direct-engine] state "${result.newState}" not found in flow version`, {
+                entityId,
+                flowId: entity.flowId,
+                flowVersion: entity.flowVersion,
+              });
             }
+          } else {
+            this.logger.warn(`[direct-engine] flow version not found for model_tier lookup`, {
+              entityId,
+              flowId: entity.flowId,
+              flowVersion: entity.flowVersion,
+            });
           }
+        } else {
+          this.logger.warn(`[direct-engine] entity not found for model_tier lookup`, { entityId });
         }
       }
       return {

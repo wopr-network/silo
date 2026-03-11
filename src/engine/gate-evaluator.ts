@@ -169,9 +169,12 @@ export async function evaluateGate(
       exitCode: result.exitCode,
       timedOut: result.timedOut,
       stdoutLineCount: stdoutLines.length,
-      lastLine: lastLine ?? "(empty)",
       stdoutLength: result.stdout.length,
       outputLength: result.output.length,
+    });
+    logger.debug(`[gate] "${gate.name}" last stdout line`, {
+      entityId: entity.id,
+      lastLine: lastLine ?? "(empty)",
     });
 
     // Parse structured JSON outcome from the last non-empty stdout line.
@@ -184,8 +187,11 @@ export async function evaluateGate(
           logger.info(`[gate] "${gate.name}" parsed outcome: ${String(parsed.outcome)}`, {
             entityId: entity.id,
             outcome: parsed.outcome,
-            message: parsed.message ?? "(none)",
             passed,
+          });
+          logger.debug(`[gate] "${gate.name}" outcome message`, {
+            entityId: entity.id,
+            message: parsed.message ?? "(none)",
           });
           const outcomeResult = {
             passed,
