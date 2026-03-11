@@ -24,3 +24,14 @@ WOPR-specific deployment config (seeds, agents, Dockerfiles) lives in [cheyenne-
 - **Event filtering**: `EventSourcedEntityRepository.get()` must filter events at DB level (e.g., `WHERE sequence >= minSequence`), not load all events and filter in memory.
 - **Event-sourced mutations**: All state changes in `EventSourcedEntityRepository` (including artifact removal) must emit domain events — direct DB writes are invisible to event-sourced replay.
 - **Engine merge-blocked escalation**: When `blocked` signal fires from `merging` state, engine increments `merge_blocked_count`; at ≥3 it overrides `toState` to `stuck` — flows without a `stuck` state silently skip the override.
+
+## Version Control: Prefer jj
+
+Use `jj` (Jujutsu) for all VCS operations instead of `git`:
+- `jj status`, `jj diff`, `jj log` for inspection
+- `jj new` to start a change, `jj describe` to set the message
+- `jj commit` to commit, `jj push` to push
+- `jj squash`, `jj rebase`, `jj edit` for history manipulation
+
+Fall back to `git` only for operations not yet supported by `jj`.
+
