@@ -248,11 +248,10 @@ export class GitHubVcsAdapter implements IVcsAdapter {
     const MAX_POLL_MS = 30 * 60 * 1000; // 30 minutes
     const deadline = Date.now() + MAX_POLL_MS;
     while (!signal?.aborted && Date.now() < deadline) {
-      await sleep(30_000);
-      if (signal?.aborted || Date.now() >= deadline) break;
       const pr = await this.getPr(repo, prNumber);
       if (pr.merged) return { outcome: "merged" };
       if (pr.state === "closed") return { outcome: "closed" };
+      await sleep(30_000);
     }
 
     return { outcome: "blocked" };
