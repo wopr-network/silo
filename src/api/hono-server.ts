@@ -293,7 +293,9 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   function requireWorkerAuth(): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
     return async (c, next) => {
       const configuredToken = deps.workerToken?.trim() || undefined;
-      if (!configuredToken) return next();
+      if (!configuredToken) {
+        return c.json({ error: "Unauthorized: SILO_WORKER_TOKEN is not configured." }, 401);
+      }
       const callerToken = extractBearerToken(c.req.header("authorization"));
       if (!callerToken || !tokensMatch(configuredToken, callerToken)) {
         return c.json({ error: "Unauthorized: worker endpoints require authentication." }, 401);
@@ -306,7 +308,9 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   function requireAdminAuth(): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
     return async (c, next) => {
       const configuredToken = deps.adminToken?.trim() || undefined;
-      if (!configuredToken) return next();
+      if (!configuredToken) {
+        return c.json({ error: "Unauthorized: SILO_ADMIN_TOKEN is not configured." }, 401);
+      }
       const callerToken = extractBearerToken(c.req.header("authorization"));
       if (!callerToken || !tokensMatch(configuredToken, callerToken)) {
         return c.json({ error: "Unauthorized: admin endpoints require authentication." }, 401);

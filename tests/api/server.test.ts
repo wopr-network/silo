@@ -34,7 +34,7 @@ async function makeTestDeps(): Promise<HonoServerDeps & { stopReaper: () => Prom
     engine,
   };
 
-  return { engine, mcpDeps, db, defaultTenantId: "test-tenant", eventEmitter, adminToken: undefined, stopReaper, closeDb: close };
+  return { engine, mcpDeps, db, defaultTenantId: "test-tenant", eventEmitter, adminToken: undefined, workerToken: "test-worker-token", stopReaper, closeDb: close };
 }
 
 async function startTestServer(deps: HonoServerDeps): Promise<{ server: http.Server; port: number }> {
@@ -135,7 +135,7 @@ describe("HTTP Server - basic", () => {
   it("POST /api/flows/:flow/claim returns 204 when no work available", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/flows/nonexistent/claim`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-worker-token" },
       body: JSON.stringify({ role: "worker" }),
     });
     // No work available → 200 check_back, 204, or 404 (unknown flow)
@@ -214,7 +214,7 @@ describe("HTTP Server - basic", () => {
   it("POST /api/claim returns 200 with check_back when no work available", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/claim`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-worker-token" },
       body: JSON.stringify({ role: "worker" }),
     });
     expect(res.status).toBe(200);
@@ -225,7 +225,7 @@ describe("HTTP Server - basic", () => {
   it("POST /api/entities/:id/report for nonexistent entity", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-worker-token" },
       body: JSON.stringify({ signal: "done" }),
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
@@ -234,7 +234,7 @@ describe("HTTP Server - basic", () => {
   it("POST /api/entities/:id/report with artifacts", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/report`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-worker-token" },
       body: JSON.stringify({ signal: "done", artifacts: { key: "value" } }),
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
@@ -243,7 +243,7 @@ describe("HTTP Server - basic", () => {
   it("POST /api/entities/:id/fail for nonexistent entity", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/entities/nonexistent/fail`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-worker-token" },
       body: JSON.stringify({ error: "something broke" }),
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
