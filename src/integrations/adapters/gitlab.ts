@@ -184,7 +184,9 @@ export class GitLabVcsAdapter implements IVcsAdapter {
       const mr = (await res.json()) as { state: string };
       if (mr.state === "merged") return { outcome: "merged" };
       if (mr.state === "closed") return { outcome: "closed" };
-      await sleep(30_000);
+      const remainingMs = deadline - Date.now();
+      if (signal?.aborted || remainingMs <= 0) break;
+      await sleep(Math.min(30_000, remainingMs));
     }
 
     return { outcome: "blocked" };
