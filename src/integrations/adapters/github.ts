@@ -233,11 +233,15 @@ export class GitHubVcsAdapter implements IVcsAdapter {
           body: JSON.stringify({ query: enableMutation, variables: { id: prNodeId } }),
           signal,
         });
+        const enableBody = await enableRes.text();
         if (!enableRes.ok) {
-          console.error(
-            `[github] enablePullRequestAutoMerge mutation failed — status ${enableRes.status}`,
-            await enableRes.text(),
-          );
+          console.error(`[github] enablePullRequestAutoMerge mutation failed — status ${enableRes.status}`, enableBody);
+        } else {
+          // GitHub GraphQL always returns HTTP 200; check for application-level errors
+          const enableData = JSON.parse(enableBody) as { errors?: { message: string }[] };
+          if (enableData.errors?.length) {
+            console.error(`[github] enablePullRequestAutoMerge mutation returned GraphQL errors`, enableData.errors);
+          }
         }
       }
     }
