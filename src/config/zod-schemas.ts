@@ -29,24 +29,14 @@ export const FlowDefinitionSchema = z.object({
 });
 
 export const OnEnterSchema = z.object({
-  command: z
-    .string()
-    .min(1)
-    .refine((val) => validateTemplate(val), {
-      message: "onEnter command contains disallowed Handlebars expressions",
-    }),
+  op: z.enum(PRIMITIVE_OPS),
+  params: z.record(z.string(), z.unknown()).optional(),
   artifacts: z.array(z.string().min(1)).min(1),
-  timeout_ms: z.number().int().min(0).optional().default(30000),
 });
 
 export const OnExitSchema = z.object({
-  command: z
-    .string()
-    .min(1)
-    .refine((val) => validateTemplate(val), {
-      message: "onExit command contains disallowed Handlebars expressions",
-    }),
-  timeout_ms: z.number().int().min(1).optional().default(30000),
+  op: z.enum(PRIMITIVE_OPS),
+  params: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const StateDefinitionSchema = z.object({

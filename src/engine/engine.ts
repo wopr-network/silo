@@ -91,6 +91,8 @@ export interface EngineDeps {
   domainEvents?: IDomainEventRepository;
   /** Optional integration repository. When provided, primitive gate ops and onEnter ops are resolved through the AdapterRegistry. */
   integrationRepo?: IIntegrationRepository;
+  /** Optional pre-built AdapterRegistry. Takes precedence over integrationRepo when both are provided. */
+  adapterRegistry?: AdapterRegistry;
 }
 
 export class Engine {
@@ -122,7 +124,8 @@ export class Engine {
     this.withTransactionFn = deps.withTransaction ?? null;
     this.repoFactory = deps.repoFactory ?? null;
     this.domainEventRepo = deps.domainEvents ?? null;
-    this.adapterRegistry = deps.integrationRepo ? new AdapterRegistry(deps.integrationRepo) : null;
+    this.adapterRegistry =
+      deps.adapterRegistry ?? (deps.integrationRepo ? new AdapterRegistry(deps.integrationRepo) : null);
   }
 
   drainWorker(workerId: string): void {
@@ -269,7 +272,7 @@ export class Engine {
     // 4b. Execute onExit hook on the DEPARTING state (before transition)
     const departingStateDef = flow.states.find((s) => s.name === entity.state);
     if (departingStateDef?.onExit) {
-      const onExitResult = await executeOnExit(departingStateDef.onExit, entity);
+      const onExitResult = await executeOnExit(departingStateDef.onExit, entity, flow, this.adapterRegistry);
       if (onExitResult.error) {
         this.logger.warn(`[engine] onExit failed for entity ${entityId} state ${entity.state}: ${onExitResult.error}`);
         await emitter.emit({

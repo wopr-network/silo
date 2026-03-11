@@ -1,5 +1,6 @@
-import { type ExecFileException, execFile } from "node:child_process";
-import type { Entity, OnExitConfig } from "../repositories/interfaces.js";
+import type { AdapterRegistry } from "../integrations/registry.js";
+import type { PrimitiveOp } from "../integrations/types.js";
+import type { Entity, Flow, OnExitConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
 export interface OnExitResult {
@@ -7,11 +8,26 @@ export interface OnExitResult {
   timedOut: boolean;
 }
 
-export async function executeOnExit(onExit: OnExitConfig, entity: Entity): Promise<OnExitResult> {
-  const hbs = getHandlebars();
-  let renderedCommand: string;
+export async function executeOnExit(
+  onExit: OnExitConfig,
+  entity: Entity,
+  flow?: Flow | null,
+  adapterRegistry?: AdapterRegistry | null,
+): Promise<OnExitResult> {
+  const op = onExit.op as PrimitiveOp;
 
-  // Merge artifact refs into entity.refs (same pattern as on-enter.ts)
+  if (!adapterRegistry) {
+    return { error: "AdapterRegistry not available for primitive onExit op", timedOut: false };
+  }
+
+  const opCategory = op.split(".")[0];
+  const integrationId = opCategory === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
+
+  if (!integrationId) {
+    return { error: `Flow has no ${opCategory} integration configured`, timedOut: false };
+  }
+
+  const hbs = getHandlebars();
   const artifactRefs =
     entity.artifacts !== null &&
     typeof entity.artifacts === "object" &&
@@ -22,41 +38,30 @@ export async function executeOnExit(onExit: OnExitConfig, entity: Entity): Promi
       : {};
   const entityForContext = { ...entity, refs: { ...artifactRefs, ...(entity.refs ?? {}) } };
 
+  let renderedParams: Record<string, unknown>;
   try {
-    renderedCommand = hbs.compile(onExit.command)({ entity: entityForContext });
+    const rawParams = onExit.params ?? {};
+    renderedParams = Object.fromEntries(
+      Object.entries(rawParams).map(([k, v]) => [
+        k,
+        typeof v === "string" ? hbs.compile(v)({ entity: entityForContext }) : v,
+      ]),
+    );
   } catch (err) {
-    const error = `onExit template error: ${err instanceof Error ? err.message : String(err)}`;
-    return { error, timedOut: false };
+    return {
+      error: `Primitive onExit template error: ${err instanceof Error ? err.message : String(err)}`,
+      timedOut: false,
+    };
   }
 
-  const timeoutMs = onExit.timeout_ms ?? 30000;
-  const { exitCode, stdout, stderr, timedOut } = await runCommand(renderedCommand, timeoutMs);
-
-  if (timedOut) {
-    return { error: `onExit command timed out after ${timeoutMs}ms`, timedOut: true };
-  }
-
-  if (exitCode !== 0) {
-    return { error: `onExit command exited with code ${exitCode}: ${stderr || stdout}`, timedOut: false };
+  try {
+    await adapterRegistry.execute(integrationId, op, renderedParams);
+  } catch (err) {
+    return {
+      error: `Primitive onExit op failed: ${err instanceof Error ? err.message : String(err)}`,
+      timedOut: false,
+    };
   }
 
   return { error: null, timedOut: false };
-}
-
-function runCommand(
-  command: string,
-  timeoutMs: number,
-): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
-  return new Promise((resolve) => {
-    execFile("/bin/sh", ["-c", command], { timeout: timeoutMs }, (error, stdout, stderr) => {
-      const execErr = error as ExecFileException | null;
-      const timedOut = execErr !== null && execErr.killed === true;
-      resolve({
-        exitCode: execErr ? (typeof execErr.code === "number" ? execErr.code : 1) : 0,
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        timedOut,
-      });
-    });
-  });
 }
