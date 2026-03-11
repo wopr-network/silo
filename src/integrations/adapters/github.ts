@@ -199,34 +199,49 @@ export class GitHubVcsAdapter implements IVcsAdapter {
     }
 
     // 405 = cannot merge yet (CI pending or conflicts); enable auto-merge via GraphQL
-    if (mergeRes.status === 405) {
-      const [owner, repoName] = repo.split("/");
-      const nodeQuery = `query($owner: String!, $repo: String!, $pr: Int!) {
-        repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { id } }
-      }`;
-      const nodeRes = await fetch("https://api.github.com/graphql", {
-        method: "POST",
-        headers: { ...this.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ query: nodeQuery, variables: { owner, repo: repoName, pr: Number(prNumber) } }),
-        signal,
-      });
-      if (nodeRes.ok) {
-        const nodeData = (await nodeRes.json()) as {
-          data?: { repository?: { pullRequest?: { id: string } } };
-        };
-        const prNodeId = nodeData.data?.repository?.pullRequest?.id;
-        if (prNodeId) {
-          const enableMutation = `mutation($id: ID!) {
-            enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) {
-              clientMutationId
-            }
-          }`;
-          await fetch("https://api.github.com/graphql", {
-            method: "POST",
-            headers: { ...this.headers, "Content-Type": "application/json" },
-            body: JSON.stringify({ query: enableMutation, variables: { id: prNodeId } }),
-            signal,
-          });
+    const [owner, repoName] = repo.split("/");
+    const nodeQuery = `query($owner: String!, $repo: String!, $pr: Int!) {
+      repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { id } }
+    }`;
+    const nodeRes = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: nodeQuery, variables: { owner, repo: repoName, pr: Number(prNumber) } }),
+      signal,
+    });
+    if (!nodeRes.ok) {
+      console.error(
+        `[github] enablePullRequestAutoMerge: nodeRes fetch failed — status ${nodeRes.status}`,
+        await nodeRes.text(),
+      );
+    } else {
+      const nodeData = (await nodeRes.json()) as {
+        data?: { repository?: { pullRequest?: { id: string } } };
+      };
+      const prNodeId = nodeData.data?.repository?.pullRequest?.id;
+      if (!prNodeId) {
+        console.error(`[github] enablePullRequestAutoMerge: PR node id not found for ${owner}/${repoName}#${prNumber}`);
+      } else {
+        const enableMutation = `mutation($id: ID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH }) {
+            clientMutationId
+          }
+        }`;
+        const enableRes = await fetch("https://api.github.com/graphql", {
+          method: "POST",
+          headers: { ...this.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ query: enableMutation, variables: { id: prNodeId } }),
+          signal,
+        });
+        const enableBody = await enableRes.text();
+        if (!enableRes.ok) {
+          console.error(`[github] enablePullRequestAutoMerge mutation failed — status ${enableRes.status}`, enableBody);
+        } else {
+          // GitHub GraphQL always returns HTTP 200; check for application-level errors
+          const enableData = JSON.parse(enableBody) as { errors?: { message: string }[] };
+          if (enableData.errors?.length) {
+            console.error(`[github] enablePullRequestAutoMerge mutation returned GraphQL errors`, enableData.errors);
+          }
         }
       }
     }
