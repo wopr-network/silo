@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import type { AdapterRegistry } from "../integrations/registry.js";
 import type { PrimitiveOp } from "../integrations/types.js";
 import type { Entity, Flow, IEntityRepository, OnEnterConfig } from "../repositories/interfaces.js";
@@ -25,117 +24,6 @@ export async function executeOnEnter(
     return { skipped: true, artifacts: null, error: null, timedOut: false };
   }
 
-  // Primitive op path — no shell, runs through the adapter registry
-  if (onEnter.op) {
-    return executePrimitiveOnEnter(onEnter, entity, entityRepo, flow, adapterRegistry);
-  }
-
-  // Render command via Handlebars
-  const hbs = getHandlebars();
-  let renderedCommand: string;
-  // Merge artifact refs into entity.refs so onEnter command templates like
-  // {{entity.refs.github.repo}} resolve correctly for REST-created entities.
-  const artifactRefs =
-    entity.artifacts !== null &&
-    typeof entity.artifacts === "object" &&
-    "refs" in entity.artifacts &&
-    entity.artifacts.refs !== null &&
-    typeof entity.artifacts.refs === "object"
-      ? (entity.artifacts.refs as Record<string, unknown>)
-      : {};
-  const entityForContext = { ...entity, refs: { ...artifactRefs, ...(entity.refs ?? {}) } };
-
-  try {
-    renderedCommand = hbs.compile(onEnter.command)({ entity: entityForContext });
-  } catch (err) {
-    const error = `onEnter template error: ${err instanceof Error ? err.message : String(err)}`;
-    await entityRepo.updateArtifacts(entity.id, {
-      onEnter_error: {
-        command: onEnter.command,
-        error,
-        failedAt: new Date().toISOString(),
-      },
-    });
-    return { skipped: false, artifacts: null, error, timedOut: false };
-  }
-
-  // Execute command
-  const timeoutMs = onEnter.timeout_ms ?? 30000;
-  const { exitCode, stdout, stderr, timedOut } = await runOnEnterCommand(renderedCommand, timeoutMs);
-
-  if (timedOut) {
-    const error = `onEnter command timed out after ${timeoutMs}ms`;
-    await entityRepo.updateArtifacts(entity.id, {
-      onEnter_error: {
-        command: renderedCommand,
-        error,
-        stderr,
-        failedAt: new Date().toISOString(),
-      },
-    });
-    return { skipped: false, artifacts: null, error, timedOut: true };
-  }
-
-  if (exitCode !== 0) {
-    const error = `onEnter command exited with code ${exitCode}: ${stderr || stdout}`;
-    await entityRepo.updateArtifacts(entity.id, {
-      onEnter_error: {
-        command: renderedCommand,
-        error,
-        failedAt: new Date().toISOString(),
-      },
-    });
-    return { skipped: false, artifacts: null, error, timedOut: false };
-  }
-
-  // Parse JSON stdout
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    const error = `onEnter stdout is not valid JSON: ${stdout.slice(0, 200)}`;
-    await entityRepo.updateArtifacts(entity.id, {
-      onEnter_error: {
-        command: renderedCommand,
-        error,
-        failedAt: new Date().toISOString(),
-      },
-    });
-    return { skipped: false, artifacts: null, error, timedOut: false };
-  }
-
-  // Extract named artifact keys
-  const missingKeys = onEnter.artifacts.filter((key) => parsed[key] === undefined);
-  if (missingKeys.length > 0) {
-    const error = `onEnter stdout missing expected artifact keys: ${missingKeys.join(", ")}`;
-    await entityRepo.updateArtifacts(entity.id, {
-      onEnter_error: {
-        command: renderedCommand,
-        error,
-        failedAt: new Date().toISOString(),
-      },
-    });
-    return { skipped: false, artifacts: null, error, timedOut: false };
-  }
-
-  const mergedArtifacts: Record<string, unknown> = {};
-  for (const key of onEnter.artifacts) {
-    mergedArtifacts[key] = parsed[key];
-  }
-
-  // Merge into entity
-  await entityRepo.updateArtifacts(entity.id, mergedArtifacts);
-
-  return { skipped: false, artifacts: mergedArtifacts, error: null, timedOut: false };
-}
-
-async function executePrimitiveOnEnter(
-  onEnter: OnEnterConfig,
-  entity: Entity,
-  entityRepo: IEntityRepository,
-  flow?: Flow | null,
-  adapterRegistry?: AdapterRegistry | null,
-): Promise<OnEnterResult> {
   const op = onEnter.op as PrimitiveOp;
 
   if (!adapterRegistry) {
@@ -175,16 +63,23 @@ async function executePrimitiveOnEnter(
       ]),
     );
   } catch (err) {
-    const error = `Primitive onEnter template error: ${err instanceof Error ? err.message : String(err)}`;
+    const error = `onEnter template error: ${err instanceof Error ? err.message : String(err)}`;
     await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
     return { skipped: false, artifacts: null, error, timedOut: false };
   }
 
+  // Execute primitive op with AbortSignal timeout
+  const timeoutMs = onEnter.timeout_ms ?? 30000;
   let opResult: Record<string, unknown>;
   try {
-    opResult = await adapterRegistry.execute(integrationId, op, renderedParams);
+    opResult = await adapterRegistry.execute(integrationId, op, renderedParams, AbortSignal.timeout(timeoutMs));
   } catch (err) {
-    const error = `Primitive onEnter op failed: ${err instanceof Error ? err.message : String(err)}`;
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      const error = `onEnter op timed out after ${timeoutMs}ms`;
+      await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
+      return { skipped: false, artifacts: null, error, timedOut: true };
+    }
+    const error = `onEnter op failed: ${err instanceof Error ? err.message : String(err)}`;
     await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
     return { skipped: false, artifacts: null, error, timedOut: false };
   }
@@ -192,7 +87,7 @@ async function executePrimitiveOnEnter(
   // Extract named artifact keys
   const missingKeys = onEnter.artifacts.filter((key) => opResult[key] === undefined);
   if (missingKeys.length > 0) {
-    const error = `Primitive onEnter op missing expected artifact keys: ${missingKeys.join(", ")}`;
+    const error = `onEnter op missing expected artifact keys: ${missingKeys.join(", ")}`;
     await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
     return { skipped: false, artifacts: null, error, timedOut: false };
   }
@@ -204,21 +99,4 @@ async function executePrimitiveOnEnter(
 
   await entityRepo.updateArtifacts(entity.id, mergedArtifacts);
   return { skipped: false, artifacts: mergedArtifacts, error: null, timedOut: false };
-}
-
-function runOnEnterCommand(
-  command: string,
-  timeoutMs: number,
-): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
-  return new Promise((resolve) => {
-    const child = execFile("/bin/sh", ["-c", command], { timeout: timeoutMs }, (error, stdout, stderr) => {
-      const timedOut = error !== null && child.killed === true;
-      resolve({
-        exitCode: error ? ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1) : 0,
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        timedOut,
-      });
-    });
-  });
 }

@@ -269,7 +269,7 @@ export class Engine {
     // 4b. Execute onExit hook on the DEPARTING state (before transition)
     const departingStateDef = flow.states.find((s) => s.name === entity.state);
     if (departingStateDef?.onExit) {
-      const onExitResult = await executeOnExit(departingStateDef.onExit, entity);
+      const onExitResult = await executeOnExit(departingStateDef.onExit, entity, flow, this.adapterRegistry);
       if (onExitResult.error) {
         this.logger.warn(`[engine] onExit failed for entity ${entityId} state ${entity.state}: ${onExitResult.error}`);
         await emitter.emit({

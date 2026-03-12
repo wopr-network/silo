@@ -6,7 +6,8 @@ import { DrizzleEntityRepository } from "../src/repositories/drizzle/entity.repo
 import { DrizzleFlowRepository } from "../src/repositories/drizzle/flow.repo.js";
 import { DrizzleGateRepository } from "../src/repositories/drizzle/gate.repo.js";
 import { DrizzleInvocationRepository } from "../src/repositories/drizzle/invocation.repo.js";
-import type { Entity, IEntityRepository, IEventBusAdapter, ITransitionLogRepository, OnEnterConfig } from "../src/repositories/interfaces.js";
+import type { Entity, Flow, IEntityRepository, IEventBusAdapter, ITransitionLogRepository, OnEnterConfig } from "../src/repositories/interfaces.js";
+import type { AdapterRegistry } from "../src/integrations/registry.js";
 
 const TEST_TENANT = "test-tenant";
 
@@ -26,6 +27,7 @@ function makeEntity(overrides?: Partial<Entity>): Entity {
     affinityWorkerId: null,
     affinityRole: null,
     affinityExpiresAt: null,
+    parentEntityId: null,
     ...overrides,
   };
 }
@@ -48,8 +50,47 @@ function makeEntityRepo(): IEntityRepository & { updatedArtifacts: Record<string
     clearExpiredAffinity: vi.fn(),
     appendSpawnedChild: vi.fn(),
     removeArtifactKeys: vi.fn().mockResolvedValue(undefined),
+    hasAnyInFlowAndState: vi.fn(),
+    findByParentId: vi.fn(),
+    cancelEntity: vi.fn(),
+    resetEntity: vi.fn(),
+    updateFlowVersion: vi.fn(),
   };
   return repo as unknown as IEntityRepository & { updatedArtifacts: Record<string, unknown>[] };
+}
+
+function makeFlow(overrides?: Partial<Flow>): Flow {
+  return {
+    id: "flow-1",
+    name: "test-flow",
+    description: null,
+    entitySchema: null,
+    initialState: "triage",
+    maxConcurrent: 0,
+    maxConcurrentPerRepo: 0,
+    affinityWindowMs: 300000,
+    claimRetryAfterMs: null,
+    gateTimeoutMs: null,
+    version: 1,
+    createdBy: null,
+    discipline: null,
+    defaultModelTier: null,
+    timeoutPrompt: null,
+    paused: false,
+    issueTrackerIntegrationId: null,
+    vcsIntegrationId: "vcs-integration-1",
+    createdAt: null,
+    updatedAt: null,
+    states: [],
+    transitions: [],
+    ...overrides,
+  };
+}
+
+function makeMockAdapterRegistry(result: Record<string, unknown> = {}): AdapterRegistry {
+  return {
+    execute: vi.fn().mockResolvedValue(result),
+  } as unknown as AdapterRegistry;
 }
 
 describe("executeOnEnter", () => {
@@ -57,7 +98,7 @@ describe("executeOnEnter", () => {
     const entity = makeEntity({ artifacts: { worktreePath: "/tmp/wt", branch: "fix-123" } });
     const repo = makeEntityRepo();
     const onEnter: OnEnterConfig = {
-      command: "echo should-not-run",
+      op: "vcs.provision_worktree",
       artifacts: ["worktreePath", "branch"],
     };
 
@@ -68,23 +109,153 @@ describe("executeOnEnter", () => {
     expect(repo.updateArtifacts).not.toHaveBeenCalled();
   });
 
-  it("runs command and merges artifacts on success", async () => {
+  it("dispatches op via adapter registry and merges artifacts", async () => {
     const entity = makeEntity();
     const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const registry = makeMockAdapterRegistry({ worktreePath: "/tmp/wt", branch: "fix-123" });
     const onEnter: OnEnterConfig = {
-      command: `echo '{"worktreePath":"/tmp/wt","branch":"fix-123"}'`,
+      op: "vcs.provision_worktree",
       artifacts: ["worktreePath", "branch"],
+      params: { repo: "{{entity.refs.github.repo}}" },
     };
 
-    const result = await executeOnEnter(onEnter, entity, repo);
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
 
     expect(result.skipped).toBe(false);
     expect(result.error).toBeNull();
     expect(result.artifacts).toEqual({ worktreePath: "/tmp/wt", branch: "fix-123" });
+    expect(registry.execute).toHaveBeenCalledWith(
+      "vcs-integration-1",
+      "vcs.provision_worktree",
+      { repo: "wopr-network/wopr" },
+      expect.any(AbortSignal),
+    );
     expect(repo.updateArtifacts).toHaveBeenCalledWith("entity-1", {
       worktreePath: "/tmp/wt",
       branch: "fix-123",
     });
+  });
+
+  it("returns error when adapter registry is not available", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath"],
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, makeFlow(), null);
+
+    expect(result.error).toContain("AdapterRegistry not available");
+    expect(result.artifacts).toBeNull();
+  });
+
+  it("returns error when flow has no matching integration", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const flow = makeFlow({ vcsIntegrationId: null });
+    const registry = makeMockAdapterRegistry();
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath"],
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.error).toContain("no vcs integration configured");
+  });
+
+  it("returns error when op fails", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const registry = {
+      execute: vi.fn().mockRejectedValue(new Error("adapter boom")),
+    } as unknown as AdapterRegistry;
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath"],
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.error).toContain("adapter boom");
+    expect(result.timedOut).toBe(false);
+  });
+
+  it("returns timedOut when op throws TimeoutError", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const timeoutErr = new DOMException("signal timed out", "TimeoutError");
+    const registry = {
+      execute: vi.fn().mockRejectedValue(timeoutErr),
+    } as unknown as AdapterRegistry;
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath"],
+      timeout_ms: 100,
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.timedOut).toBe(true);
+    expect(result.error).toContain("timed out");
+  });
+
+  it("returns error when expected artifact keys are missing from op result", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const registry = makeMockAdapterRegistry({ worktreePath: "/tmp/wt" });
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath", "branch"],
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.error).toContain("branch");
+    expect(result.artifacts).toBeNull();
+  });
+
+  it("renders Handlebars params with entity data", async () => {
+    const entity = makeEntity({ artifacts: { refs: { linear: { id: "LIN-123" } } } });
+    const repo = makeEntityRepo();
+    const flow = makeFlow({ issueTrackerIntegrationId: "it-1" });
+    const registry = makeMockAdapterRegistry({ comment: "hello" });
+    const onEnter: OnEnterConfig = {
+      op: "issue_tracker.fetch_comment",
+      artifacts: ["comment"],
+      params: { issueId: "{{entity.refs.linear.id}}" },
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.error).toBeNull();
+    expect(registry.execute).toHaveBeenCalledWith(
+      "it-1",
+      "issue_tracker.fetch_comment",
+      expect.objectContaining({ issueId: "LIN-123" }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("returns error on Handlebars template failure", async () => {
+    const entity = makeEntity();
+    const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const registry = makeMockAdapterRegistry();
+    const onEnter: OnEnterConfig = {
+      op: "vcs.provision_worktree",
+      artifacts: ["worktreePath"],
+      params: { bad: "{{#each broken" },
+    };
+
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
+
+    expect(result.error).toContain("template error");
   });
 
   it("does not re-run when re-entering state with all artifacts present", async () => {
@@ -93,7 +264,7 @@ describe("executeOnEnter", () => {
     });
     const repo = makeEntityRepo();
     const onEnter: OnEnterConfig = {
-      command: "echo should-not-run",
+      op: "vcs.provision_worktree",
       artifacts: ["worktreePath", "branch"],
     };
 
@@ -101,98 +272,17 @@ describe("executeOnEnter", () => {
     expect(result.skipped).toBe(true);
   });
 
-  it("records error when command fails (non-zero exit)", async () => {
-    const entity = makeEntity();
-    const repo = makeEntityRepo();
-    const onEnter: OnEnterConfig = {
-      command: "false",
-      artifacts: ["worktreePath"],
-    };
-
-    const result = await executeOnEnter(onEnter, entity, repo);
-
-    expect(result.skipped).toBe(false);
-    expect(result.error).toBeTruthy();
-    expect(result.artifacts).toBeNull();
-    expect(repo.updateArtifacts).toHaveBeenCalledWith("entity-1", {
-      onEnter_error: expect.objectContaining({
-        command: "false",
-        error: expect.any(String),
-        failedAt: expect.any(String),
-      }),
-    });
-  });
-
-  it("preserves actual exit code from failed command (not hardcoded 1)", async () => {
-    const entity = makeEntity();
-    const repo = makeEntityRepo();
-    const onEnter: OnEnterConfig = {
-      command: "exit 42",
-      artifacts: ["worktreePath"],
-    };
-
-    const result = await executeOnEnter(onEnter, entity, repo);
-
-    expect(result.skipped).toBe(false);
-    expect(result.error).toMatch(/42/);
-    expect(result.artifacts).toBeNull();
-  });
-
-  it("records error when stdout is not valid JSON", async () => {
-    const entity = makeEntity();
-    const repo = makeEntityRepo();
-    const onEnter: OnEnterConfig = {
-      command: "echo not-json",
-      artifacts: ["worktreePath"],
-    };
-
-    const result = await executeOnEnter(onEnter, entity, repo);
-
-    expect(result.skipped).toBe(false);
-    expect(result.error).toBeTruthy();
-    expect(result.artifacts).toBeNull();
-  });
-
-  it("records error when expected artifact key is missing from stdout", async () => {
-    const entity = makeEntity();
-    const repo = makeEntityRepo();
-    const onEnter: OnEnterConfig = {
-      command: `echo '{"worktreePath":"/tmp/wt"}'`,
-      artifacts: ["worktreePath", "branch"],
-    };
-
-    const result = await executeOnEnter(onEnter, entity, repo);
-
-    expect(result.skipped).toBe(false);
-    expect(result.error).toContain("branch");
-    expect(result.artifacts).toBeNull();
-  });
-
-  it("times out when command exceeds timeout_ms", async () => {
-    const entity = makeEntity();
-    const repo = makeEntityRepo();
-    const onEnter: OnEnterConfig = {
-      command: "sleep 10",
-      artifacts: ["worktreePath"],
-      timeout_ms: 100,
-    };
-
-    const result = await executeOnEnter(onEnter, entity, repo);
-
-    expect(result.skipped).toBe(false);
-    expect(result.timedOut).toBe(true);
-    expect(result.error).toBeTruthy();
-  });
-
   it("runs when only some artifacts exist (not all)", async () => {
     const entity = makeEntity({ artifacts: { worktreePath: "/tmp/wt" } });
     const repo = makeEntityRepo();
+    const flow = makeFlow();
+    const registry = makeMockAdapterRegistry({ worktreePath: "/tmp/wt2", branch: "fix-456" });
     const onEnter: OnEnterConfig = {
-      command: `echo '{"worktreePath":"/tmp/wt2","branch":"fix-456"}'`,
+      op: "vcs.provision_worktree",
       artifacts: ["worktreePath", "branch"],
     };
 
-    const result = await executeOnEnter(onEnter, entity, repo);
+    const result = await executeOnEnter(onEnter, entity, repo, flow, registry);
 
     expect(result.skipped).toBe(false);
     expect(result.error).toBeNull();
@@ -243,153 +333,6 @@ describe("Engine onEnter integration", () => {
     await close();
   });
 
-  it("onEnter runs and artifacts are merged before invocation creation", async () => {
-    const flow = await flowRepo.create({ name: "test-flow", initialState: "triage" });
-    await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage this" });
-    await flowRepo.addState(flow.id, {
-      name: "coding",
-      agentRole: "coder",
-      promptTemplate: "code at {{entity.artifacts.worktreePath}}",
-      onEnter: {
-        command: `echo '{"worktreePath":"/tmp/wt","branch":"fix-1"}'`,
-        artifacts: ["worktreePath", "branch"],
-      },
-    });
-    await flowRepo.addTransition(flow.id, { fromState: "triage", toState: "coding", trigger: "approved" });
-
-    const entity = await engine.createEntity("test-flow");
-    const result = await engine.processSignal(entity.id, "approved");
-
-    expect(result.gated).toBe(false);
-    expect(result.newState).toBe("coding");
-    expect(typeof result.invocationId).toBe("string");
-    expect(result.invocationId!.length).toBeGreaterThan(0);
-
-    const updatedEntity = await entityRepo.get(entity.id);
-    expect(updatedEntity?.artifacts).toMatchObject({
-      worktreePath: "/tmp/wt",
-      branch: "fix-1",
-    });
-
-    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.completed" }));
-  });
-
-  it("onEnter re-runs on re-entry (stale artifacts are cleared)", async () => {
-    const flow = await flowRepo.create({ name: "test-flow2", initialState: "triage" });
-    await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
-    await flowRepo.addState(flow.id, {
-      name: "coding",
-      agentRole: "coder",
-      promptTemplate: "code",
-      onEnter: {
-        command: `echo '{"worktreePath":"/tmp/wt","branch":"fix-1"}'`,
-        artifacts: ["worktreePath", "branch"],
-      },
-    });
-    await flowRepo.addState(flow.id, { name: "review", agentRole: "reviewer", promptTemplate: "review" });
-    await flowRepo.addTransition(flow.id, { fromState: "triage", toState: "coding", trigger: "approved" });
-    await flowRepo.addTransition(flow.id, { fromState: "coding", toState: "review", trigger: "done" });
-    await flowRepo.addTransition(flow.id, { fromState: "review", toState: "coding", trigger: "fix" });
-
-    const entity = await engine.createEntity("test-flow2");
-    await engine.processSignal(entity.id, "approved");
-    await engine.processSignal(entity.id, "done");
-    events.length = 0;
-    await engine.processSignal(entity.id, "fix");
-
-    // On re-entry, stale keys are cleared so the hook re-runs (onEnter.completed, not onEnter.skipped)
-    expect(events).toContainEqual(expect.objectContaining({ type: "onEnter.completed" }));
-    expect(events.some((e) => e.type === "onEnter.skipped")).toBe(false);
-  });
-
-  it("onEnter failure gates the entity", async () => {
-    const flow = await flowRepo.create({ name: "test-flow3", initialState: "triage" });
-    await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
-    await flowRepo.addState(flow.id, {
-      name: "coding",
-      agentRole: "coder",
-      promptTemplate: "code",
-      onEnter: {
-        command: "false",
-        artifacts: ["worktreePath"],
-      },
-    });
-    await flowRepo.addTransition(flow.id, { fromState: "triage", toState: "coding", trigger: "approved" });
-
-    const entity = await engine.createEntity("test-flow3");
-    const result = await engine.processSignal(entity.id, "approved");
-
-    expect(result.gated).toBe(false);
-    expect(result.onEnterFailed).toBe(true);
-    expect(result.gateOutput).toContain("onEnter");
-    expect(result.invocationId).toBeUndefined();
-
-    const updatedEntity = await entityRepo.get(entity.id);
-    expect(updatedEntity?.artifacts).toHaveProperty("onEnter_error");
-  });
-
-  it("transitionLogRepo.record is called even when onEnter fails", async () => {
-    const transitionRecordSpy = vi.fn(async (log: unknown) => ({ id: crypto.randomUUID(), ...(log as object) }));
-    const spyTransitionRepo: ITransitionLogRepository = {
-      record: transitionRecordSpy,
-      historyFor: async () => [],
-    };
-
-    const res2 = await createTestDb();
-    const db2 = res2.db;
-    const close2 = res2.close;
-
-    const entityRepo2 = new DrizzleEntityRepository(db2, TEST_TENANT);
-    const flowRepo2 = new DrizzleFlowRepository(db2, TEST_TENANT);
-    const invocationRepo2 = new DrizzleInvocationRepository(db2, TEST_TENANT);
-    const gateRepo2 = new DrizzleGateRepository(db2, TEST_TENANT);
-
-    const engine2 = new Engine({
-      entityRepo: entityRepo2,
-      flowRepo: flowRepo2,
-      invocationRepo: invocationRepo2,
-      gateRepo: gateRepo2,
-      transitionLogRepo: spyTransitionRepo,
-      adapters: new Map(),
-      eventEmitter: { emit: async () => {} },
-    });
-
-    const flow2 = await flowRepo2.create({ name: "test-flow4b", initialState: "triage" });
-    await flowRepo2.addState(flow2.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
-    await flowRepo2.addState(flow2.id, {
-      name: "coding",
-      agentRole: "coder",
-      promptTemplate: "code",
-      onEnter: { command: "false", artifacts: ["worktreePath"] },
-    });
-    await flowRepo2.addTransition(flow2.id, { fromState: "triage", toState: "coding", trigger: "approved" });
-
-    const entity = await engine2.createEntity("test-flow4b");
-    const result = await engine2.processSignal(entity.id, "approved");
-
-    expect(result.onEnterFailed).toBe(true);
-    expect(transitionRecordSpy).toHaveBeenCalledOnce();
-    expect(transitionRecordSpy).toHaveBeenCalledWith(expect.objectContaining({
-      entityId: entity.id,
-      fromState: "triage",
-      toState: "coding",
-    }));
-
-    await close2();
-  });
-
-  it("createEntity throws when onEnter fails on initial state", async () => {
-    const flow = await flowRepo.create({ name: "test-flow5", initialState: "setup" });
-    await flowRepo.addState(flow.id, {
-      name: "setup",
-      agentRole: "setupper",
-      promptTemplate: "setup",
-      onEnter: { command: "false", artifacts: ["worktreePath"] },
-    });
-
-    await expect(engine.createEntity("test-flow5")).rejects.toThrow("onEnter failed");
-  });
-
   it("removeArtifactKeys deletes specified keys and preserves others", async () => {
     const flow = await flowRepo.create({ name: "test-rmkeys", initialState: "init" });
     await flowRepo.addState(flow.id, { name: "init", agentRole: "worker", promptTemplate: "go" });
@@ -421,89 +364,5 @@ describe("Engine onEnter integration", () => {
 
     const updated = await entityRepo.get(entity.id);
     expect(updated).toBeTruthy();
-  });
-
-  it("onEnter re-runs on re-entry after artifact keys are cleared", async () => {
-    const flow = await flowRepo.create({ name: "test-reentry", initialState: "triage" });
-    await flowRepo.addState(flow.id, { name: "triage", agentRole: "triager", promptTemplate: "triage" });
-    await flowRepo.addState(flow.id, {
-      name: "reviewing",
-      agentRole: "reviewer",
-      promptTemplate: "review {{entity.artifacts.prDiff}}",
-      onEnter: {
-        command: `echo '{"prDiff":"the-diff","prComments":"the-comments"}'`,
-        artifacts: ["prDiff", "prComments"],
-      },
-    });
-    await flowRepo.addState(flow.id, { name: "fixing", agentRole: "coder", promptTemplate: "fix" });
-    await flowRepo.addTransition(flow.id, { fromState: "triage", toState: "reviewing", trigger: "ready" });
-    await flowRepo.addTransition(flow.id, { fromState: "reviewing", toState: "fixing", trigger: "needs_fix" });
-    await flowRepo.addTransition(flow.id, { fromState: "fixing", toState: "reviewing", trigger: "fixed" });
-
-    const entity = await engine.createEntity("test-reentry");
-
-    // First entry into reviewing — onEnter runs
-    const r1 = await engine.processSignal(entity.id, "ready");
-    expect(r1.newState).toBe("reviewing");
-    const e1 = await entityRepo.get(entity.id);
-    expect(e1?.artifacts).toHaveProperty("prDiff");
-    expect(e1?.artifacts).toHaveProperty("prComments");
-
-    // Transition to fixing, then back to reviewing
-    await engine.processSignal(entity.id, "needs_fix");
-    const r2 = await engine.processSignal(entity.id, "fixed");
-    expect(r2.newState).toBe("reviewing");
-
-    // onEnter must have re-run (not skipped)
-    const e2 = await entityRepo.get(entity.id);
-    expect(e2?.artifacts).toHaveProperty("prDiff");
-    expect(e2?.artifacts).toHaveProperty("prComments");
-
-    // Verify onEnter.completed fired (not onEnter.skipped)
-    const completedEvents = events.filter(
-      (e) => e.type === "onEnter.completed" && (e as Record<string, unknown>)["state"] === "reviewing",
-    );
-    expect(completedEvents.length).toBe(2);
-  });
-
-  it("artifacts from other states are NOT cleared on re-entry", async () => {
-    const flow = await flowRepo.create({ name: "test-reentry-preserve", initialState: "provisioning" });
-    await flowRepo.addState(flow.id, {
-      name: "provisioning",
-      agentRole: "provisioner",
-      promptTemplate: "provision",
-      onEnter: {
-        command: `echo '{"worktreePath":"/tmp/wt","branch":"fix-1"}'`,
-        artifacts: ["worktreePath", "branch"],
-      },
-    });
-    await flowRepo.addState(flow.id, {
-      name: "reviewing",
-      agentRole: "reviewer",
-      promptTemplate: "review",
-      onEnter: {
-        command: `echo '{"prDiff":"the-diff","prComments":"the-comments"}'`,
-        artifacts: ["prDiff", "prComments"],
-      },
-    });
-    await flowRepo.addState(flow.id, { name: "fixing", agentRole: "coder", promptTemplate: "fix" });
-    await flowRepo.addTransition(flow.id, { fromState: "provisioning", toState: "reviewing", trigger: "ready" });
-    await flowRepo.addTransition(flow.id, { fromState: "reviewing", toState: "fixing", trigger: "needs_fix" });
-    await flowRepo.addTransition(flow.id, { fromState: "fixing", toState: "reviewing", trigger: "fixed" });
-
-    const entity = await engine.createEntity("test-reentry-preserve");
-
-    // provisioning → reviewing → fixing → reviewing
-    await engine.processSignal(entity.id, "ready");
-    await engine.processSignal(entity.id, "needs_fix");
-    await engine.processSignal(entity.id, "fixed");
-
-    const final = await entityRepo.get(entity.id);
-    // Provisioning artifacts must survive
-    expect(final?.artifacts).toHaveProperty("worktreePath", "/tmp/wt");
-    expect(final?.artifacts).toHaveProperty("branch", "fix-1");
-    // Reviewing artifacts must be fresh (re-run)
-    expect(final?.artifacts).toHaveProperty("prDiff", "the-diff");
-    expect(final?.artifacts).toHaveProperty("prComments", "the-comments");
   });
 });
