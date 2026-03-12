@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 import type { GitLabCredentials, IVcsAdapter, PrimitiveOpResult } from "../types.js";
@@ -102,6 +102,14 @@ export class GitLabVcsAdapter implements IVcsAdapter {
     return { comments };
   }
 
+  async fetchPrContext(
+    params: { repo: string; prNumber: string | number },
+    _signal?: AbortSignal,
+  ): Promise<PrimitiveOpResult> {
+    const [commentsResult, diffResult] = await Promise.all([this.fetchPrComments(params), this.fetchPrDiff(params)]);
+    return { prComments: commentsResult.comments, prDiff: diffResult.diff };
+  }
+
   async provisionWorktree({
     repo,
     branch,
@@ -136,6 +144,23 @@ export class GitLabVcsAdapter implements IVcsAdapter {
     }
 
     return { worktreePath, codebasePath: worktreePath, branch };
+  }
+
+  async cleanupWorktree({ worktreePath }: { worktreePath: string }, _signal?: AbortSignal): Promise<PrimitiveOpResult> {
+    try {
+      const { stdout } = await execFileAsync("git", [
+        "-C",
+        worktreePath,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+      ]);
+      const bareRepo = stdout.trim();
+      await execFileAsync("git", ["-C", bareRepo, "worktree", "remove", "--force", worktreePath]);
+    } catch {
+      await rm(worktreePath, { recursive: true, force: true });
+    }
+    return { removed: true };
   }
 
   async mergePr(

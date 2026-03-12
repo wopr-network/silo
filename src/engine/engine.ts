@@ -91,6 +91,8 @@ export interface EngineDeps {
   domainEvents?: IDomainEventRepository;
   /** Optional integration repository. When provided, primitive gate ops and onEnter ops are resolved through the AdapterRegistry. */
   integrationRepo?: IIntegrationRepository;
+  /** Optional pre-built AdapterRegistry. Takes precedence over integrationRepo when both are provided. */
+  adapterRegistry?: AdapterRegistry;
 }
 
 export class Engine {
@@ -122,7 +124,8 @@ export class Engine {
     this.withTransactionFn = deps.withTransaction ?? null;
     this.repoFactory = deps.repoFactory ?? null;
     this.domainEventRepo = deps.domainEvents ?? null;
-    this.adapterRegistry = deps.integrationRepo ? new AdapterRegistry(deps.integrationRepo) : null;
+    this.adapterRegistry =
+      deps.adapterRegistry ?? (deps.integrationRepo ? new AdapterRegistry(deps.integrationRepo) : null);
   }
 
   drainWorker(workerId: string): void {

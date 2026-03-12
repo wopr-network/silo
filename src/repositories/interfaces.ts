@@ -6,23 +6,24 @@ export type Refs = Record<string, { adapter: string; id: string; [key: string]: 
 /** Freeform key-value artifact bag */
 export type Artifacts = Record<string, unknown>;
 
-/** Configuration for running a primitive adapter op when an entity enters a state */
+/** Configuration for running a primitive op when an entity enters a state */
 export interface OnEnterConfig {
-  /** Primitive op identifier, e.g. "vcs.provision_worktree". */
+  /** Primitive op identifier, e.g. "vcs.provision_worktree" or "issue_tracker.fetch_comment". */
   op: string;
-  /** Handlebars-rendered params for the primitive op. */
+  /** Handlebars-rendered params passed to the adapter op. */
   params?: Record<string, unknown>;
+  /** Expected artifact keys extracted from the op result. */
   artifacts: string[];
-  timeout_ms?: number;
+  /** Optional map from op result keys to artifact names, e.g. { body: "architectSpec" }. */
+  artifactMap?: Record<string, string>;
 }
 
-/** Configuration for running a primitive adapter op when an entity exits a state */
+/** Configuration for running a primitive op when an entity exits a state */
 export interface OnExitConfig {
   /** Primitive op identifier, e.g. "vcs.cleanup_worktree". */
   op: string;
-  /** Handlebars-rendered params for the primitive op. */
+  /** Handlebars-rendered params passed to the adapter op. */
   params?: Record<string, unknown>;
-  timeout_ms?: number;
 }
 
 /** Invocation execution mode */

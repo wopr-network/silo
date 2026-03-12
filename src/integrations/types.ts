@@ -125,6 +125,12 @@ export interface IVcsAdapter {
   ): Promise<PrimitiveOpResult>;
 
   /**
+   * Fetch both review comments and the diff for a PR in one call.
+   * Returns: { prComments: string, prDiff: string }
+   */
+  fetchPrContext(params: { repo: string; prNumber: string | number }, signal?: AbortSignal): Promise<PrimitiveOpResult>;
+
+  /**
    * Clone/checkout a branch into a worktree. Idempotent.
    * Returns: { worktreePath: string, codebasePath: string, branch: string }
    */
@@ -132,6 +138,12 @@ export interface IVcsAdapter {
     params: { repo: string; branch: string; basePath?: string },
     signal?: AbortSignal,
   ): Promise<PrimitiveOpResult>;
+
+  /**
+   * Remove a previously provisioned worktree. Idempotent.
+   * Returns: { removed: boolean }
+   */
+  cleanupWorktree(params: { worktreePath: string }, signal?: AbortSignal): Promise<PrimitiveOpResult>;
 
   /**
    * Trigger an auto-merge (squash) and poll until the PR is merged, closed, or timed out.
@@ -154,7 +166,9 @@ export const PRIMITIVE_OPS = [
   "vcs.pr_merge_queue_status",
   "vcs.fetch_pr_diff",
   "vcs.fetch_pr_comments",
+  "vcs.fetch_pr_context",
   "vcs.provision_worktree",
+  "vcs.cleanup_worktree",
   "vcs.merge_pr",
 ] as const;
 

@@ -2,6 +2,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    env: {
+      // 64-char hex key (32 bytes) for integration tests that use DrizzleIntegrationRepository
+      SILO_ENCRYPTION_KEY: "0".repeat(64),
+    },
     testTimeout: 30000,
     exclude: ["dist/**", "node_modules/**"],
     coverage: {

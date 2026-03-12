@@ -32,13 +32,12 @@ export const OnEnterSchema = z.object({
   op: z.enum(PRIMITIVE_OPS),
   params: z.record(z.string(), z.unknown()).optional(),
   artifacts: z.array(z.string().min(1)).min(1),
-  timeout_ms: z.number().int().min(0).optional().default(30000),
+  artifactMap: z.record(z.string(), z.string()).optional(),
 });
 
 export const OnExitSchema = z.object({
   op: z.enum(PRIMITIVE_OPS),
   params: z.record(z.string(), z.unknown()).optional(),
-  timeout_ms: z.number().int().min(1).optional().default(30000),
 });
 
 export const StateDefinitionSchema = z.object({

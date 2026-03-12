@@ -70,7 +70,7 @@ export async function executeOnEnter(
   }
 
   // Execute primitive op with AbortSignal timeout
-  const timeoutMs = onEnter.timeout_ms ?? 30000;
+  const timeoutMs = 30_000;
   let opResult: Record<string, unknown>;
   try {
     opResult = await adapterRegistry.execute(integrationId, op, renderedParams, AbortSignal.timeout(timeoutMs));
@@ -85,17 +85,30 @@ export async function executeOnEnter(
     return { skipped: false, artifacts: null, error, timedOut: false };
   }
 
-  // Extract named artifact keys
-  const missingKeys = onEnter.artifacts.filter((key) => opResult[key] === undefined);
+  // Extract named artifact keys, applying artifactMap for renames.
+  // artifactMap maps op result keys → artifact names (e.g. { body: "architectSpec" }).
+  // Build a reverse map: artifact name → op result key.
+  const reverseMap: Record<string, string> = {};
+  if (onEnter.artifactMap) {
+    for (const [opKey, artifactName] of Object.entries(onEnter.artifactMap)) {
+      reverseMap[artifactName] = opKey;
+    }
+  }
+
+  const mergedArtifacts: Record<string, unknown> = {};
+  const missingKeys: string[] = [];
+  for (const artifactName of onEnter.artifacts) {
+    const sourceKey = reverseMap[artifactName] ?? artifactName;
+    if (opResult[sourceKey] === undefined) {
+      missingKeys.push(`${artifactName} (from op key "${sourceKey}")`);
+    } else {
+      mergedArtifacts[artifactName] = opResult[sourceKey];
+    }
+  }
   if (missingKeys.length > 0) {
     const error = `onEnter op missing expected artifact keys: ${missingKeys.join(", ")}`;
     await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
     return { skipped: false, artifacts: null, error, timedOut: false };
-  }
-
-  const mergedArtifacts: Record<string, unknown> = {};
-  for (const key of onEnter.artifacts) {
-    mergedArtifacts[key] = opResult[key];
   }
 
   await entityRepo.updateArtifacts(entity.id, mergedArtifacts);

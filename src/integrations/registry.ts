@@ -103,8 +103,12 @@ function callOp(
         return vcs.fetchPrDiff(params as { repo: string; prNumber: string | number }, signal);
       case "fetch_pr_comments":
         return vcs.fetchPrComments(params as { repo: string; prNumber: string | number }, signal);
+      case "fetch_pr_context":
+        return vcs.fetchPrContext(params as { repo: string; prNumber: string | number }, signal);
       case "provision_worktree":
         return vcs.provisionWorktree(params as { repo: string; branch: string; basePath?: string }, signal);
+      case "cleanup_worktree":
+        return vcs.cleanupWorktree(params as { worktreePath: string }, signal);
       case "merge_pr":
         return vcs.mergePr(params as { repo: string; prNumber: string | number }, signal);
       default:

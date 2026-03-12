@@ -1,6 +1,5 @@
 import type { AdapterRegistry } from "../integrations/registry.js";
 import type { PrimitiveOp } from "../integrations/types.js";
-import { opCategory } from "../integrations/types.js";
 import type { Entity, Flow, OnExitConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -21,14 +20,13 @@ export async function executeOnExit(
     return { error: "AdapterRegistry not available for primitive onExit op", timedOut: false };
   }
 
-  const category = opCategory(op);
-  const integrationId = category === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
+  const opCategory = op.split(".")[0];
+  const integrationId = opCategory === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
 
   if (!integrationId) {
-    return { error: `Flow has no ${category} integration configured`, timedOut: false };
+    return { error: `Flow has no ${opCategory} integration configured`, timedOut: false };
   }
 
-  // Render params via Handlebars
   const hbs = getHandlebars();
   const artifactRefs =
     entity.artifacts !== null &&
@@ -50,18 +48,23 @@ export async function executeOnExit(
       ]),
     );
   } catch (err) {
-    return { error: `onExit template error: ${err instanceof Error ? err.message : String(err)}`, timedOut: false };
+    return {
+      error: `Primitive onExit template error: ${err instanceof Error ? err.message : String(err)}`,
+      timedOut: false,
+    };
   }
 
-  // Execute primitive op with AbortSignal timeout
-  const timeoutMs = onExit.timeout_ms ?? 30000;
+  const timeoutMs = 30_000;
   try {
     await adapterRegistry.execute(integrationId, op, renderedParams, AbortSignal.timeout(timeoutMs));
   } catch (err) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
       return { error: `onExit op timed out after ${timeoutMs}ms`, timedOut: true };
     }
-    return { error: `onExit op failed: ${err instanceof Error ? err.message : String(err)}`, timedOut: false };
+    return {
+      error: `Primitive onExit op failed: ${err instanceof Error ? err.message : String(err)}`,
+      timedOut: false,
+    };
   }
 
   return { error: null, timedOut: false };
