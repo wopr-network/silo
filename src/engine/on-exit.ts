@@ -1,5 +1,6 @@
 import type { AdapterRegistry } from "../integrations/registry.js";
 import type { PrimitiveOp } from "../integrations/types.js";
+import { opCategory } from "../integrations/types.js";
 import type { Entity, Flow, OnExitConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -20,11 +21,11 @@ export async function executeOnExit(
     return { error: "AdapterRegistry not available for primitive onExit op", timedOut: false };
   }
 
-  const opCategory = op.split(".")[0];
-  const integrationId = opCategory === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
+  const category = opCategory(op);
+  const integrationId = category === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
 
   if (!integrationId) {
-    return { error: `Flow has no ${opCategory} integration configured`, timedOut: false };
+    return { error: `Flow has no ${category} integration configured`, timedOut: false };
   }
 
   // Render params via Handlebars

@@ -1,5 +1,6 @@
 import type { AdapterRegistry } from "../integrations/registry.js";
 import type { PrimitiveOp } from "../integrations/types.js";
+import { opCategory } from "../integrations/types.js";
 import type { Entity, Flow, IEntityRepository, OnEnterConfig } from "../repositories/interfaces.js";
 import { getHandlebars } from "./handlebars.js";
 
@@ -32,11 +33,11 @@ export async function executeOnEnter(
     return { skipped: false, artifacts: null, error, timedOut: false };
   }
 
-  const opCategory = op.split(".")[0];
-  const integrationId = opCategory === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
+  const category = opCategory(op);
+  const integrationId = category === "issue_tracker" ? flow?.issueTrackerIntegrationId : flow?.vcsIntegrationId;
 
   if (!integrationId) {
-    const error = `Flow has no ${opCategory} integration configured`;
+    const error = `Flow has no ${category} integration configured`;
     await entityRepo.updateArtifacts(entity.id, { onEnter_error: { op, error } });
     return { skipped: false, artifacts: null, error, timedOut: false };
   }

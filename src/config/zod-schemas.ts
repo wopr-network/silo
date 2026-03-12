@@ -29,14 +29,14 @@ export const FlowDefinitionSchema = z.object({
 });
 
 export const OnEnterSchema = z.object({
-  op: z.string().min(1),
+  op: z.enum(PRIMITIVE_OPS),
   params: z.record(z.string(), z.unknown()).optional(),
   artifacts: z.array(z.string().min(1)).min(1),
   timeout_ms: z.number().int().min(0).optional().default(30000),
 });
 
 export const OnExitSchema = z.object({
-  op: z.string().min(1),
+  op: z.enum(PRIMITIVE_OPS),
   params: z.record(z.string(), z.unknown()).optional(),
   timeout_ms: z.number().int().min(1).optional().default(30000),
 });
