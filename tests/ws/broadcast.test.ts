@@ -21,9 +21,10 @@ interface WsClient {
 }
 
 function connectWs(port: number, token?: string): Promise<WsClient> {
-	const url = token ? `ws://127.0.0.1:${port}/ws?token=${token}` : `ws://127.0.0.1:${port}/ws`;
+	const url = `ws://127.0.0.1:${port}/ws`;
+	const opts = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(url);
+		const ws = new WebSocket(url, opts);
 		const messages: Record<string, unknown>[] = [];
 		const waiters: Array<{ count: number; resolve: () => void }> = [];
 
@@ -106,10 +107,21 @@ describe("WebSocketBroadcaster", () => {
 		await expect(connectWs(port, "wrong-token")).rejects.toThrow();
 	});
 
-	it("accepts connection with valid query token", async () => {
+	it("accepts connection with valid header token", async () => {
 		const { ws } = await connectWs(port, ADMIN_TOKEN);
 		closers.push(() => ws.close());
 		expect(ws.readyState).toBe(WebSocket.OPEN);
+	});
+
+	it("rejects connection with token in query string", async () => {
+		const url = `ws://127.0.0.1:${port}/ws?token=${ADMIN_TOKEN}`;
+		await expect(
+			new Promise((resolve, reject) => {
+				const ws = new WebSocket(url);
+				ws.on("open", () => resolve(ws));
+				ws.on("error", reject);
+			}),
+		).rejects.toThrow();
 	});
 
 	it("sends snapshot on connect", async () => {

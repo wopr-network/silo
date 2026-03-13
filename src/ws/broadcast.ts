@@ -52,22 +52,14 @@ export class WebSocketBroadcaster implements IEventBusAdapter {
   }
 
   private authenticate(req: http.IncomingMessage): boolean {
-    // Try Authorization header first
+    // Require Authorization header — query-string tokens are rejected
+    // to prevent token exposure in server logs and browser history.
     const authHeader = req.headers.authorization;
-    if (authHeader) {
-      const lower = authHeader.toLowerCase();
-      if (lower.startsWith("bearer ")) {
-        const token = authHeader.slice(7).trim();
-        if (token && this.tokenMatches(token)) return true;
-      }
-    }
-
-    // Try ?token= query param
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const queryToken = url.searchParams.get("token");
-    if (queryToken && this.tokenMatches(queryToken)) return true;
-
-    return false;
+    if (!authHeader) return false;
+    const lower = authHeader.toLowerCase();
+    if (!lower.startsWith("bearer ")) return false;
+    const token = authHeader.slice(7).trim();
+    return token !== "" && this.tokenMatches(token);
   }
 
   private tokenMatches(callerToken: string): boolean {

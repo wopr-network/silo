@@ -104,7 +104,9 @@ describe("WebSocket integration with HTTP server", () => {
 	});
 
 	it("engine events reach WS clients through eventEmitter", async () => {
-		const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${ADMIN_TOKEN}`);
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+			headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+		});
 		// Consume snapshot
 		await new Promise<void>((resolve, reject) => {
 			ws.on("open", () => {});

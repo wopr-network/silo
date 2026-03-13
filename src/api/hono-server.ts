@@ -724,9 +724,9 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
 
     // SSE endpoint
     ui.get("/events", async (c) => {
-      const queryToken = c.req.query("token");
-      const headerToken = extractBearerToken(c.req.header("authorization"));
-      const callerToken = headerToken ?? queryToken;
+      // Require Authorization header — query-string tokens are rejected
+      // to prevent token exposure in server logs and browser history.
+      const callerToken = extractBearerToken(c.req.header("authorization"));
       const configuredToken = deps.adminToken?.trim() || undefined;
       if (configuredToken) {
         if (!callerToken || !tokensMatch(configuredToken, callerToken)) {

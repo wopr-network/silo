@@ -95,7 +95,9 @@ async function connectWS(
 	port: number,
 ): Promise<{ ws: WebSocket; messages: Array<Record<string, unknown>> }> {
 	const messages: Array<Record<string, unknown>> = [];
-	const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${ADMIN_TOKEN}`);
+	const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+		headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+	});
 
 	// Wait for snapshot (first message)
 	await new Promise<void>((res, rej) => {
