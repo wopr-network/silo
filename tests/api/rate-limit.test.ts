@@ -167,7 +167,7 @@ describe("Rate limiting — 429 enforcement", () => {
   });
 });
 
-describe("Rate limiting disabled by default (no config)", () => {
+describe("Rate limiting with defaults (no config override)", () => {
   let deps: Awaited<ReturnType<typeof makeTestDeps>>;
   let server: http.Server;
   let port: number;

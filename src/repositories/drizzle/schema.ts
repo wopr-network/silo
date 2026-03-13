@@ -1,4 +1,15 @@
-import { bigint, boolean, index, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  doublePrecision,
+  index,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 // ─── Integration Tables ───
 
@@ -438,3 +449,17 @@ export const entityMap = pgTable(
     index("entity_map_source_id_idx").on(t.sourceId),
   ],
 );
+
+// ─── Rate Limiting Table ───
+
+/**
+ * Persistent token-bucket state for rate limiting.
+ * Key format: "<limiter_name>:<ip>" — one row per (limiter, client IP).
+ * Replaces in-memory Maps to satisfy the "no in-memory stores" codebase convention.
+ */
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  key: text("key").primaryKey(),
+  tokens: doublePrecision("tokens").notNull(),
+  lastRefill: bigint("last_refill", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});

@@ -352,57 +352,68 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   const rlWindowMs = Math.max(deps.rateLimits?.windowMs ?? 60_000, RL_MIN_WINDOW_MS);
   const rlWriteMax = Math.max(deps.rateLimits?.writeMaxRequests ?? 30, RL_MIN_REQUESTS);
   const rlWorkerMax = Math.max(deps.rateLimits?.workerMaxRequests ?? 120, RL_MIN_REQUESTS);
-  const RL_MAX_ENTRIES = 10_000;
-
-  interface RateLimitEntry {
-    tokens: number;
-    lastRefill: number;
-  }
 
   function createRateLimiter(
+    limiterName: string,
     maxRequests: number,
     // biome-ignore lint/suspicious/noConfusingVoidType: Hono middleware next() returns void
   ): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
-    const buckets = new Map<string, RateLimitEntry>();
+    const refillRate = maxRequests / rlWindowMs; // tokens per ms
 
     return async (c, next) => {
+      // When no db is wired up, skip rate limiting (tests that don't pass db still work)
+      if (!deps.db) return next();
+
       const now = Date.now();
       // Use remote address as primary key; x-forwarded-for is not trusted without proxy config
       const connInfo = getConnInfo(c);
       const ip = connInfo.remote.address ?? "unknown";
+      const key = `${limiterName}:${ip}`;
 
-      let entry = buckets.get(ip);
-      if (!entry) {
-        // LRU eviction: remove the oldest entry instead of clearing all counters
-        if (buckets.size >= RL_MAX_ENTRIES) {
-          const oldestKey = buckets.keys().next().value;
-          if (oldestKey !== undefined) {
-            buckets.delete(oldestKey);
+      // Single-transaction token-bucket upsert: read current state, refill, decrement, write back.
+      // Uses ON CONFLICT DO UPDATE so the operation is atomic at the DB level.
+      const { rateLimitBuckets } = await import("../repositories/drizzle/schema.js");
+      const { sql } = await import("drizzle-orm");
+
+      const tokens = await deps.db.transaction(
+        async (tx: import("../repositories/drizzle/db-type.js").Db): Promise<number> => {
+          const rows = await tx.select().from(rateLimitBuckets).where(sql`key = ${key}`).limit(1);
+          const existing = rows[0];
+
+          let currentTokens: number;
+          if (existing) {
+            const elapsed = now - existing.lastRefill;
+            currentTokens = Math.min(maxRequests, existing.tokens + elapsed * refillRate);
+          } else {
+            currentTokens = maxRequests;
           }
-        }
-        entry = { tokens: maxRequests, lastRefill: now };
-        buckets.set(ip, entry);
-      }
 
-      // Refill tokens based on elapsed time (token bucket)
-      const elapsed = now - entry.lastRefill;
-      const refillRate = maxRequests / rlWindowMs; // tokens per ms
-      entry.tokens = Math.min(maxRequests, entry.tokens + elapsed * refillRate);
-      entry.lastRefill = now;
+          const newTokens = currentTokens - 1;
 
-      if (entry.tokens < 1) {
-        const retryAfterSec = Math.ceil((1 - entry.tokens) / refillRate / 1000);
+          await tx
+            .insert(rateLimitBuckets)
+            .values({ key, tokens: newTokens, lastRefill: now, updatedAt: now })
+            .onConflictDoUpdate({
+              target: rateLimitBuckets.key,
+              set: { tokens: newTokens, lastRefill: now, updatedAt: now },
+            });
+
+          return newTokens;
+        },
+      );
+
+      if (tokens < 0) {
+        const retryAfterSec = Math.ceil(-tokens / refillRate / 1000);
         c.header("Retry-After", String(retryAfterSec));
         return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
       }
 
-      entry.tokens -= 1;
       return next();
     };
   }
 
-  const writeRateLimiter = createRateLimiter(rlWriteMax);
-  const workerRateLimiter = createRateLimiter(rlWorkerMax);
+  const writeRateLimiter = createRateLimiter("write", rlWriteMax);
+  const workerRateLimiter = createRateLimiter("worker", rlWorkerMax);
 
   // ─── JSON body parser with explicit error ───
   async function parseJsonBody(c: import("hono").Context): Promise<Record<string, unknown> | null> {
