@@ -139,6 +139,15 @@ export interface HonoServerDeps {
   watchRepo?: WatchRepo;
   /** Event log — exposes ingest events via /api/events */
   eventLogRepo?: EventLogRepo;
+  /** Rate limit configuration. Omit to use defaults. */
+  rateLimits?: {
+    /** Max requests per window for write endpoints (POST /api/entities). Default: 30. */
+    writeMaxRequests?: number;
+    /** Max requests per window for worker endpoints (claim/report/fail). Default: 120. */
+    workerMaxRequests?: number;
+    /** Window duration in milliseconds. Default: 60_000 (1 minute). */
+    windowMs?: number;
+  };
 }
 
 // ─── Build the Hono app ───
@@ -335,6 +344,59 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     };
   }
 
+  // ─── Rate limiting ───
+
+  const rlWindowMs = deps.rateLimits?.windowMs ?? 60_000;
+  const rlWriteMax = deps.rateLimits?.writeMaxRequests ?? 30;
+  const rlWorkerMax = deps.rateLimits?.workerMaxRequests ?? 120;
+  const RL_MAX_ENTRIES = 10_000;
+
+  interface RateLimitEntry {
+    tokens: number;
+    lastRefill: number;
+  }
+
+  function createRateLimiter(
+    maxRequests: number,
+    // biome-ignore lint/suspicious/noConfusingVoidType: Hono middleware next() returns void
+  ): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
+    const buckets = new Map<string, RateLimitEntry>();
+
+    return async (c, next) => {
+      const now = Date.now();
+      const forwarded = c.req.header("x-forwarded-for");
+      const ip = forwarded?.split(",")[0]?.trim() || "unknown";
+
+      let entry = buckets.get(ip);
+      if (!entry) {
+        // Evict all entries if map grows too large to prevent unbounded memory growth
+        if (buckets.size >= RL_MAX_ENTRIES) {
+          buckets.clear();
+        }
+        entry = { tokens: maxRequests, lastRefill: now };
+        buckets.set(ip, entry);
+      }
+
+      // Refill tokens based on elapsed time (token bucket)
+      const elapsed = now - entry.lastRefill;
+      const refillRate = maxRequests / rlWindowMs; // tokens per ms
+      entry.tokens = Math.min(maxRequests, entry.tokens + elapsed * refillRate);
+      entry.lastRefill = now;
+
+      if (entry.tokens < 1) {
+        const retryAfterSec = Math.ceil((1 - entry.tokens) / refillRate / 1000);
+        c.header("Retry-After", String(retryAfterSec));
+        return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
+      }
+
+      entry.tokens -= 1;
+      return next();
+    };
+  }
+
+  const writeRateLimiter = createRateLimiter(rlWriteMax);
+  const workerRateLimiter = createRateLimiter(rlWorkerMax);
+
   // ─── JSON body parser with explicit error ───
   async function parseJsonBody(c: import("hono").Context): Promise<Record<string, unknown> | null> {
     try {
@@ -351,7 +413,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Claim (cross-flow) ───
-  app.post("/api/claim", requireWorkerAuth(), async (c) => {
+  app.post("/api/claim", workerRateLimiter, requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string };
@@ -361,7 +423,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Claim (flow-specific) ───
-  app.post("/api/flows/:flow/claim", requireWorkerAuth(), async (c) => {
+  app.post("/api/flows/:flow/claim", workerRateLimiter, requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string, flow: c.req.param("flow") };
@@ -371,7 +433,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Report (longRunning — no timeout) ───
-  app.post("/api/entities/:id/report", requireWorkerAuth(), async (c) => {
+  app.post("/api/entities/:id/report", workerRateLimiter, requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args: Record<string, unknown> = {
@@ -386,7 +448,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Fail ───
-  app.post("/api/entities/:id/fail", requireWorkerAuth(), async (c) => {
+  app.post("/api/entities/:id/fail", workerRateLimiter, requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { entity_id: c.req.param("id"), error: body.error as string };
@@ -396,7 +458,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Entity CRUD ───
-  app.post("/api/entities", requireWorkerAuth(), async (c) => {
+  app.post("/api/entities", writeRateLimiter, requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const flowName = body.flow as string;
