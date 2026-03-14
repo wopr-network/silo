@@ -265,10 +265,12 @@ export async function callTool(
     server.connect(serverTransport),
   ]);
 
-  const result = await client.callTool({ name: toolName, arguments: args });
-  await client.close();
-  await server.close();
-  return result;
+  try {
+    return await client.callTool({ name: toolName, arguments: args });
+  } finally {
+    await client.close();
+    await server.close();
+  }
 }
 
 /** Connect an in-memory MCP client+server pair and list all tools. */
@@ -287,13 +289,18 @@ export async function listTools(deps: McpServerDeps) {
     server.connect(serverTransport),
   ]);
 
-  const result = await client.listTools();
-  await client.close();
-  await server.close();
-  return result;
+  try {
+    return await client.listTools();
+  } finally {
+    await client.close();
+    await server.close();
+  }
 }
 
 /** Parse the first text content entry from a tool result. */
 export function parseResult(result: { content: Array<{ text: string }> }) {
+  if (result.content.length === 0) {
+    throw new Error("parseResult: tool result content array is empty");
+  }
   return JSON.parse(result.content[0].text);
 }

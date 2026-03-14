@@ -247,19 +247,6 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps = createMockDeps();
   });
 
-  async function callClaim(deps: McpServerDeps, args: Record<string, unknown>) {
-    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
-    const server = createMcpServer(deps);
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "test-client", version: "0.1.0" });
-    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
-    const result = await client.callTool({ name: "flow.claim", arguments: args });
-    await client.close();
-    await server.close();
-    return result;
-  }
-
   it("filters flows by discipline matching role", async () => {
     const engFlow = mockFlow({ id: "flow-eng", name: "feature-dev", discipline: "engineering" });
     const devopsFlow = mockFlow({ id: "flow-ops", name: "deploy", discipline: "devops" });
@@ -275,7 +262,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.invocations.claim = async (id) =>
       mockInvocation({ id, entityId: "ent-eng", claimedBy: "wkr_test", claimedAt: new Date() });
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim", { worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
 
     expect(data).not.toBeNull();
@@ -289,7 +276,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.flows.listAll = async () => [devopsFlow];
     deps.invocations.findUnclaimedByFlow = async () => [mockInvocation()];
 
-    const result = await callClaim(deps, { worker_id: "wkr_eng", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_eng", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
     expect((result as { isError?: boolean }).isError).toBeUndefined();
@@ -308,7 +295,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.invocations.claim = async (id) =>
       mockInvocation({ id, entityId: "ent-f2", claimedBy: "wkr_test", claimedAt: new Date() });
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data).not.toBeNull();
     expect(data.invocation_id).toBe("inv-f2");
@@ -331,7 +318,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.invocations.claim = async (id) =>
       mockInvocation({ id, entityId: id === "inv-high" ? "ent-high" : "ent-low", claimedBy: "wkr_test", claimedAt: new Date() });
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data).not.toBeNull();
     expect(data.invocation_id).toBe("inv-high");
@@ -361,7 +348,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.invocations.claim = async (id) =>
       mockInvocation({ id, entityId: id === "inv-affinity" ? "ent-affinity" : "ent-high", claimedBy: "wkr_test", claimedAt: new Date() });
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data).not.toBeNull();
     expect(data.invocation_id).toBe("inv-affinity");
@@ -385,7 +372,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.invocations.claim = async (id) =>
       mockInvocation({ id, entityId: id === "inv-old" ? "ent-old" : "ent-recent", claimedBy: "wkr_test", claimedAt: new Date() });
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data).not.toBeNull();
     expect(data.invocation_id).toBe("inv-old");
@@ -400,7 +387,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.entities.hasAnyInFlowAndState = async () => false;
     deps.entities.claim = async () => null;
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
     expect(data.retry_after_ms).toBe(300000);
@@ -410,7 +397,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     const devopsFlow = mockFlow({ id: "flow-ops", name: "deploy", discipline: "devops" });
     deps.flows.getByName = async (name) => (name === "deploy" ? devopsFlow : null);
 
-    const result = await callClaim(deps, { worker_id: "wkr_eng", role: "engineering", flow: "deploy" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_eng", role: "engineering", flow: "deploy" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
     expect(data.retry_after_ms).toBe(300000);
@@ -427,7 +414,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.entities.claimById = async () => null;
     deps.entities.hasAnyInFlowAndState = async () => true; // entities exist but all claimed
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "coder" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "coder" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
     expect(data.retry_after_ms).toBe(30000); // short retry: work exists but all busy
@@ -441,7 +428,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.entities.claim = async () => null; // no claimable entities
     deps.entities.claimById = async () => null;
 
-    const result = await callClaim(deps, { worker_id: "wkr_test", role: "coder" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_test", role: "coder" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
   });
@@ -454,7 +441,7 @@ describe("flow.claim discipline routing (WOP-1890)", () => {
     deps.entities.claim = async () => null; // all claimed by others
     deps.entities.claimById = async () => null;
 
-    const result = await callClaim(deps, { worker_id: "wkr_eng", role: "engineering" });
+    const result = await callTool(deps, "flow.claim",{ worker_id: "wkr_eng", role: "engineering" });
     const data = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
     expect(data.next_action).toBe("check_back");
   });
