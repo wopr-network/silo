@@ -93,6 +93,10 @@ describe("LinearClient.searchIssues", () => {
 describe("LinearClient respects LINEAR_API_URL env var", () => {
   const ORIGINAL_ENV = process.env.LINEAR_API_URL;
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     if (ORIGINAL_ENV === undefined) {
       delete process.env.LINEAR_API_URL;
