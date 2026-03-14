@@ -517,10 +517,6 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
 
-  app.delete("/api/flows/:id", requireAdminAuth(), async (c) => {
-    return c.json({ error: "Flow deletion not implemented" }, 501);
-  });
-
   // ─── Admin routes ───
   const admin = new Hono();
 

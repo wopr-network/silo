@@ -128,12 +128,12 @@ describe("HTTP Server - basic", () => {
     expect(res.status).toBe(204);
   });
 
-  it("DELETE /api/flows/:id returns 501", async () => {
+  it("DELETE /api/flows/:id returns 404 (route removed)", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/flows/some-flow`, {
       method: "DELETE",
       headers: adminHeaders,
     });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(404);
   });
 
   it("POST /api/flows/:flow/claim returns 204 when no work available", async () => {

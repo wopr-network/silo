@@ -98,7 +98,6 @@ describe("Auth boundary — unauthenticated requests", () => {
     { method: "POST", path: "/api/admin/workers/fake-id/undrain" },
     { method: "POST", path: "/api/admin/entities/fake-id/gates/fake-gate/rerun" },
     { method: "PUT", path: "/api/flows/outer-test-flow", body: { definition: {} } },
-    { method: "DELETE", path: "/api/flows/outer-test-flow" },
     { method: "POST", path: "/api/admin/integrations", body: { name: "test" } },
     { method: "GET", path: "/api/admin/integrations" },
     { method: "GET", path: "/api/admin/integrations/fake-id" },

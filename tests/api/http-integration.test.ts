@@ -205,12 +205,12 @@ describe("HTTP integration — admin endpoints", () => {
     expect(entity.state).toBe("cancelled");
   });
 
-  it("DELETE /api/flows/:id returns 501 (not implemented)", async () => {
+  it("DELETE /api/flows/:id returns 404 (route removed)", async () => {
     const res = await t.app.request("/api/flows/outer-test-flow", {
       method: "DELETE",
       headers: adminHeaders(),
     });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(404);
   });
 
   it("GET /api/pool/slots returns shape even without pool", async () => {
