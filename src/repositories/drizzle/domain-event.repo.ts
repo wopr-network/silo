@@ -41,7 +41,7 @@ export class DrizzleDomainEventRepository implements IDomainEventRepository {
     type: string,
     entityId: string,
     payload: Record<string, unknown>,
-    expectedSequence: number,
+    expectedSequence?: number,
   ): Promise<DomainEvent | null> {
     try {
       return await this.db.transaction(async (tx: Db) => {
@@ -50,10 +50,10 @@ export class DrizzleDomainEventRepository implements IDomainEventRepository {
           .from(domainEvents)
           .where(and(eq(domainEvents.entityId, entityId), eq(domainEvents.tenantId, this.tenantId)));
         const currentSeq = Number(currentRow?.maxSeq) || 0;
-        if (currentSeq !== expectedSequence) {
+        if (expectedSequence !== undefined && currentSeq !== expectedSequence) {
           return null;
         }
-        const newSequence = expectedSequence + 1;
+        const newSequence = currentSeq + 1;
         const id = randomUUID();
         const emittedAt = Date.now();
         await tx

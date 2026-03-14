@@ -475,12 +475,13 @@ export interface IDomainEventRepository {
   getLastSequence(entityId: string): Promise<number>;
 
   /** Append a domain event only if the entity's current max sequence equals expectedSequence.
+   *  When expectedSequence is omitted, reads current sequence inside the transaction (no external hint needed).
    *  Returns the event on success, or null if another writer won (unique constraint violation). */
   appendCas(
     type: string,
     entityId: string,
     payload: Record<string, unknown>,
-    expectedSequence: number,
+    expectedSequence?: number,
   ): Promise<DomainEvent | null>;
 }
 

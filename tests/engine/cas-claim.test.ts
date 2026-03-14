@@ -179,12 +179,12 @@ describe("Engine CAS claim", () => {
     const result = await engine.claimWork("engineering");
     expect(result).not.toBeNull();
     expect(result).not.toBe("all_claimed");
-    expect(domainEventRepo.getLastSequence).toHaveBeenCalledWith("ent-1");
+    // getLastSequence should NOT be called — appendCas handles sequence internally
+    expect(domainEventRepo.getLastSequence).not.toHaveBeenCalled();
     expect(domainEventRepo.appendCas).toHaveBeenCalledWith(
       "invocation.claim_attempted",
       "ent-1",
       expect.objectContaining({ agentId: "agent:engineering" }),
-      3,
     );
   });
 

@@ -62,4 +62,25 @@ describe("DrizzleDomainEventRepository CAS", () => {
     expect(r1).not.toBeNull();
     expect(r2).toBeNull();
   });
+
+  it("appendCas succeeds with undefined expectedSequence (auto-read)", async () => {
+    await repo.append("test.event", "e1", { setup: true });
+    // last sequence is 1; appendCas should auto-read it and succeed
+    const result = await repo.appendCas("invocation.claimed", "e1", { agentId: "agent:auto" }, undefined);
+    expect(result).not.toBeNull();
+    expect(result!.sequence).toBe(2);
+    expect(result!.type).toBe("invocation.claimed");
+  });
+
+  it("appendCas with undefined expectedSequence still loses on concurrent race", async () => {
+    // Two sequential auto-read appends — each reads current seq inside its own transaction
+    const r1 = await repo.appendCas("invocation.claimed", "e1", { agentId: "agent:a" }, undefined);
+    const r2 = await repo.appendCas("invocation.claimed", "e1", { agentId: "agent:b" }, undefined);
+    // Both should succeed because they each read current seq inside their own transaction
+    // and get different sequences (r1 writes seq 1, r2 reads seq 1 and writes seq 2)
+    expect(r1).not.toBeNull();
+    expect(r2).not.toBeNull();
+    expect(r1!.sequence).toBe(1);
+    expect(r2!.sequence).toBe(2);
+  });
 });

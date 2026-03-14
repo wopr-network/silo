@@ -780,15 +780,14 @@ export class Engine {
       const entityClaimToken = worker_id ?? `agent:${role}`;
 
       // CAS guard: atomically append an invocation.claimed event using optimistic concurrency.
+      // appendCas reads current sequence inside its own transaction — no external hint needed.
       // Only one writer wins the unique (entityId, sequence) constraint — losers move to the next candidate.
       if (this.domainEventRepo) {
-        const lastSeq = await this.domainEventRepo.getLastSequence(entity.id);
-        const casResult = await this.domainEventRepo.appendCas(
-          "invocation.claim_attempted",
-          entity.id,
-          { agentId: entityClaimToken, invocationId: pending.id, stage: pending.stage },
-          lastSeq,
-        );
+        const casResult = await this.domainEventRepo.appendCas("invocation.claim_attempted", entity.id, {
+          agentId: entityClaimToken,
+          invocationId: pending.id,
+          stage: pending.stage,
+        });
         if (!casResult) continue; // Another agent won the race
       }
 
