@@ -146,7 +146,7 @@ export class LinearClient {
       const res = await fetch(LINEAR_API_URL, {
         method: "POST",
         headers: {
-          Authorization: this.apiKey,
+          Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ query, variables }),
@@ -189,7 +189,7 @@ export class LinearClient {
     const res = await fetch(LINEAR_API_URL, {
       method: "POST",
       headers: {
-        Authorization: this.apiKey,
+        Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query: ISSUE_WITH_RELATIONS_QUERY, variables: { id: issueId } }),

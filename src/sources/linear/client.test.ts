@@ -79,4 +79,13 @@ describe("LinearClient.searchIssues", () => {
     expect(body.query).toContain("$teamIds");
     expect(body.query).not.toContain("$stateName");
   });
+
+  it("sends Authorization header with Bearer prefix", async () => {
+    mockFetch.mockResolvedValueOnce(mockLinearResponse([]));
+
+    await client.searchIssues({ stateName: "In Progress" });
+
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe("Bearer test-key");
+  });
 });
