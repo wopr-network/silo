@@ -1,4 +1,5 @@
 import { DEFAULT_TIMEOUT_PROMPT } from "../../engine/constants.js";
+import { logger } from "../../logger.js";
 import type { McpServerDeps } from "../mcp-helpers.js";
 import { errorResult, jsonResult, validateInput } from "../mcp-helpers.js";
 import { FlowClaimSchema, FlowFailSchema, FlowGetPromptSchema, FlowReportSchema } from "../tool-schemas.js";
@@ -153,7 +154,10 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
     try {
       claimedEntity = await deps.entities.claimById(entity.id, claimerId);
     } catch (err) {
-      console.error(`Failed to claim entity ${entity.id}:`, err);
+      logger.error("[flow.claim] Failed to claim entity", {
+        entityId: entity.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
     if (!claimedEntity) {
@@ -173,7 +177,11 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
     try {
       claimed = await deps.invocations.claim(invocation.id, claimerId);
     } catch (err) {
-      console.error(`Failed to claim invocation ${invocation.id}:`, err);
+      logger.error("[flow.claim] Failed to claim invocation", {
+        invocationId: invocation.id,
+        entityId: entity.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
       if (entity && claimedEntity) {
         await deps.entities.release(entity.id, claimerId).catch(() => {});
       }
@@ -201,7 +209,11 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
         const windowMs = flow.affinityWindowMs ?? 300000;
         await deps.entities.setAffinity(claimed.entityId, worker_id, role, new Date(Date.now() + windowMs));
       } catch (err) {
-        console.error(`Failed to set affinity for entity ${claimed.entityId}:`, err);
+        logger.error("[flow.claim] Failed to set affinity", {
+          entityId: claimed.entityId,
+          worker_id: worker_id,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     // Finding 2: Emit entity.claimed event for WebSocket broadcast.
@@ -215,7 +227,11 @@ export async function handleFlowClaim(deps: McpServerDeps, args: Record<string, 
           emittedAt: new Date(),
         })
         .catch((err: unknown) => {
-          console.error(`Failed to emit entity.claimed for entity ${entity.id}:`, err);
+          logger.error("[flow.claim] Failed to emit entity.claimed event", {
+            entityId: entity.id,
+            claimerId,
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
     }
 
@@ -317,7 +333,12 @@ export async function handleFlowReport(deps: McpServerDeps, args: Record<string,
         }
       }
     } catch (err) {
-      console.error(`Failed to set affinity for entity ${entityId} worker ${worker_id}:`, err);
+      logger.error("[flow.report] Failed to set affinity", {
+        entityId,
+        invocationId: activeInvocation.id,
+        worker_id: worker_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
