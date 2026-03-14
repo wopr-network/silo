@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinearClient } from "./client.js";
 
 const mockFetch = vi.fn();
@@ -87,5 +87,46 @@ describe("LinearClient.searchIssues", () => {
 
     const headers = mockFetch.mock.calls[0][1].headers;
     expect(headers.Authorization).toBe("Bearer test-key");
+  });
+});
+
+describe("LinearClient respects LINEAR_API_URL env var", () => {
+  const ORIGINAL_ENV = process.env.LINEAR_API_URL;
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) {
+      delete process.env.LINEAR_API_URL;
+    } else {
+      process.env.LINEAR_API_URL = ORIGINAL_ENV;
+    }
+  });
+
+  it("uses default URL when env var is not set", async () => {
+    delete process.env.LINEAR_API_URL;
+
+    vi.resetModules();
+    vi.stubGlobal("fetch", mockFetch);
+    const { LinearClient: FreshClient } = await import("./client.js");
+    const c = new FreshClient({ apiKey: "test-key" });
+
+    mockFetch.mockResolvedValueOnce(mockLinearResponse([]));
+    await c.searchIssues({ stateName: "Todo" });
+
+    expect(mockFetch.mock.calls[0][0]).toBe("https://api.linear.app/graphql");
+  });
+
+  it("uses custom URL from env var", async () => {
+    process.env.LINEAR_API_URL = "https://proxy.example.com/graphql";
+
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockFetch);
+    const { LinearClient: FreshClient } = await import("./client.js");
+    const c = new FreshClient({ apiKey: "test-key" });
+
+    mockFetch.mockResolvedValueOnce(mockLinearResponse([]));
+    await c.searchIssues({ stateName: "Todo" });
+
+    expect(mockFetch.mock.calls[0][0]).toBe("https://proxy.example.com/graphql");
   });
 });

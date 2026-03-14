@@ -10,6 +10,7 @@ import type { DispatchOpts, INukeDispatcher, WorkerResult } from "./types.js";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_AGENTS_DIR = join(homedir(), ".claude", "agents");
+const LINEAR_MCP_URL = process.env.LINEAR_MCP_URL ?? "https://mcp.linear.app/mcp";
 
 const MODEL_MAP: Record<DispatchOpts["modelTier"], string> = {
   opus: "claude-opus-4-6",
@@ -104,13 +105,7 @@ export class SdkDispatcher implements INukeDispatcher {
             "linear-server": {
               type: "stdio" as const,
               command: "npx",
-              args: [
-                "-y",
-                "mcp-remote",
-                "https://mcp.linear.app/mcp",
-                "--header",
-                `Authorization: Bearer ${linearApiKey}`,
-              ],
+              args: ["-y", "mcp-remote", LINEAR_MCP_URL, "--header", `Authorization: Bearer ${linearApiKey}`],
               env,
             },
           }

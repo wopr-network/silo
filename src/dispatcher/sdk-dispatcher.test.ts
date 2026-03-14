@@ -129,6 +129,45 @@ describe("SdkDispatcher", () => {
     expect(result.exitCode).toBe(1);
   });
 
+  it("uses LINEAR_MCP_URL env var for MCP server args", async () => {
+    const repo = makeRepo();
+    const originalMcpUrl = process.env.LINEAR_MCP_URL;
+    const originalKey = process.env.LINEAR_API_KEY;
+    process.env.LINEAR_MCP_URL = "https://custom-mcp.example.com/mcp";
+    process.env.LINEAR_API_KEY = "lin_api_test123";
+
+    vi.resetModules();
+
+    // Re-mock after resetModules
+    vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(),
+    }));
+    const { query: freshQuery } = await import("@anthropic-ai/claude-agent-sdk");
+    const freshMockQuery = vi.mocked(freshQuery);
+    vi.clearAllMocks();
+    freshMockQuery.mockReturnValue(
+      makeStream([
+        { type: "result", subtype: "success", is_error: false, total_cost_usd: 0, stop_reason: "end_turn" },
+      ]) as ReturnType<typeof freshQuery>,
+    );
+
+    const { SdkDispatcher: FreshDispatcher } = await import("./sdk-dispatcher.js");
+    const dispatcher = new FreshDispatcher(repo);
+    await dispatcher.dispatch("work", { entityId: "e1", workerId: "s", modelTier: "haiku" });
+
+    const callArgs = freshMockQuery.mock.lastCall?.[0] as {
+      options: { mcpServers?: Record<string, { args: string[] }> };
+    };
+    const mcpArgs = callArgs?.options?.mcpServers?.["linear-server"]?.args;
+    expect(mcpArgs).toContain("https://custom-mcp.example.com/mcp");
+
+    // Restore
+    if (originalMcpUrl === undefined) delete process.env.LINEAR_MCP_URL;
+    else process.env.LINEAR_MCP_URL = originalMcpUrl;
+    if (originalKey === undefined) delete process.env.LINEAR_API_KEY;
+    else process.env.LINEAR_API_KEY = originalKey;
+  });
+
   it("returns timeout when abort fires", async () => {
     const repo = makeRepo();
     // Stream that hangs until aborted

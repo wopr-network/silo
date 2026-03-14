@@ -1,6 +1,6 @@
 import type { LinearIssue, LinearIssueState, LinearRelation, LinearSearchIssue } from "./types.js";
 
-const LINEAR_API_URL = "https://api.linear.app/graphql";
+const LINEAR_API_URL = process.env.LINEAR_API_URL ?? "https://api.linear.app/graphql";
 
 function buildSearchQuery(filter: { stateName?: string; teamIds?: string[] }): string {
   const hasState = filter.stateName !== undefined;
