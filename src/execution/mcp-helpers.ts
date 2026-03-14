@@ -28,10 +28,11 @@ export function jsonResult(data: unknown) {
   };
 }
 
-export function errorResult(message: string) {
+export function errorResult(message: string, errorCode?: string) {
   return {
     content: [{ type: "text" as const, text: message }],
     isError: true,
+    ...(errorCode !== undefined && { errorCode }),
   };
 }
 

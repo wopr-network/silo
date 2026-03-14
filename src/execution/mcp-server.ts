@@ -670,6 +670,10 @@ export async function callToolHandler(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const { NotFoundError, ValidationError, ConflictError } = await import("../errors.js");
+    if (err instanceof NotFoundError) return errorResult(message, "NOT_FOUND");
+    if (err instanceof ValidationError) return errorResult(message, "VALIDATION");
+    if (err instanceof ConflictError) return errorResult(message, "CONFLICT");
     return errorResult(message);
   }
 }
@@ -680,10 +684,11 @@ function jsonResult(data: unknown) {
   };
 }
 
-function errorResult(message: string) {
+function errorResult(message: string, errorCode?: string) {
   return {
     content: [{ type: "text" as const, text: message }],
     isError: true,
+    ...(errorCode !== undefined && { errorCode }),
   };
 }
 

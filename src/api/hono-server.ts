@@ -14,6 +14,7 @@ import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";
 import { Engine } from "../engine/engine.js";
 import { EventEmitter } from "../engine/event-emitter.js";
 import type { EngineEvent, IEventBusAdapter } from "../engine/event-types.js";
+import { NotFoundError } from "../errors.js";
 import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
 import type { Logger } from "../logger.js";
@@ -77,7 +78,11 @@ export class HonoSseAdapter implements IEventBusAdapter {
 
 // ─── Unwrap MCP tool result → { status, body } ───
 
-function mcpResultToResponse(result: { content: { type: string; text: string }[]; isError?: boolean }): {
+function mcpResultToResponse(result: {
+  content: { type: string; text: string }[];
+  isError?: boolean;
+  errorCode?: string;
+}): {
   status: number;
   body: unknown;
 } {
@@ -93,6 +98,14 @@ function mcpResultToResponse(result: { content: { type: string; text: string }[]
     const msg =
       typeof body === "object" && body !== null && "message" in body ? (body as Record<string, unknown>).message : text;
     const msgStr = String(msg);
+
+    // Prefer typed error codes (set by callToolHandler when catching SiloError subclasses)
+    if (result.errorCode === "NOT_FOUND") return { status: 404, body: { error: msgStr } };
+    if (result.errorCode === "VALIDATION") return { status: 400, body: { error: msgStr } };
+    if (result.errorCode === "CONFLICT") return { status: 409, body: { error: msgStr } };
+    if (result.errorCode === "UNAUTHORIZED") return { status: 401, body: { error: msgStr } };
+
+    // Fallback: string matching for handler-level errorResult() calls that don't throw
     if (msgStr.includes("not found") || msgStr.includes("Not found")) return { status: 404, body: { error: msgStr } };
     if (msgStr.includes("Unauthorized")) return { status: 401, body: { error: msgStr } };
     if (msgStr.includes("Validation error")) return { status: 400, body: { error: msgStr } };
@@ -494,7 +507,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       return c.json(entity as unknown as Record<string, unknown>, 201);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("not found")) return c.json({ error: msg }, 404);
+      if (err instanceof NotFoundError) return c.json({ error: msg }, 404);
       return c.json({ error: msg }, 500);
     }
   });
