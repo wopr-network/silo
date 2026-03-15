@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HolyshipClient } from "../holyship-client/client.js";
-import type { IEntityMapRepository } from "../radar-db/repos/entity-map-repo.js";
+import type { IEntityMapRepository } from "./ingestor.js";
 import { Ingestor } from "./ingestor.js";
 
 function makeEntityMapRepo(overrides: Partial<Record<keyof IEntityMapRepository, unknown>> = {}): IEntityMapRepository {

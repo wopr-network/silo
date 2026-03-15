@@ -100,7 +100,7 @@ export async function loadSeed(seedPath: string, deps: LoadSeedDeps): Promise<Lo
   for (const flow of seed.flows) {
     if (!flow.discipline) {
       logger.warn(
-        `[radar] WARNING: flow "${flow.name}" has no discipline — workers will not claim its entities. Add "discipline": "<role>" to the flow definition.`,
+        `[holyship] WARNING: flow "${flow.name}" has no discipline — workers will not claim its entities. Add "discipline": "<role>" to the flow definition.`,
       );
     }
     // PUT /api/flows/:id is idempotent — creates the flow if absent, updates it if already present.

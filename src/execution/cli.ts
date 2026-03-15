@@ -7,11 +7,19 @@ import { Command } from "commander";
 import { eq } from "drizzle-orm";
 import type postgres from "postgres";
 import { startHonoServer, HonoSseAdapter as UiSseAdapter } from "../api/hono-server.js";
-import { extractBearerToken, tokensMatch } from "../auth.js";
 import { DATABASE_URL } from "../config/db-url.js";
 import { exportSeed } from "../config/exporter.js";
 import { loadSeed } from "../config/seed-loader.js";
-import { resolveCorsOrigin } from "../cors.js";
+
+function extractBearerToken(header: string | undefined): string | undefined {
+  if (!header?.startsWith("Bearer ")) return undefined;
+  return header.slice(7).trim() || undefined;
+}
+
+function tokensMatch(a: string, b: string): boolean {
+  return a === b;
+}
+
 import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";
 import { Engine } from "../engine/engine.js";
 import { EventEmitter } from "../engine/event-emitter.js";
@@ -32,7 +40,6 @@ import { EventSourcedEntityRepository } from "../repositories/event-sourced/enti
 import { EventSourcedInvocationRepository } from "../repositories/event-sourced/invocation.repo.js";
 import type { IEntityRepository, IInvocationRepository } from "../repositories/interfaces.js";
 import { createScopedRepos } from "../repositories/scoped-repos.js";
-import { WebSocketBroadcaster } from "../ws/broadcast.js";
 import type { McpServerDeps, McpServerOpts } from "./mcp-server.js";
 import { createMcpServer, startStdioServer } from "./mcp-server.js";
 
@@ -233,7 +240,6 @@ program
         };
       },
       domainEvents: domainEventRepo,
-      integrationRepo: repos.integrations,
     });
 
     const deps: McpServerDeps = {
@@ -244,7 +250,6 @@ program
       transitions: transitionLogRepo,
       eventRepo: repos.events,
       domainEvents: domainEventRepo,
-      integrations: repos.integrations,
       engine,
       withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
       repoFactory: (tx) => {
@@ -314,15 +319,10 @@ program
     if (startHttp) {
       const httpPort = parseInt(opts.httpPort as string, 10);
       const httpHost = opts.httpHost as string;
-      let restCorsResult: ReturnType<typeof resolveCorsOrigin>;
-      try {
-        restCorsResult = resolveCorsOrigin({ host: httpHost, corsEnv: process.env.HOLYSHIP_CORS_ORIGIN });
-      } catch (err: unknown) {
-        console.error((err as Error).message);
-        await stopReaper();
-        await client.end();
-        process.exit(1);
-      }
+      const corsOrigins =
+        process.env.HOLYSHIP_CORS_ORIGIN?.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean) ?? [];
       const uiSseAdapter = opts.ui ? new UiSseAdapter() : undefined;
       const honoResult = startHonoServer(
         {
@@ -345,7 +345,7 @@ program
           },
           adminToken,
           workerToken,
-          corsOrigins: restCorsResult.origins ?? undefined,
+          corsOrigins: corsOrigins.length > 0 ? corsOrigins : undefined,
           enableUi: !!opts.ui,
           sseAdapter: uiSseAdapter,
         },
@@ -355,14 +355,6 @@ program
       restHttpServer = honoResult.server;
       if (uiSseAdapter) {
         eventEmitter.register(uiSseAdapter);
-      }
-      if (adminToken) {
-        const wsBroadcaster = new WebSocketBroadcaster({
-          server: restHttpServer,
-          engine,
-          adminToken,
-        });
-        eventEmitter.register(wsBroadcaster);
       }
       console.error(`HTTP REST API listening on ${httpHost}:${httpPort}`);
     }
@@ -378,16 +370,11 @@ program
       const sessionTokens = new Map<string, string | undefined>();
 
       const host = opts.host as string;
-      let corsResult: ReturnType<typeof resolveCorsOrigin>;
-      try {
-        corsResult = resolveCorsOrigin({ host, corsEnv: process.env.HOLYSHIP_CORS_ORIGIN });
-      } catch (err: unknown) {
-        console.error((err as Error).message);
-        await stopReaper();
-        await client.end();
-        process.exit(1);
-      }
-      const allowedOriginSet: Set<string> | null = corsResult.origins ? new Set(corsResult.origins) : null;
+      const sseCorsOrigins =
+        process.env.HOLYSHIP_CORS_ORIGIN?.split(",")
+          .map((s) => s.trim())
+          .filter(Boolean) ?? [];
+      const allowedOriginSet: Set<string> | null = sseCorsOrigins.length > 0 ? new Set(sseCorsOrigins) : null;
       const loopbackPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
       const httpServer = http.createServer(async (req, res) => {
@@ -456,7 +443,6 @@ program
                 };
               },
               domainEvents: sessionRepos.domainEvents,
-              integrationRepo: sessionRepos.integrations,
             });
             // Start a reaper for this tenant so stale claims get cleaned up.
             sessionEngine.startReaper(reaperInterval, claimTtl);
@@ -468,7 +454,6 @@ program
               transitions: sessionRepos.transitionLog,
               eventRepo: sessionRepos.events,
               domainEvents: sessionRepos.domainEvents,
-              integrations: sessionRepos.integrations,
               engine: sessionEngine,
               withTransaction: (fn) => db.transaction(async (tx) => fn(tx)),
               repoFactory: (tx) => {
@@ -657,9 +642,6 @@ export function makeShutdownHandler(opts: {
       });
   };
 }
-
-// extractBearerToken is re-exported from ../auth.js
-export { extractBearerToken } from "../auth.js";
 
 /**
  * Resolves the MCP session ID for POST /messages routing.

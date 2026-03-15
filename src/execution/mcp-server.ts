@@ -31,8 +31,6 @@ import {
   AdminGateAttachSchema,
   AdminGateCreateSchema,
   AdminGateRerunSchema,
-  AdminIntegrationCreateSchema,
-  AdminIntegrationUpdateSchema,
   AdminStateCreateSchema,
   AdminStateUpdateSchema,
   AdminTransitionCreateSchema,
@@ -60,7 +58,6 @@ export interface McpServerDeps {
   transitions: ITransitionLogRepository;
   eventRepo: IEventRepository;
   domainEvents?: IDomainEventRepository;
-  integrations?: import("../integrations/repo.js").IIntegrationRepository;
   engine?: Engine;
   logger?: Logger;
   // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
@@ -496,61 +493,6 @@ const TOOL_DEFINITIONS = [
       required: ["entity_id"],
     },
   },
-  // ─── Integration tools ───
-  {
-    name: "admin.integration.create",
-    description:
-      "Register a new integration (issue tracker or VCS) for this tenant. Credentials are encrypted at rest.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        name: { type: "string", description: "Unique integration name (e.g. 'acme-github')" },
-        category: { type: "string", description: "issue_tracker | vcs" },
-        provider: { type: "string", description: "linear | jira | github_issues | github | gitlab" },
-        credentials: { type: "object", description: "Provider credentials (accessToken, etc.)" },
-      },
-      required: ["name", "category", "provider", "credentials"],
-    },
-  },
-  {
-    name: "admin.integration.list",
-    description: "List all integrations for this tenant, optionally filtered by category.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { category: { type: "string", description: "Optional: issue_tracker | vcs" } },
-      required: [],
-    },
-  },
-  {
-    name: "admin.integration.get",
-    description: "Get metadata for a specific integration by ID.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { integration_id: { type: "string", description: "Integration ID" } },
-      required: ["integration_id"],
-    },
-  },
-  {
-    name: "admin.integration.update",
-    description: "Update credentials for an existing integration.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        integration_id: { type: "string", description: "Integration ID" },
-        credentials: { type: "object", description: "New provider credentials" },
-      },
-      required: ["integration_id", "credentials"],
-    },
-  },
-  {
-    name: "admin.integration.delete",
-    description: "Delete an integration. Flows that reference it will fail when evaluating primitive gates.",
-    inputSchema: {
-      type: "object" as const,
-      properties: { integration_id: { type: "string", description: "Integration ID" } },
-      required: ["integration_id"],
-    },
-  },
 ];
 
 export function createMcpServer(deps: McpServerDeps, opts?: McpServerOpts): Server {
@@ -657,16 +599,6 @@ export async function callToolHandler(
         return await handleAdminGateRerun(deps, safeArgs);
       case "admin.events.list":
         return await handleAdminEventsList(deps, safeArgs);
-      case "admin.integration.create":
-        return await handleAdminIntegrationCreate(deps, safeArgs);
-      case "admin.integration.list":
-        return await handleAdminIntegrationList(deps, safeArgs);
-      case "admin.integration.get":
-        return await handleAdminIntegrationGet(deps, safeArgs);
-      case "admin.integration.update":
-        return await handleAdminIntegrationUpdate(deps, safeArgs);
-      case "admin.integration.delete":
-        return await handleAdminIntegrationDelete(deps, safeArgs);
       default:
         return errorResult(`Unknown tool: ${name}`);
     }
@@ -1345,76 +1277,4 @@ async function handleAdminEventsList(deps: McpServerDeps, args: Record<string, u
     limit: parsed.data.limit,
   });
   return { content: [{ type: "text" as const, text: JSON.stringify(events, null, 2) }] };
-}
-
-// ─── Integration Admin Handlers ───
-
-async function handleAdminIntegrationCreate(deps: McpServerDeps, args: Record<string, unknown>) {
-  const v = validateInput(AdminIntegrationCreateSchema, args);
-  if (!v.ok) return v.result;
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const row = await deps.integrations.create(v.data);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    createdAt: row.createdAt,
-  });
-}
-
-async function handleAdminIntegrationList(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const category = typeof args.category === "string" ? args.category : undefined;
-  const rows = category
-    ? await deps.integrations.listByCategory(category as import("../integrations/types.js").IntegrationCategory)
-    : await deps.integrations.list();
-  return jsonResult(
-    rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      provider: r.provider,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    })),
-  );
-}
-
-async function handleAdminIntegrationGet(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const id = typeof args.integration_id === "string" ? args.integration_id : undefined;
-  if (!id) return errorResult("integration_id is required");
-  const row = await deps.integrations.getById(id);
-  if (!row) return errorResult(`Integration not found: ${id}`);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  });
-}
-
-async function handleAdminIntegrationUpdate(deps: McpServerDeps, args: Record<string, unknown>) {
-  const v = validateInput(AdminIntegrationUpdateSchema, args);
-  if (!v.ok) return v.result;
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const row = await deps.integrations.updateCredentials(v.data.integration_id, v.data.credentials);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    updatedAt: row.updatedAt,
-  });
-}
-
-async function handleAdminIntegrationDelete(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const id = typeof args.integration_id === "string" ? args.integration_id : undefined;
-  if (!id) return errorResult("integration_id is required");
-  await deps.integrations.delete(id);
-  return jsonResult({ deleted: true, id });
 }

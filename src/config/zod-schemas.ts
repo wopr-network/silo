@@ -1,7 +1,18 @@
 import { z } from "zod/v4";
 import { validateGateCommand } from "../engine/gate-command-validator.js";
 import { validateTemplate } from "../engine/handlebars.js";
-import { PRIMITIVE_OPS } from "../integrations/types.js";
+
+/** Primitive op identifiers — formerly in integrations/types.ts, inlined here after adapter layer removal. */
+const PRIMITIVE_OPS = [
+  "vcs.provision_worktree",
+  "vcs.cleanup_worktree",
+  "vcs.get_pr_status",
+  "vcs.create_branch",
+  "issue_tracker.fetch_comment",
+  "issue_tracker.post_comment",
+  "issue_tracker.get_issue",
+  "issue_tracker.update_issue",
+] as const;
 
 // ─── Leaf Schemas ───
 
@@ -57,7 +68,7 @@ export const StateDefinitionSchema = z.object({
   onEnter: OnEnterSchema.optional(),
   onExit: OnExitSchema.optional(),
   retryAfterMs: z.number().int().min(0).optional(),
-  /** Opaque metadata passed through to consumers (e.g. radar). Holyship stores but does not interpret. */
+  /** Opaque metadata passed through to consumers. Holyship stores but does not interpret. */
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 

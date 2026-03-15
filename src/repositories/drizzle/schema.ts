@@ -336,7 +336,7 @@ export const entitySnapshots = pgTable(
   ],
 );
 
-// ─── Worker Pool Tables (merged from radar-db) ───
+// ─── Legacy tables (to be removed) ───
 
 export const sources = pgTable(
   "sources",

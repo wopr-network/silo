@@ -1,5 +1,3 @@
-import type { IIntegrationRepository } from "../integrations/repo.js";
-import { DrizzleIntegrationRepository } from "../integrations/repo.js";
 import { DrizzleDomainEventRepository } from "./drizzle/domain-event.repo.js";
 import { DrizzleEntityRepository } from "./drizzle/entity.repo.js";
 import { DrizzleEntitySnapshotRepository } from "./drizzle/entity-snapshot.repo.js";
@@ -28,7 +26,6 @@ export interface ScopedRepos {
   events: IEventRepository;
   domainEvents: IDomainEventRepository;
   snapshots: IEntitySnapshotRepository;
-  integrations: IIntegrationRepository;
 }
 
 /**
@@ -46,6 +43,5 @@ export function createScopedRepos(db: any, tenantId: string): ScopedRepos {
     events: new DrizzleEventRepository(db, tenantId),
     domainEvents: new DrizzleDomainEventRepository(db, tenantId),
     snapshots: new DrizzleEntitySnapshotRepository(db, tenantId),
-    integrations: new DrizzleIntegrationRepository(db, tenantId),
   };
 }

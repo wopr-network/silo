@@ -114,7 +114,7 @@ export interface State {
   onExit: OnExitConfig | null;
   /** Override check_back delay for workers claiming this state. Falls back to Flow.claimRetryAfterMs. */
   retryAfterMs: number | null;
-  /** Opaque metadata passed through to consumers (e.g. radar). Holyship stores but does not interpret. */
+  /** Opaque metadata passed through to consumers. Holyship stores but does not interpret. */
   meta: Record<string, unknown> | null;
 }
 
