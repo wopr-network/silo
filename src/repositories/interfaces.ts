@@ -114,7 +114,7 @@ export interface State {
   onExit: OnExitConfig | null;
   /** Override check_back delay for workers claiming this state. Falls back to Flow.claimRetryAfterMs. */
   retryAfterMs: number | null;
-  /** Opaque metadata passed through to consumers (e.g. radar). Holyship stores but does not interpret. */
+  /** Opaque metadata passed through to consumers. Holyship stores but does not interpret. */
   meta: Record<string, unknown> | null;
 }
 
@@ -177,6 +177,10 @@ export interface Flow {
   issueTrackerIntegrationId: string | null;
   /** Integration scoping: which VCS this flow uses for primitive ops. */
   vcsIntegrationId: string | null;
+  /** Maximum credits an entity may consume before being budget-capped. */
+  maxCreditsPerEntity: number | null;
+  /** Maximum invocations an entity may have before being budget-capped. */
+  maxInvocationsPerEntity: number | null;
   createdAt: Date | null;
   updatedAt: Date | null;
   states: State[];
@@ -212,6 +216,8 @@ export interface CreateFlowInput {
   paused?: boolean;
   issueTrackerIntegrationId?: string;
   vcsIntegrationId?: string;
+  maxCreditsPerEntity?: number;
+  maxInvocationsPerEntity?: number;
 }
 
 /** Input for adding a state to a flow */

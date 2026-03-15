@@ -4,12 +4,11 @@
  * Replaces the old node:http + custom Router server.
  * Serves the dashboard, workers (claim/report), and admin tooling.
  */
+import { timingSafeEqual } from "node:crypto";
 import { serve } from "@hono/node-server";
-import { getConnInfo } from "@hono/node-server/conninfo";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { extractBearerToken, tokensMatch } from "../auth.js";
 import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";
 import { Engine } from "../engine/engine.js";
 import { EventEmitter } from "../engine/event-emitter.js";
@@ -19,11 +18,23 @@ import type { McpServerDeps } from "../execution/mcp-server.js";
 import { callToolHandler } from "../execution/mcp-server.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
-import type { Pool } from "../pool/index.js";
-import type { IEntityActivityRepo } from "../radar-db/repos/i-entity-activity-repo.js";
-import type { EventLogRepo, IWorkerRepo, SourceRepo, WatchRepo } from "../radar-db/types.js";
 import { createScopedRepos } from "../repositories/scoped-repos.js";
-import { UI_HTML } from "../ui/index.html.js";
+
+// ─── Auth helpers (inlined from deleted auth.ts) ───
+
+function extractBearerToken(header: string | undefined | null): string | undefined {
+  if (!header) return undefined;
+  const parts = header.split(" ");
+  if (parts.length === 2 && parts[0].toLowerCase() === "bearer") return parts[1];
+  return undefined;
+}
+
+function tokensMatch(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 // ─── Tenant ID validation ───
 
@@ -140,27 +151,6 @@ export interface HonoServerDeps {
   logger?: Logger;
   enableUi?: boolean;
   sseAdapter?: HonoSseAdapter;
-  /** Worker pool — exposes slot/capacity data via /api/pool/slots */
-  pool?: Pool;
-  /** Worker registry — exposes registered workers via /api/workers */
-  workerRepo?: IWorkerRepo;
-  /** Entity activity log — exposes per-entity activity via /api/entities/:id/activity */
-  activityRepo?: IEntityActivityRepo;
-  /** Source registry — exposes sources via /api/sources */
-  sourceRepo?: SourceRepo;
-  /** Watch registry — exposes watches via /api/sources/:id/watches */
-  watchRepo?: WatchRepo;
-  /** Event log — exposes ingest events via /api/events */
-  eventLogRepo?: EventLogRepo;
-  /** Rate limit configuration. Omit to use defaults. */
-  rateLimits?: {
-    /** Max requests per window for write endpoints (POST /api/entities). Default: 30. */
-    writeMaxRequests?: number;
-    /** Max requests per window for worker endpoints (claim/report/fail). Default: 120. */
-    workerMaxRequests?: number;
-    /** Window duration in milliseconds. Default: 60_000 (1 minute). */
-    windowMs?: number;
-  };
 }
 
 // ─── Build the Hono app ───
@@ -231,7 +221,6 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
           }
         : undefined,
       domainEvents: repos.domainEvents,
-      integrationRepo: repos.integrations,
     });
     // Start a reaper for this tenant so stale claims get cleaned up.
     const stopReaper = engine.startReaper(30_000);
@@ -243,7 +232,6 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
       transitions: repos.transitionLog,
       eventRepo: repos.events,
       domainEvents: repos.domainEvents,
-      integrations: repos.integrations,
       engine,
       withTransaction: deps.withTransaction,
     };
@@ -357,82 +345,6 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     };
   }
 
-  // ─── Rate limiting ───
-
-  const RL_MIN_WINDOW_MS = 100;
-  const RL_MIN_REQUESTS = 1;
-  const rlWindowMs = Math.max(deps.rateLimits?.windowMs ?? 60_000, RL_MIN_WINDOW_MS);
-  const rlWriteMax = Math.max(deps.rateLimits?.writeMaxRequests ?? 30, RL_MIN_REQUESTS);
-  const rlWorkerMax = Math.max(deps.rateLimits?.workerMaxRequests ?? 120, RL_MIN_REQUESTS);
-
-  function createRateLimiter(
-    limiterName: string,
-    maxRequests: number,
-    // biome-ignore lint/suspicious/noConfusingVoidType: Hono middleware next() returns void
-  ): (c: import("hono").Context, next: () => Promise<void>) => Promise<Response | void> {
-    const refillRate = maxRequests / rlWindowMs; // tokens per ms
-
-    return async (c, next) => {
-      // When no db is wired up, skip rate limiting (tests that don't pass db still work)
-      if (!deps.db) return next();
-
-      const now = Date.now();
-      // Use remote address as primary key; x-forwarded-for is not trusted without proxy config
-      let ip: string;
-      try {
-        const connInfo = getConnInfo(c);
-        ip = connInfo.remote.address ?? "unknown";
-      } catch {
-        // getConnInfo throws when there is no real HTTP connection (e.g. app.request() in tests)
-        ip = "unknown";
-      }
-      const key = `${limiterName}:${ip}`;
-
-      // Single-transaction token-bucket upsert: read current state, refill, decrement, write back.
-      // Uses ON CONFLICT DO UPDATE so the operation is atomic at the DB level.
-      const { rateLimitBuckets } = await import("../repositories/drizzle/schema.js");
-      const { sql } = await import("drizzle-orm");
-
-      const tokens = await deps.db.transaction(
-        async (tx: import("../repositories/drizzle/db-type.js").Db): Promise<number> => {
-          const rows = await tx.select().from(rateLimitBuckets).where(sql`key = ${key}`).limit(1);
-          const existing = rows[0];
-
-          let currentTokens: number;
-          if (existing) {
-            const elapsed = now - existing.lastRefill;
-            currentTokens = Math.min(maxRequests, existing.tokens + elapsed * refillRate);
-          } else {
-            currentTokens = maxRequests;
-          }
-
-          const newTokens = currentTokens - 1;
-
-          await tx
-            .insert(rateLimitBuckets)
-            .values({ key, tokens: newTokens, lastRefill: now, updatedAt: now })
-            .onConflictDoUpdate({
-              target: rateLimitBuckets.key,
-              set: { tokens: newTokens, lastRefill: now, updatedAt: now },
-            });
-
-          return newTokens;
-        },
-      );
-
-      if (tokens < 0) {
-        const retryAfterSec = Math.ceil(-tokens / refillRate / 1000);
-        c.header("Retry-After", String(retryAfterSec));
-        return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
-      }
-
-      return next();
-    };
-  }
-
-  const writeRateLimiter = createRateLimiter("write", rlWriteMax);
-  const workerRateLimiter = createRateLimiter("worker", rlWorkerMax);
-
   // ─── JSON body parser with explicit error ───
   async function parseJsonBody(c: import("hono").Context): Promise<Record<string, unknown> | null> {
     try {
@@ -449,7 +361,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Claim (cross-flow) ───
-  app.post("/api/claim", workerRateLimiter, requireWorkerAuth(), async (c) => {
+  app.post("/api/claim", requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string };
@@ -459,7 +371,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Claim (flow-specific) ───
-  app.post("/api/flows/:flow/claim", workerRateLimiter, requireWorkerAuth(), async (c) => {
+  app.post("/api/flows/:flow/claim", requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { role: body.role as string, flow: c.req.param("flow") };
@@ -469,7 +381,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Report (longRunning — no timeout) ───
-  app.post("/api/entities/:id/report", workerRateLimiter, requireWorkerAuth(), async (c) => {
+  app.post("/api/entities/:id/report", requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args: Record<string, unknown> = {
@@ -484,7 +396,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Worker: Fail ───
-  app.post("/api/entities/:id/fail", workerRateLimiter, requireWorkerAuth(), async (c) => {
+  app.post("/api/entities/:id/fail", requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const args = { entity_id: c.req.param("id"), error: body.error as string };
@@ -494,7 +406,7 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
   });
 
   // ─── Entity CRUD ───
-  app.post("/api/entities", writeRateLimiter, requireWorkerAuth(), async (c) => {
+  app.post("/api/entities", requireWorkerAuth(), async (c) => {
     const body = await parseJsonBody(c);
     if (!body) return c.json({ error: "Invalid JSON" }, 400);
     const flowName = body.flow as string;
@@ -530,55 +442,6 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     const result = await callToolHandler(await getMcpDeps(c), "query.entities", args);
     const { status, body: resBody } = mcpResultToResponse(result);
     return c.json(resBody as Record<string, unknown>, status as 200);
-  });
-
-  // ─── Entity activity (RADAR) ───
-  app.get("/api/entities/:id/activity", requireAdminAuth(), async (c) => {
-    if (!deps.activityRepo) return c.json({ error: "Activity repo not configured" }, 503);
-    const entityId = c.req.param("id") ?? "";
-    const sinceStr = c.req.query("since");
-    const since = sinceStr !== undefined ? parseInt(sinceStr, 10) : 0;
-    const items = await deps.activityRepo.getByEntity(entityId, since || undefined);
-    const nextSeq = items.length > 0 ? (items[items.length - 1]?.seq ?? 0) + 1 : since;
-    return c.json({ items, nextSeq });
-  });
-
-  // ─── Pool slots (RADAR) ───
-  app.get("/api/pool/slots", requireAdminAuth(), async (c) => {
-    if (!deps.pool) return c.json({ slots: [], available: 0, capacity: 0 });
-    return c.json({
-      slots: deps.pool.activeSlots(),
-      available: deps.pool.availableSlots(),
-      capacity: deps.pool.getCapacity(),
-    });
-  });
-
-  // ─── Workers (RADAR) ───
-  app.get("/api/workers", requireAdminAuth(), async (c) => {
-    if (!deps.workerRepo) return c.json([]);
-    const workers = await deps.workerRepo.list();
-    return c.json(workers);
-  });
-
-  // ─── Sources (RADAR) ───
-  app.get("/api/sources", requireAdminAuth(), async (c) => {
-    if (!deps.sourceRepo) return c.json([]);
-    return c.json(await deps.sourceRepo.findAll());
-  });
-
-  app.get("/api/sources/:id/watches", requireAdminAuth(), async (c) => {
-    if (!deps.watchRepo) return c.json([]);
-    return c.json(await deps.watchRepo.findBySourceId(c.req.param("id") ?? ""));
-  });
-
-  // ─── Event log (RADAR) ───
-  app.get("/api/events", requireAdminAuth(), async (c) => {
-    if (!deps.eventLogRepo) return c.json([]);
-    const limitStr = c.req.query("limit");
-    const offsetStr = c.req.query("offset");
-    const limit = limitStr ? parseInt(limitStr, 10) : 50;
-    const offset = offsetStr ? parseInt(offsetStr, 10) : 0;
-    return c.json(await deps.eventLogRepo.findAll({ limit, offset }));
   });
 
   // ─── Flow definitions ───
@@ -708,79 +571,10 @@ export function createHonoApp(deps: HonoServerDeps): Hono {
     return c.json(resBody as Record<string, unknown>, status as 200);
   });
 
-  // ─── Integration CRUD ───
-
-  admin.post("/integrations", requireAdminAuth(), async (c) => {
-    const callerToken = extractBearerToken(c.req.header("authorization"));
-    const body = await parseJsonBody(c);
-    if (!body) return c.json({ error: "Invalid JSON" }, 400);
-    const result = await callToolHandler(await getMcpDeps(c), "admin.integration.create", body, {
-      adminToken: deps.adminToken,
-      callerToken,
-    });
-    const { status, body: resBody } = mcpResultToResponse(result);
-    return c.json(resBody as Record<string, unknown>, status === 200 ? 201 : (status as 200));
-  });
-
-  admin.get("/integrations", requireAdminAuth(), async (c) => {
-    const callerToken = extractBearerToken(c.req.header("authorization"));
-    const args: Record<string, unknown> = {};
-    const category = c.req.query("category");
-    if (category) args.category = category;
-    const result = await callToolHandler(await getMcpDeps(c), "admin.integration.list", args, {
-      adminToken: deps.adminToken,
-      callerToken,
-    });
-    const { status, body: resBody } = mcpResultToResponse(result);
-    return c.json(resBody as Record<string, unknown>, status as 200);
-  });
-
-  admin.get("/integrations/:id", requireAdminAuth(), async (c) => {
-    const callerToken = extractBearerToken(c.req.header("authorization"));
-    const result = await callToolHandler(
-      await getMcpDeps(c),
-      "admin.integration.get",
-      { integration_id: c.req.param("id") },
-      { adminToken: deps.adminToken, callerToken },
-    );
-    const { status, body: resBody } = mcpResultToResponse(result);
-    return c.json(resBody as Record<string, unknown>, status as 200);
-  });
-
-  admin.patch("/integrations/:id", requireAdminAuth(), async (c) => {
-    const callerToken = extractBearerToken(c.req.header("authorization"));
-    const body = await parseJsonBody(c);
-    if (!body) return c.json({ error: "Invalid JSON" }, 400);
-    const result = await callToolHandler(
-      await getMcpDeps(c),
-      "admin.integration.update",
-      { integration_id: c.req.param("id"), ...body },
-      { adminToken: deps.adminToken, callerToken },
-    );
-    const { status, body: resBody } = mcpResultToResponse(result);
-    return c.json(resBody as Record<string, unknown>, status as 200);
-  });
-
-  admin.delete("/integrations/:id", requireAdminAuth(), async (c) => {
-    const callerToken = extractBearerToken(c.req.header("authorization"));
-    const result = await callToolHandler(
-      await getMcpDeps(c),
-      "admin.integration.delete",
-      { integration_id: c.req.param("id") },
-      { adminToken: deps.adminToken, callerToken },
-    );
-    const { status, body: resBody } = mcpResultToResponse(result);
-    return c.json(resBody as Record<string, unknown>, status as 200);
-  });
-
   app.route("/api/admin", admin);
 
   // ─── UI routes (optional) ───
   if (deps.enableUi) {
-    app.get("/ui", (c) => {
-      return c.html(UI_HTML);
-    });
-
     const ui = new Hono();
 
     ui.get("/entity/:id/events", requireAdminAuth(), async (c) => {

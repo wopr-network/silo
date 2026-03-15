@@ -1,45 +1,4 @@
-import {
-  bigint,
-  boolean,
-  doublePrecision,
-  index,
-  jsonb,
-  pgTable,
-  serial,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
-
-// ─── Integration Tables ───
-
-/**
- * Tenant-owned integrations: one row per connected provider instance.
- * A tenant may have multiple integrations of the same category (e.g. two GitHub orgs).
- * Credentials are AES-256-GCM encrypted at rest (HOLYSHIP_ENCRYPTION_KEY).
- */
-export const integrations = pgTable(
-  "integrations",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    /** Human-readable label, unique per tenant (e.g. "acme-github", "acme-linear"). */
-    name: text("name").notNull(),
-    /** "issue_tracker" | "vcs" */
-    category: text("category").notNull(),
-    /** "linear" | "jira" | "github_issues" | "github" | "gitlab" */
-    provider: text("provider").notNull(),
-    /** Encrypted JSON: { accessToken, refreshToken?, expiresAt?, ... } */
-    credentials: text("credentials").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("uq_integration_tenant_name").on(table.tenantId, table.name),
-    index("idx_integrations_tenant").on(table.tenantId),
-    index("idx_integrations_tenant_category").on(table.tenantId, table.category),
-  ],
-);
+import { bigint, boolean, index, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 // ─── Definition Tables ───
 
@@ -63,9 +22,14 @@ export const flowDefinitions = pgTable(
     defaultModelTier: text("default_model_tier"),
     timeoutPrompt: text("timeout_prompt"),
     paused: boolean("paused").default(false),
-    /** Integration scoping: which issue tracker and VCS this flow uses for primitive ops. */
-    issueTrackerIntegrationId: text("issue_tracker_integration_id").references(() => integrations.id),
-    vcsIntegrationId: text("vcs_integration_id").references(() => integrations.id),
+    /** Integration scoping: which issue tracker this flow uses for primitive ops. */
+    issueTrackerIntegrationId: text("issue_tracker_integration_id"),
+    /** Integration scoping: which VCS this flow uses for primitive ops. */
+    vcsIntegrationId: text("vcs_integration_id"),
+    /** Maximum credits an entity may consume before being budget-capped. */
+    maxCreditsPerEntity: bigint("max_credits_per_entity", { mode: "number" }),
+    /** Maximum invocations an entity may have before being budget-capped. */
+    maxInvocationsPerEntity: bigint("max_invocations_per_entity", { mode: "number" }),
     createdAt: bigint("created_at", { mode: "number" }),
     updatedAt: bigint("updated_at", { mode: "number" }),
   },
@@ -336,130 +300,43 @@ export const entitySnapshots = pgTable(
   ],
 );
 
-// ─── Worker Pool Tables (merged from radar-db) ───
+// ─── Platform Tables ───
 
-export const sources = pgTable(
-  "sources",
+/** GitHub App installations tracked per tenant. */
+export const githubInstallations = pgTable(
+  "github_installations",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
-    name: text("name").notNull(),
-    type: text("type").notNull(),
-    config: text("config").notNull(),
-    enabled: boolean("enabled").notNull().default(true),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
-    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+    installationId: bigint("installation_id", { mode: "number" }).notNull(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(),
+    accessToken: text("access_token"),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("uq_source_tenant_name").on(table.tenantId, table.name)],
-);
-
-export const watches = pgTable(
-  "watches",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => sources.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    filter: text("filter").notNull(),
-    action: text("action").notNull(),
-    actionConfig: text("action_config").notNull(),
-    enabled: boolean("enabled").notNull().default(true),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
-    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
-  },
-  (table) => [index("watches_source_id_idx").on(table.sourceId)],
-);
-
-export const eventLog = pgTable(
-  "event_log",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    sourceId: text("source_id")
-      .notNull()
-      .references(() => sources.id, { onDelete: "cascade" }),
-    watchId: text("watch_id").references(() => watches.id, { onDelete: "cascade" }),
-    rawEvent: text("raw_event").notNull(),
-    actionTaken: text("action_taken"),
-    holyshipResponse: text("holyship_response"),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
-  },
-  (table) => [index("event_log_source_id_idx").on(table.sourceId), index("event_log_watch_id_idx").on(table.watchId)],
-);
-
-export const workers = pgTable("workers", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull(),
-  name: text("name").notNull(),
-  type: text("type").notNull(),
-  discipline: text("discipline").notNull(),
-  status: text("status").notNull().default("idle"),
-  config: text("config"),
-  lastHeartbeat: bigint("last_heartbeat", { mode: "number" }).notNull(),
-  createdAt: bigint("created_at", { mode: "number" }).notNull(),
-});
-
-export const entityActivity = pgTable(
-  "entity_activity",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    entityId: text("entity_id").notNull(),
-    slotId: text("slot_id").notNull(),
-    seq: bigint("seq", { mode: "number" }).notNull(),
-    type: text("type").notNull(),
-    data: text("data").notNull(),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
-  },
-  (t) => [
-    index("entity_activity_entity_id_idx").on(t.entityId),
-    uniqueIndex("entity_activity_entity_seq_uniq").on(t.tenantId, t.entityId, t.seq),
+  (table) => [
+    uniqueIndex("uq_gh_install_tenant_installation").on(table.tenantId, table.installationId),
+    index("idx_gh_install_tenant").on(table.tenantId),
   ],
 );
 
-export const throughputEvents = pgTable(
-  "throughput_events",
+/** Holyshipper container instances provisioned per entity. */
+export const holyshipperContainers = pgTable(
+  "holyshipper_containers",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id").notNull(),
-    outcome: text("outcome").notNull(),
-    durationMs: bigint("duration_ms", { mode: "number" }).notNull(),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
-  },
-  (t) => [index("throughput_events_created_at_idx").on(t.createdAt)],
-);
-
-export const entityMap = pgTable(
-  "entity_map",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id").notNull(),
-    sourceId: text("source_id")
+    entityId: text("entity_id")
       .notNull()
-      .references(() => sources.id, { onDelete: "cascade" }),
-    externalId: text("external_id").notNull(),
-    entityId: text("entity_id").notNull(),
-    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+      .references(() => entities.id),
+    containerId: text("container_id"),
+    status: text("status").notNull().default("pending"),
+    provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
+    tornDownAt: timestamp("torn_down_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex("entity_map_source_external_uniq").on(t.tenantId, t.sourceId, t.externalId),
-    // Separate index on sourceId for efficient FK cascade deletes from sources table.
-    index("entity_map_source_id_idx").on(t.sourceId),
-  ],
+  (table) => [index("idx_holyshipper_entity").on(table.entityId), index("idx_holyshipper_tenant").on(table.tenantId)],
 );
-
-// ─── Rate Limiting Table ───
-
-/**
- * Persistent token-bucket state for rate limiting.
- * Key format: "<limiter_name>:<ip>" — one row per (limiter, client IP).
- * Replaces in-memory Maps to satisfy the "no in-memory stores" codebase convention.
- */
-export const rateLimitBuckets = pgTable("rate_limit_buckets", {
-  key: text("key").primaryKey(),
-  tokens: doublePrecision("tokens").notNull(),
-  lastRefill: bigint("last_refill", { mode: "number" }).notNull(),
-  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
-});

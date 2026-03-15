@@ -76,6 +76,8 @@ function rowToFlow(r: typeof flowDefinitions.$inferSelect, states: State[], tran
     paused: !!r.paused,
     issueTrackerIntegrationId: r.issueTrackerIntegrationId ?? null,
     vcsIntegrationId: r.vcsIntegrationId ?? null,
+    maxCreditsPerEntity: r.maxCreditsPerEntity ?? null,
+    maxInvocationsPerEntity: r.maxInvocationsPerEntity ?? null,
     createdAt: toDate(r.createdAt),
     updatedAt: toDate(r.updatedAt),
     states,
@@ -127,6 +129,8 @@ export class DrizzleFlowRepository implements IFlowRepository {
       paused: input.paused ?? false,
       issueTrackerIntegrationId: input.issueTrackerIntegrationId ?? null,
       vcsIntegrationId: input.vcsIntegrationId ?? null,
+      maxCreditsPerEntity: input.maxCreditsPerEntity ?? null,
+      maxInvocationsPerEntity: input.maxInvocationsPerEntity ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -218,6 +222,8 @@ export class DrizzleFlowRepository implements IFlowRepository {
       paused: current.paused,
       issueTrackerIntegrationId: snap.issueTrackerIntegrationId ?? null,
       vcsIntegrationId: snap.vcsIntegrationId ?? null,
+      maxCreditsPerEntity: ((snap as Record<string, unknown>).maxCreditsPerEntity as number | null) ?? null,
+      maxInvocationsPerEntity: ((snap as Record<string, unknown>).maxInvocationsPerEntity as number | null) ?? null,
       createdAt: snap.createdAt ? new Date(snap.createdAt) : null,
       updatedAt: snap.updatedAt ? new Date(snap.updatedAt) : null,
       states: (snap.states ?? []).map((s) => ({

@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { validateGateCommand } from "../engine/gate-command-validator.js";
 import { validateTemplate } from "../engine/handlebars.js";
-import { PRIMITIVE_OPS } from "../integrations/types.js";
 
 // ─── Leaf Schemas ───
 
@@ -29,14 +28,14 @@ export const FlowDefinitionSchema = z.object({
 });
 
 export const OnEnterSchema = z.object({
-  op: z.enum(PRIMITIVE_OPS),
+  op: z.string().min(1),
   params: z.record(z.string(), z.unknown()).optional(),
   artifacts: z.array(z.string().min(1)).min(1),
   artifactMap: z.record(z.string(), z.string()).optional(),
 });
 
 export const OnExitSchema = z.object({
-  op: z.enum(PRIMITIVE_OPS),
+  op: z.string().min(1),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -57,7 +56,7 @@ export const StateDefinitionSchema = z.object({
   onEnter: OnEnterSchema.optional(),
   onExit: OnExitSchema.optional(),
   retryAfterMs: z.number().int().min(0).optional(),
-  /** Opaque metadata passed through to consumers (e.g. radar). Holyship stores but does not interpret. */
+  /** Opaque metadata passed through to consumers. Holyship stores but does not interpret. */
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -100,7 +99,7 @@ export const ApiGateSchema = BaseGateSchema.extend({
 
 export const PrimitiveGateSchema = BaseGateSchema.extend({
   type: z.literal("primitive"),
-  primitiveOp: z.enum(PRIMITIVE_OPS),
+  primitiveOp: z.string().min(1),
   primitiveParams: z.record(z.string(), z.unknown()).optional(),
 });
 

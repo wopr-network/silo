@@ -6,8 +6,6 @@ import {
   AdminFlowUpdateSchema,
   AdminGateAttachSchema,
   AdminGateCreateSchema,
-  AdminIntegrationCreateSchema,
-  AdminIntegrationUpdateSchema,
   AdminStateCreateSchema,
   AdminStateUpdateSchema,
   AdminTransitionCreateSchema,
@@ -203,86 +201,4 @@ export async function handleAdminFlowRestore(deps: McpServerDeps, args: Record<s
   await deps.flows.restore(flow.id, v.data.version);
   emitDefinitionChanged(deps.eventRepo, flow.id, "admin.flow.restore", { version: v.data.version });
   return jsonResult({ restored: true, version: v.data.version });
-}
-
-// ─── Integration CRUD ───
-
-export async function handleAdminIntegrationCreate(deps: McpServerDeps, args: Record<string, unknown>) {
-  const v = validateInput(AdminIntegrationCreateSchema, args);
-  if (!v.ok) return v.result;
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const row = await deps.integrations.create(v.data);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    createdAt: row.createdAt,
-  });
-}
-
-export async function handleAdminIntegrationList(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const category = typeof args.category === "string" ? args.category : undefined;
-  const rows = category
-    ? await deps.integrations.listByCategory(category as import("../../integrations/types.js").IntegrationCategory)
-    : await deps.integrations.list();
-  return jsonResult(
-    rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      provider: r.provider,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    })),
-  );
-}
-
-export async function handleAdminIntegrationGet(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const id = typeof args.integration_id === "string" ? args.integration_id : undefined;
-  if (!id) return errorResult("integration_id is required");
-  const row = await deps.integrations.getById(id);
-  if (!row) return errorResult(`Integration not found: ${id}`);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  });
-}
-
-export async function handleAdminIntegrationUpdate(deps: McpServerDeps, args: Record<string, unknown>) {
-  const v = validateInput(AdminIntegrationUpdateSchema, args);
-  if (!v.ok) return v.result;
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const row = await deps.integrations.updateCredentials(v.data.integration_id, v.data.credentials);
-  return jsonResult({
-    id: row.id,
-    name: row.name,
-    category: row.category,
-    provider: row.provider,
-    updatedAt: row.updatedAt,
-  });
-}
-
-export async function handleAdminIntegrationDelete(deps: McpServerDeps, args: Record<string, unknown>) {
-  if (!deps.integrations) return errorResult("Integration repository not available");
-  const id = typeof args.integration_id === "string" ? args.integration_id : undefined;
-  if (!id) return errorResult("integration_id is required");
-  try {
-    await deps.integrations.delete(id);
-  } catch (err: unknown) {
-    // 23503 = foreign_key_violation: integration is still referenced by a flow definition
-    if (err instanceof Error && "code" in err && (err as { code: string }).code === "23503") {
-      return errorResult(
-        `Cannot delete integration '${id}': it is still referenced by one or more flows. Remove the flow references first.`,
-      );
-    }
-    throw err;
-  }
-  return jsonResult({ deleted: true, id });
 }

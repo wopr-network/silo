@@ -1,6 +1,4 @@
 import { NotFoundError, ValidationError } from "../errors.js";
-import { AdapterRegistry } from "../integrations/registry.js";
-import type { IIntegrationRepository } from "../integrations/repo.js";
 import type { Logger } from "../logger.js";
 import { consoleLogger } from "../logger.js";
 import type {
@@ -89,10 +87,8 @@ export interface EngineDeps {
   repoFactory?: (txDb: any) => TransactionRepos;
   /** Optional domain event repository. When provided, claimWork uses CAS on the event log to prevent concurrent claim races. */
   domainEvents?: IDomainEventRepository;
-  /** Optional integration repository. When provided, primitive gate ops and onEnter ops are resolved through the AdapterRegistry. */
-  integrationRepo?: IIntegrationRepository;
-  /** Optional pre-built AdapterRegistry. Takes precedence over integrationRepo when both are provided. */
-  adapterRegistry?: AdapterRegistry;
+  /** Reserved for future adapter registry support. */
+  adapterRegistry?: null;
 }
 
 export class Engine {
@@ -109,7 +105,7 @@ export class Engine {
   // biome-ignore lint/suspicious/noExplicitAny: cross-driver compat
   private readonly repoFactory: ((txDb: any) => TransactionRepos) | null;
   private readonly domainEventRepo: IDomainEventRepository | null;
-  private readonly adapterRegistry: AdapterRegistry | null;
+  private readonly adapterRegistry: null;
   private drainingWorkers = new Set<string>();
 
   constructor(deps: EngineDeps) {
@@ -124,8 +120,7 @@ export class Engine {
     this.withTransactionFn = deps.withTransaction ?? null;
     this.repoFactory = deps.repoFactory ?? null;
     this.domainEventRepo = deps.domainEvents ?? null;
-    this.adapterRegistry =
-      deps.adapterRegistry ?? (deps.integrationRepo ? new AdapterRegistry(deps.integrationRepo) : null);
+    this.adapterRegistry = null;
   }
 
   drainWorker(workerId: string): void {
@@ -1068,6 +1063,26 @@ export class Engine {
   }
 
   private async checkConcurrency(flow: Flow, entity: Entity, txRepos?: TransactionRepos | null): Promise<boolean> {
+    // Spending cap: if the flow limits invocations per entity, check before creating more.
+    if (flow.maxInvocationsPerEntity != null && flow.maxInvocationsPerEntity > 0) {
+      const invRepo = txRepos?.invocationRepo ?? this.invocationRepo;
+      const entityInvocations = await invRepo.findByEntity(entity.id);
+      if (entityInvocations.length >= flow.maxInvocationsPerEntity) {
+        const entRepo = txRepos?.entityRepo ?? this.entityRepo;
+        await entRepo.transition(entity.id, "budget_exceeded", "max_invocations_reached");
+        await this.eventEmitter.emit({
+          type: "entity.transitioned",
+          entityId: entity.id,
+          flowId: flow.id,
+          fromState: entity.state,
+          toState: "budget_exceeded",
+          trigger: "max_invocations_reached",
+          emittedAt: new Date(),
+        });
+        return false;
+      }
+    }
+
     if (flow.maxConcurrent <= 0 && flow.maxConcurrentPerRepo <= 0) return true;
     const invocationRepo = txRepos?.invocationRepo ?? this.invocationRepo;
     const entityRepo = txRepos?.entityRepo ?? this.entityRepo;

@@ -1,6 +1,13 @@
 import type { HolyshipClient } from "../holyship-client/client.js";
-import type { IEntityMapRepository } from "../radar-db/repos/entity-map-repo.js";
 import { type IngestEvent, IngestEventSchema } from "./types.js";
+
+/** Minimal interface for the entity map repository. */
+export interface IEntityMapRepository {
+  insertIfAbsent(sourceId: string, externalId: string, entityId: string): Promise<boolean>;
+  deleteRow(sourceId: string, externalId: string): Promise<void>;
+  updateEntityId(sourceId: string, externalId: string, entityId: string): Promise<void>;
+  findEntityId(sourceId: string, externalId: string): Promise<string | undefined>;
+}
 
 export class Ingestor {
   private entityMapRepo: IEntityMapRepository;
