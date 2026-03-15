@@ -1,13 +1,13 @@
 import { Hono } from "hono";
 import type { Engine } from "../engine/engine.js";
 import type { EntityLifecycleManager } from "../fleet/entity-lifecycle.js";
-import type { GitHubInstallationRepo } from "../github/installation-repo.js";
+import type { IGitHubInstallationRepository } from "../github/installation-repo.js";
 import { generateInstallationToken } from "../github/token-generator.js";
 
 export interface ShipItDeps {
   engine: Engine;
   lifecycle: EntityLifecycleManager;
-  installationRepo: GitHubInstallationRepo;
+  installationRepo: IGitHubInstallationRepository;
   githubAppId: string;
   githubAppPrivateKey: string;
   defaultFlowName: string;

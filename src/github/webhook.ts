@@ -1,11 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import type { Engine } from "../engine/engine.js";
-import type { GitHubInstallationRepo } from "./installation-repo.js";
+import type { IGitHubInstallationRepository } from "./installation-repo.js";
 
 export interface GitHubWebhookDeps {
   engine: Engine;
-  installationRepo: GitHubInstallationRepo;
+  installationRepo: IGitHubInstallationRepository;
   webhookSecret: string;
   /** Flow name to create entities in when issues arrive. */
   defaultFlowName: string;

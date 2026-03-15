@@ -143,6 +143,16 @@ CREATE TABLE "github_installations" (
 	"created_at" bigint NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "holyshipper_containers" (
+	"id" text PRIMARY KEY NOT NULL,
+	"entity_id" text NOT NULL,
+	"tenant_id" text NOT NULL,
+	"container_id" text NOT NULL,
+	"status" text DEFAULT 'running' NOT NULL,
+	"created_at" bigint NOT NULL,
+	"stopped_at" bigint
+);
+--> statement-breakpoint
 CREATE TABLE "integrations" (
 	"id" text PRIMARY KEY NOT NULL,
 	"tenant_id" text NOT NULL,
@@ -243,6 +253,8 @@ CREATE INDEX "gate_results_entity_id_idx" ON "gate_results" USING btree ("entity
 CREATE INDEX "gate_results_gate_id_idx" ON "gate_results" USING btree ("gate_id");--> statement-breakpoint
 CREATE INDEX "github_installations_tenant_idx" ON "github_installations" USING btree ("tenant_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "github_installations_installation_uniq" ON "github_installations" USING btree ("installation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "holyshipper_containers_entity_uniq" ON "holyshipper_containers" USING btree ("entity_id");--> statement-breakpoint
+CREATE INDEX "holyshipper_containers_status_idx" ON "holyshipper_containers" USING btree ("status");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_integration_tenant_name" ON "integrations" USING btree ("tenant_id","name");--> statement-breakpoint
 CREATE INDEX "idx_integrations_tenant" ON "integrations" USING btree ("tenant_id");--> statement-breakpoint
 CREATE INDEX "idx_integrations_tenant_category" ON "integrations" USING btree ("tenant_id","category");--> statement-breakpoint

@@ -1,10 +1,19 @@
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { IEventBusAdapter } from "../engine/event-types.js";
+import { holyshipperContainers } from "../repositories/drizzle/schema.js";
+import type { IEntityRepository } from "../repositories/interfaces.js";
 import type { IFleetManager, IServiceKeyRepo } from "./provision-holyshipper.js";
 import { provisionHolyshipper, teardownHolyshipper } from "./provision-holyshipper.js";
+
+// biome-ignore lint/suspicious/noExplicitAny: cross-driver Drizzle compat
+type Db = any;
 
 export interface EntityLifecycleConfig {
   fleet: IFleetManager;
   serviceKeyRepo: IServiceKeyRepo;
+  entityRepo: IEntityRepository;
+  db: Db;
   gatewayUrl: string;
   holyshipUrl: string;
   holyshipperImage: string;
@@ -13,11 +22,16 @@ export interface EntityLifecycleConfig {
 }
 
 /**
- * Tracks active holyshipper containers by entity ID.
- * Provisions on entity.created, tears down on terminal state.
+ * Tracks active holyshipper containers in the database.
+ *
+ * Provisions holyshippers when work is available:
+ * - On invocation.created when no active holyshipper exists (e.g., after human approval)
+ *
+ * Tears down holyshippers when:
+ * - Entity reaches a terminal state (done, cancelled, budget_exceeded, stuck)
+ * - Entity is gated (waiting for approval — no work to do)
  */
 export class EntityLifecycleManager {
-  private activeContainers = new Map<string, { containerId: string }>();
   private config: EntityLifecycleConfig;
 
   constructor(config: EntityLifecycleConfig) {
@@ -26,46 +40,87 @@ export class EntityLifecycleManager {
 
   /**
    * Register as a listener on the engine's event bus.
-   * Automatically provisions/teardowns holyshippers based on engine events.
+   * Handles the full lifecycle: provision on work, teardown on completion or gate.
    */
   createEventHandler(): IEventBusAdapter {
     return {
       emit: async (event) => {
-        if (event.type === "entity.created") {
-          await this.onEntityCreated(event as EntityCreatedEvent);
+        // New invocation created and no holyshipper active → provision one
+        if (event.type === "invocation.created") {
+          const e = event as InvocationCreatedEvent;
+          const active = await this.isActive(e.entityId);
+          if (!active) {
+            await this.provisionFromEntity(e.entityId);
+          }
         }
-        // Terminal states trigger teardown
+
+        // Gate blocked → tear down holyshipper (it has nothing to do)
+        if (event.type === "gate.failed" || event.type === "gate.timedOut") {
+          const e = event as GateEvent;
+          await this.teardownForEntity(e.entityId);
+        }
+
+        // Terminal state → tear down
         if (event.type === "entity.transitioned") {
           const e = event as EntityTransitionedEvent;
-          if (isTerminalTransition(e)) {
-            await this.onEntityCompleted(e.entityId);
+          if (TERMINAL_STATES.has(e.toState)) {
+            await this.teardownForEntity(e.entityId);
           }
         }
       },
     };
   }
 
-  private async onEntityCreated(_event: EntityCreatedEvent): Promise<void> {
-    // Provisioning is handled by the webhook handler or Ship It endpoint
-    // calling provisionForEntity() directly after entity creation.
+  /**
+   * Provision a holyshipper by reading entity artifacts for context.
+   * Used when an invocation is created after a human approval or gate pass.
+   */
+  private async provisionFromEntity(entityId: string): Promise<void> {
+    const entity = await this.config.entityRepo.get(entityId);
+    if (!entity?.artifacts) return;
+
+    const { installationId, repoFullName, tenantId } = entity.artifacts as {
+      installationId?: number;
+      repoFullName?: string;
+      tenantId?: string;
+    };
+
+    if (!installationId || !repoFullName || !tenantId) return;
+
+    await this.provisionForEntity({
+      entityId,
+      tenantId,
+      installationId,
+      discipline: "engineering",
+      repoFullName,
+    });
   }
 
-  private async onEntityCompleted(entityId: string): Promise<void> {
-    const container = this.activeContainers.get(entityId);
-    if (!container) return;
+  private async teardownForEntity(entityId: string): Promise<void> {
+    const rows = await this.config.db
+      .select()
+      .from(holyshipperContainers)
+      .where(eq(holyshipperContainers.entityId, entityId))
+      .limit(1);
+    const row = rows[0];
+    if (!row || row.status !== "running") return;
 
     await teardownHolyshipper({
-      containerId: container.containerId,
+      containerId: row.containerId,
       fleet: this.config.fleet,
       serviceKeyRepo: this.config.serviceKeyRepo,
     });
 
-    this.activeContainers.delete(entityId);
+    await this.config.db
+      .update(holyshipperContainers)
+      .set({ status: "stopped", stoppedAt: Date.now() })
+      .where(eq(holyshipperContainers.id, row.id));
   }
 
   /**
    * Provision a holyshipper for a specific entity.
-   * Called by webhook handler or Ship It endpoint after entity creation.
+   * Called by webhook handler, Ship It endpoint, or automatically
+   * when an invocation is created with no active holyshipper.
    */
   async provisionForEntity(opts: {
     entityId: string;
@@ -74,6 +129,9 @@ export class EntityLifecycleManager {
     discipline: string;
     repoFullName: string;
   }): Promise<void> {
+    // Don't double-provision
+    if (await this.isActive(opts.entityId)) return;
+
     const result = await provisionHolyshipper({
       ...opts,
       fleet: this.config.fleet,
@@ -85,21 +143,49 @@ export class EntityLifecycleManager {
       githubAppPrivateKey: this.config.githubAppPrivateKey,
     });
 
-    this.activeContainers.set(opts.entityId, { containerId: result.containerId });
+    await this.config.db.insert(holyshipperContainers).values({
+      id: randomUUID(),
+      entityId: opts.entityId,
+      tenantId: opts.tenantId,
+      containerId: result.containerId,
+      status: "running",
+      createdAt: Date.now(),
+    });
+  }
+
+  /** Check if a holyshipper is active for an entity. */
+  async isActive(entityId: string): Promise<boolean> {
+    const rows = await this.config.db
+      .select()
+      .from(holyshipperContainers)
+      .where(eq(holyshipperContainers.entityId, entityId))
+      .limit(1);
+    return rows.length > 0 && rows[0].status === "running";
   }
 
   /** Get count of active holyshipper containers. */
-  get activeCount(): number {
-    return this.activeContainers.size;
+  async activeCount(): Promise<number> {
+    const rows = await this.config.db
+      .select()
+      .from(holyshipperContainers)
+      .where(eq(holyshipperContainers.status, "running"));
+    return rows.length;
   }
 }
 
 // Event type helpers
-interface EntityCreatedEvent {
-  type: "entity.created";
+interface InvocationCreatedEvent {
+  type: "invocation.created";
   entityId: string;
-  flowId: string;
-  payload: Record<string, unknown>;
+  invocationId: string;
+  stage: string;
+  emittedAt: Date;
+}
+
+interface GateEvent {
+  type: "gate.failed" | "gate.timedOut";
+  entityId: string;
+  gateId: string;
   emittedAt: Date;
 }
 
@@ -114,7 +200,3 @@ interface EntityTransitionedEvent {
 }
 
 const TERMINAL_STATES = new Set(["done", "cancelled", "budget_exceeded", "stuck"]);
-
-function isTerminalTransition(event: EntityTransitionedEvent): boolean {
-  return TERMINAL_STATES.has(event.toState);
-}

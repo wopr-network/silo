@@ -342,3 +342,22 @@ export const githubInstallations = pgTable(
     uniqueIndex("github_installations_installation_uniq").on(table.installationId),
   ],
 );
+
+// ─── Holyshipper Containers ───
+
+export const holyshipperContainers = pgTable(
+  "holyshipper_containers",
+  {
+    id: text("id").primaryKey(),
+    entityId: text("entity_id").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    containerId: text("container_id").notNull(),
+    status: text("status").notNull().default("running"),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    stoppedAt: bigint("stopped_at", { mode: "number" }),
+  },
+  (table) => [
+    uniqueIndex("holyshipper_containers_entity_uniq").on(table.entityId),
+    index("holyshipper_containers_status_idx").on(table.status),
+  ],
+);

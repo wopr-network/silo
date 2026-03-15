@@ -1,14 +1,14 @@
 import { z } from "zod";
-import type { GitHubInstallationRepo } from "../../github/installation-repo.js";
+import type { IGitHubInstallationRepository } from "../../github/installation-repo.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: tRPC router/procedure types
 type Router = any;
 // biome-ignore lint/suspicious/noExplicitAny: tRPC procedure builder
 type Procedure = any;
 
-let installationRepo: GitHubInstallationRepo | null = null;
+let installationRepo: IGitHubInstallationRepository | null = null;
 
-export function setGithubRouterDeps(deps: { installationRepo: GitHubInstallationRepo }) {
+export function setGithubRouterDeps(deps: { installationRepo: IGitHubInstallationRepository }) {
   installationRepo = deps.installationRepo;
 }
 

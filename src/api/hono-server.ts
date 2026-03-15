@@ -15,7 +15,9 @@ function extractBearerToken(header: string | undefined): string | undefined {
 }
 
 function tokensMatch(a: string, b: string): boolean {
-  return a === b;
+  const { timingSafeEqual } = require("node:crypto");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 import { DomainEventPersistAdapter } from "../engine/domain-event-adapter.js";

@@ -13,7 +13,16 @@ export interface GitHubInstallation {
   createdAt: number;
 }
 
-export class GitHubInstallationRepo {
+/** Interface for GitHub App installation storage. All consumers must depend on this, never the concrete class. */
+export interface IGitHubInstallationRepository {
+  create(tenantId: string, installationId: number, accountLogin: string): Promise<GitHubInstallation>;
+  getByTenantId(tenantId: string): Promise<GitHubInstallation[]>;
+  getByInstallationId(installationId: number): Promise<GitHubInstallation | null>;
+  delete(id: string): Promise<void>;
+  deleteByInstallationId(installationId: number): Promise<void>;
+}
+
+export class DrizzleGitHubInstallationRepository implements IGitHubInstallationRepository {
   constructor(private db: Db) {}
 
   async create(tenantId: string, installationId: number, accountLogin: string): Promise<GitHubInstallation> {
