@@ -1,5 +1,5 @@
 {
-  "id": "0d061f52-1387-4042-83b6-a8790a67b97c",
+  "id": "da21fc17-b88e-4b1b-8390-1b68e78ff741",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -894,6 +894,18 @@
           "notNull": false,
           "default": false
         },
+        "max_credits_per_entity": {
+          "name": "max_credits_per_entity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_invocations_per_entity": {
+          "name": "max_invocations_per_entity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "issue_tracker_integration_id": {
           "name": "issue_tracker_integration_id",
           "type": "text",
@@ -987,34 +999,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "flow_definitions_issue_tracker_integration_id_integrations_id_fk": {
-          "name": "flow_definitions_issue_tracker_integration_id_integrations_id_fk",
-          "tableFrom": "flow_definitions",
-          "tableTo": "integrations",
-          "columnsFrom": [
-            "issue_tracker_integration_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "flow_definitions_vcs_integration_id_integrations_id_fk": {
-          "name": "flow_definitions_vcs_integration_id_integrations_id_fk",
-          "tableFrom": "flow_definitions",
-          "tableTo": "integrations",
-          "columnsFrom": [
-            "vcs_integration_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

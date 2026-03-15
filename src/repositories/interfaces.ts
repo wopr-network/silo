@@ -173,6 +173,10 @@ export interface Flow {
   defaultModelTier: string | null;
   timeoutPrompt: string | null;
   paused: boolean;
+  /** Max credits (nanodollars) that can be burned per entity before it's terminated. Null = no limit. */
+  maxCreditsPerEntity: number | null;
+  /** Max invocations per entity before it's terminated. Prevents infinite retry loops. Null = no limit. */
+  maxInvocationsPerEntity: number | null;
   /** Integration scoping: which issue tracker this flow uses for primitive ops. */
   issueTrackerIntegrationId: string | null;
   /** Integration scoping: which VCS this flow uses for primitive ops. */
@@ -210,6 +214,8 @@ export interface CreateFlowInput {
   defaultModelTier?: string;
   timeoutPrompt?: string;
   paused?: boolean;
+  maxCreditsPerEntity?: number;
+  maxInvocationsPerEntity?: number;
   issueTrackerIntegrationId?: string;
   vcsIntegrationId?: string;
 }

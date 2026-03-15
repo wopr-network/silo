@@ -89,6 +89,8 @@ CREATE TABLE "flow_definitions" (
 	"default_model_tier" text,
 	"timeout_prompt" text,
 	"paused" boolean DEFAULT false,
+	"max_credits_per_entity" bigint,
+	"max_invocations_per_entity" bigint,
 	"issue_tracker_integration_id" text,
 	"vcs_integration_id" text,
 	"created_at" bigint,
@@ -207,8 +209,6 @@ CREATE TABLE "transition_rules" (
 ALTER TABLE "entities" ADD CONSTRAINT "entities_flow_id_flow_definitions_id_fk" FOREIGN KEY ("flow_id") REFERENCES "public"."flow_definitions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entity_history" ADD CONSTRAINT "entity_history_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "entity_history" ADD CONSTRAINT "entity_history_invocation_id_invocations_id_fk" FOREIGN KEY ("invocation_id") REFERENCES "public"."invocations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "flow_definitions" ADD CONSTRAINT "flow_definitions_issue_tracker_integration_id_integrations_id_fk" FOREIGN KEY ("issue_tracker_integration_id") REFERENCES "public"."integrations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "flow_definitions" ADD CONSTRAINT "flow_definitions_vcs_integration_id_integrations_id_fk" FOREIGN KEY ("vcs_integration_id") REFERENCES "public"."integrations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "flow_versions" ADD CONSTRAINT "flow_versions_flow_id_flow_definitions_id_fk" FOREIGN KEY ("flow_id") REFERENCES "public"."flow_definitions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "gate_results" ADD CONSTRAINT "gate_results_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "gate_results" ADD CONSTRAINT "gate_results_gate_id_gate_definitions_id_fk" FOREIGN KEY ("gate_id") REFERENCES "public"."gate_definitions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

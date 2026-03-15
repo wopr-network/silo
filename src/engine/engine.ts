@@ -1061,9 +1061,31 @@ export class Engine {
   }
 
   private async checkConcurrency(flow: Flow, entity: Entity, txRepos?: TransactionRepos | null): Promise<boolean> {
-    if (flow.maxConcurrent <= 0 && flow.maxConcurrentPerRepo <= 0) return true;
     const invocationRepo = txRepos?.invocationRepo ?? this.invocationRepo;
     const entityRepo = txRepos?.entityRepo ?? this.entityRepo;
+
+    // Spending cap: max invocations per entity
+    if (flow.maxInvocationsPerEntity && flow.maxInvocationsPerEntity > 0) {
+      const entityInvocations = await invocationRepo.findByEntity(entity.id);
+      if (entityInvocations.length >= flow.maxInvocationsPerEntity) {
+        this.logger.warn(
+          `[engine] Entity ${entity.id} hit maxInvocationsPerEntity (${flow.maxInvocationsPerEntity}) — transitioning to budget_exceeded`,
+        );
+        await entityRepo.transition(entity.id, "budget_exceeded", "spending_cap");
+        await this.eventEmitter.emit({
+          type: "entity.transitioned",
+          entityId: entity.id,
+          flowId: flow.id,
+          fromState: entity.state,
+          toState: "budget_exceeded",
+          trigger: "spending_cap",
+          emittedAt: new Date(),
+        });
+        return false;
+      }
+    }
+
+    if (flow.maxConcurrent <= 0 && flow.maxConcurrentPerRepo <= 0) return true;
 
     const allInvocations = await invocationRepo.findByFlow(flow.id);
     // Count active AND pending (unclaimed, not yet started) invocations

@@ -52,9 +52,10 @@ export const flowDefinitions = pgTable(
     defaultModelTier: text("default_model_tier"),
     timeoutPrompt: text("timeout_prompt"),
     paused: boolean("paused").default(false),
-    /** Integration scoping: which issue tracker and VCS this flow uses for primitive ops. */
-    issueTrackerIntegrationId: text("issue_tracker_integration_id").references(() => integrations.id),
-    vcsIntegrationId: text("vcs_integration_id").references(() => integrations.id),
+    maxCreditsPerEntity: bigint("max_credits_per_entity", { mode: "number" }),
+    maxInvocationsPerEntity: bigint("max_invocations_per_entity", { mode: "number" }),
+    issueTrackerIntegrationId: text("issue_tracker_integration_id"),
+    vcsIntegrationId: text("vcs_integration_id"),
     createdAt: bigint("created_at", { mode: "number" }),
     updatedAt: bigint("updated_at", { mode: "number" }),
   },
