@@ -2,18 +2,19 @@
  * HolyshipperFleetManager — wraps platform-core FleetManager for ephemeral containers.
  *
  * Each invocation gets a fresh container:
- *   1. FleetManager.create() — pull image, create + start container
- *   2. POST /credentials — inject gateway key + GitHub token
- *   3. POST /checkout — clone repo(s)
- *   4. Container is now ready for dispatch + gate evaluation
- *   5. FleetManager.remove() — stop + delete container on teardown
+ *   1. FleetManager.create() — pull image, create container, return Instance
+ *   2. instance.start() — start the container
+ *   3. Health check via instance.url
+ *   4. POST /credentials — inject gateway key + GitHub token
+ *   5. POST /checkout — clone repo(s)
+ *   6. Container is now ready for dispatch + gate evaluation
+ *   7. instance.remove() — stop + delete container on teardown
  *
- * Containers use restartPolicy "no" — they don't restart when the process exits.
- * The container stays alive between dispatch and gate evaluation (the worker-runtime
- * HTTP server keeps running), then is torn down on state transition.
+ * Containers are ephemeral (no billing record, writable filesystem).
+ * Token billing happens at the gateway layer, not per-instance.
  */
 
-import type { FleetManager } from "@wopr-network/platform-core/fleet";
+import type { FleetManager, Instance } from "@wopr-network/platform-core/fleet";
 import { logger } from "../logger.js";
 import type { IFleetManager, ProvisionConfig, ProvisionResult } from "./provision-holyshipper.js";
 
@@ -28,8 +29,6 @@ export interface HolyshipperFleetManagerConfig {
   gatewayKey: string;
   /** Docker network to attach containers to (for /v1 access). */
   network?: string;
-  /** Port the worker-runtime listens on inside the container. */
-  containerPort?: number;
 }
 
 export class HolyshipperFleetManager implements IFleetManager {
@@ -38,7 +37,9 @@ export class HolyshipperFleetManager implements IFleetManager {
   private readonly gatewayUrl: string;
   private readonly gatewayKey: string;
   private readonly network: string | undefined;
-  private readonly containerPort: number;
+
+  /** Track live instances for teardown by containerId */
+  private readonly instances = new Map<string, Instance>();
 
   constructor(config: HolyshipperFleetManagerConfig) {
     this.fleet = config.fleetManager;
@@ -46,11 +47,9 @@ export class HolyshipperFleetManager implements IFleetManager {
     this.gatewayUrl = config.gatewayUrl;
     this.gatewayKey = config.gatewayKey;
     this.network = config.network;
-    this.containerPort = config.containerPort ?? 8080;
   }
 
   async provision(entityId: string, config: ProvisionConfig): Promise<ProvisionResult> {
-    const profileId = crypto.randomUUID();
     const botName = `hs-${entityId.slice(0, 8)}-${Date.now()}`;
 
     logger.info("[fleet] provisioning holyshipper container", {
@@ -61,12 +60,11 @@ export class HolyshipperFleetManager implements IFleetManager {
       repo: config.repo,
     });
 
-    // Build env vars for the container
     const env: Record<string, string> = {
       HOLYSHIP_GATEWAY_KEY: this.gatewayKey,
       HOLYSHIP_GATEWAY_URL: this.gatewayUrl,
       HOLYSHIP_ENTITY_ID: entityId,
-      PORT: String(this.containerPort),
+      PORT: "8080",
     };
 
     if (config.githubToken) {
@@ -74,9 +72,8 @@ export class HolyshipperFleetManager implements IFleetManager {
       env.GITHUB_TOKEN = config.githubToken;
     }
 
-    // Create + start ephemeral container via platform-core FleetManager
-    const profile = await this.fleet.createAndStart({
-      id: profileId,
+    // Create ephemeral container — returns Instance with url
+    const instance = await this.fleet.create({
       name: botName,
       tenantId: "holyship",
       image: this.image,
@@ -89,37 +86,55 @@ export class HolyshipperFleetManager implements IFleetManager {
       ephemeral: true,
     });
 
-    const containerId = profile.id;
+    // Start the container
+    await instance.start();
 
-    // Wait for container to be ready (health check)
-    const runnerUrl = await this.waitForReady(containerId, botName);
+    // Track immediately so teardown works if later steps fail
+    this.instances.set(instance.containerId, instance);
+    const runnerUrl = instance.url;
 
-    // Inject credentials
-    await this.postCredentials(runnerUrl, config);
+    try {
+      await this.waitForReady(runnerUrl, botName);
 
-    // Checkout repo(s)
-    if (config.owner && config.repo) {
-      await this.postCheckout(runnerUrl, config);
+      // Inject credentials
+      await this.postCredentials(runnerUrl, config);
+
+      // Checkout repo(s)
+      if (config.owner && config.repo) {
+        await this.postCheckout(runnerUrl, config);
+      }
+    } catch (err) {
+      // Clean up on mid-provision failure — don't leak containers
+      logger.error("[fleet] mid-provision failure, cleaning up", {
+        entityId,
+        containerId: instance.containerId.slice(0, 12),
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await instance.remove().catch(() => {});
+      this.instances.delete(instance.containerId);
+      throw err;
     }
 
     logger.info("[fleet] holyshipper container ready", {
       botName,
       entityId,
+      containerId: instance.containerId.slice(0, 12),
       runnerUrl,
     });
 
-    return { containerId, runnerUrl };
+    return { containerId: instance.containerId, runnerUrl };
   }
 
   async teardown(containerId: string): Promise<void> {
-    logger.info("[fleet] tearing down holyshipper container", { containerId });
+    logger.info("[fleet] tearing down holyshipper container", { containerId: containerId.slice(0, 12) });
 
-    try {
-      await this.fleet.remove(containerId);
-    } catch (err) {
-      logger.warn("[fleet] container removal failed (may already be gone)", {
-        containerId,
-        error: err instanceof Error ? err.message : String(err),
+    const instance = this.instances.get(containerId);
+    this.instances.delete(containerId);
+    if (instance) {
+      await instance.remove();
+    } else {
+      logger.warn("[fleet] no instance found for teardown — may already be gone", {
+        containerId: containerId.slice(0, 12),
       });
     }
   }
@@ -128,22 +143,16 @@ export class HolyshipperFleetManager implements IFleetManager {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private async waitForReady(_containerId: string, botName: string, timeoutMs = 30_000): Promise<string> {
+  private async waitForReady(runnerUrl: string, botName: string, timeoutMs = 30_000): Promise<void> {
     const start = Date.now();
     const interval = 1000;
-
-    // For now, construct URL from container name + network
-    // In production this would inspect the container for the mapped port
-    const runnerUrl = this.network
-      ? `http://${botName}:${this.containerPort}`
-      : `http://localhost:${this.containerPort}`;
 
     while (Date.now() - start < timeoutMs) {
       try {
         const res = await fetch(`${runnerUrl}/health`, {
           signal: AbortSignal.timeout(2000),
         });
-        if (res.ok) return runnerUrl;
+        if (res.ok) return;
       } catch {
         // Not ready yet
       }
@@ -188,7 +197,7 @@ export class HolyshipperFleetManager implements IFleetManager {
         repo: repoFullName,
         entityId: config.entityId,
       }),
-      signal: AbortSignal.timeout(120_000), // Cloning can take a while
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {
