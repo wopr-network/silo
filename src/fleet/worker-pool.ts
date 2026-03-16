@@ -64,6 +64,13 @@ export class WorkerPool implements IEventBusAdapter {
   }
 
   async emit(event: EngineEvent): Promise<void> {
+    // When an entity is created, claim it to build the first invocation
+    if (event.type === "entity.created") {
+      logger.info("[worker-pool] entity.created — claiming work", { entityId: event.entityId });
+      await this.engine.claimWork("engineering");
+      return;
+    }
+
     if (event.type !== "invocation.created") return;
     if ("mode" in event && event.mode === "passive") return;
 
