@@ -74,8 +74,8 @@ export class HolyshipperFleetManager implements IFleetManager {
       env.GITHUB_TOKEN = config.githubToken;
     }
 
-    // Create ephemeral container via platform-core FleetManager
-    const profile = await this.fleet.create({
+    // Create + start ephemeral container via platform-core FleetManager
+    const profile = await this.fleet.createAndStart({
       id: profileId,
       name: botName,
       tenantId: "holyship",
@@ -85,6 +85,8 @@ export class HolyshipperFleetManager implements IFleetManager {
       description: `Ephemeral worker for entity ${entityId}`,
       updatePolicy: "manual",
       releaseChannel: "stable",
+      network: this.network,
+      ephemeral: true,
     });
 
     const containerId = profile.id;
