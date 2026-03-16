@@ -73,16 +73,34 @@ export class WorkerPool implements IEventBusAdapter {
       entityId: "entityId" in event ? event.entityId : undefined,
     });
 
-    // When an entity is created, claim it to build the first invocation
+    // When an entity is created, claim it and directly schedule the worker.
+    // claimWork emits entity.claimed but NOT invocation.created, so we
+    // synthesize the event and feed it into the pool ourselves.
     if (event.type === "entity.created") {
       logger.info("[worker-pool] entity.created — claiming work", { entityId: event.entityId });
       try {
         const claimed = await this.engine.claimWork("engineering");
         if (claimed && typeof claimed === "object") {
-          logger.info("[worker-pool] claimWork succeeded", {
+          logger.info("[worker-pool] claimWork succeeded — scheduling worker directly", {
             claimedEntityId: claimed.entityId,
             invocationId: claimed.invocationId,
           });
+          const syntheticEvent = {
+            type: "invocation.created" as const,
+            entityId: claimed.entityId,
+            invocationId: claimed.invocationId,
+            stage: claimed.stage,
+            emittedAt: new Date(),
+          };
+          if (this.activeWorkers < this.poolSize) {
+            void this.runWorker(syntheticEvent);
+          } else {
+            this.pending.push(syntheticEvent);
+            logger.warn("[worker-pool] all slots busy — queued claimed work", {
+              entityId: claimed.entityId,
+              queueDepth: this.pending.length,
+            });
+          }
         } else {
           logger.warn("[worker-pool] claimWork returned no work", {
             entityId: event.entityId,
