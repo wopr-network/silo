@@ -61,24 +61,64 @@ export class WorkerPool implements IEventBusAdapter {
     this.invocationRepo = config.invocationRepo;
     this.getGithubToken = config.getGithubToken;
     this.poolSize = config.poolSize ?? 4;
+    logger.info("[worker-pool] initialized", {
+      poolSize: this.poolSize,
+      tierOverride: MODEL_TIER_OVERRIDE || "(none)",
+    });
   }
 
   async emit(event: EngineEvent): Promise<void> {
+    logger.debug("[worker-pool] event received", {
+      type: event.type,
+      entityId: "entityId" in event ? event.entityId : undefined,
+    });
+
     // When an entity is created, claim it to build the first invocation
     if (event.type === "entity.created") {
       logger.info("[worker-pool] entity.created — claiming work", { entityId: event.entityId });
-      await this.engine.claimWork("engineering");
+      try {
+        const claimed = await this.engine.claimWork("engineering");
+        if (claimed && typeof claimed === "object") {
+          logger.info("[worker-pool] claimWork succeeded", {
+            claimedEntityId: claimed.entityId,
+            invocationId: claimed.invocationId,
+          });
+        } else {
+          logger.warn("[worker-pool] claimWork returned no work", {
+            entityId: event.entityId,
+            result: String(claimed),
+          });
+        }
+      } catch (err) {
+        logger.error("[worker-pool] claimWork threw", {
+          entityId: event.entityId,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
       return;
     }
 
     if (event.type !== "invocation.created") return;
-    if ("mode" in event && event.mode === "passive") return;
+    if ("mode" in event && event.mode === "passive") {
+      logger.debug("[worker-pool] skipping passive invocation", { entityId: event.entityId });
+      return;
+    }
+
+    logger.info("[worker-pool] invocation.created — scheduling worker", {
+      entityId: event.entityId,
+      invocationId: event.invocationId,
+      stage: event.stage,
+      activeWorkers: this.activeWorkers,
+      poolSize: this.poolSize,
+      queueDepth: this.pending.length,
+    });
 
     if (this.activeWorkers < this.poolSize) {
       void this.runWorker(event);
     } else {
       this.pending.push(event);
-      logger.info("[worker-pool] queued (all slots busy)", {
+      logger.warn("[worker-pool] all slots busy — queued", {
         entityId: event.entityId,
         queueDepth: this.pending.length,
         activeWorkers: this.activeWorkers,
@@ -89,18 +129,34 @@ export class WorkerPool implements IEventBusAdapter {
   private async runWorker(event: EngineEvent & { type: "invocation.created" }): Promise<void> {
     this.activeWorkers++;
     const workerId = this.activeWorkers;
+    const tag = `[worker-${workerId}]`;
+
+    logger.info(`${tag} starting`, {
+      entityId: event.entityId,
+      invocationId: event.invocationId,
+      activeWorkers: this.activeWorkers,
+    });
 
     try {
       await this.executeInvocation(workerId, event);
     } catch (err) {
-      logger.error(`[worker-${workerId}] unhandled error`, {
+      logger.error(`${tag} unhandled error`, {
         entityId: event.entityId,
         error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       });
     } finally {
       this.activeWorkers--;
+      logger.info(`${tag} finished`, {
+        entityId: event.entityId,
+        activeWorkers: this.activeWorkers,
+        pendingCount: this.pending.length,
+      });
       const next = this.pending.shift();
-      if (next) void this.runWorker(next);
+      if (next) {
+        logger.info(`${tag} dequeuing next`, { nextEntityId: next.entityId });
+        void this.runWorker(next);
+      }
     }
   }
 
@@ -112,9 +168,14 @@ export class WorkerPool implements IEventBusAdapter {
     const tag = `[worker-${workerId}]`;
 
     // 1. Read invocation for prompt
+    logger.info(`${tag} reading invocation`, { invocationId });
     const invocation = await this.invocationRepo.get(invocationId);
-    if (!invocation?.prompt) {
-      logger.error(`${tag} invocation missing or no prompt`, { invocationId });
+    if (!invocation) {
+      logger.error(`${tag} invocation not found`, { invocationId });
+      return;
+    }
+    if (!invocation.prompt) {
+      logger.error(`${tag} invocation has no prompt`, { invocationId, agentRole: invocation.agentRole });
       return;
     }
 
@@ -125,9 +186,19 @@ export class WorkerPool implements IEventBusAdapter {
     const issueNumber = Number(artifacts.issueNumber) || 0;
     const agentRole = invocation.agentRole;
 
+    logger.info(`${tag} invocation loaded`, {
+      entityId,
+      invocationId,
+      agentRole,
+      promptLength: prompt.length,
+      repoFullName: repoFullName || "(none)",
+      issueNumber: issueNumber || "(none)",
+    });
+
     let githubToken = "";
     try {
       githubToken = (await this.getGithubToken()) ?? "";
+      logger.debug(`${tag} github token ${githubToken ? "obtained" : "empty"}`);
     } catch (err) {
       logger.warn(`${tag} github token failed`, { error: String(err) });
     }
@@ -135,7 +206,13 @@ export class WorkerPool implements IEventBusAdapter {
     const provisionConfig: ProvisionConfig = { entityId, flowName: stage, owner, repo, issueNumber, githubToken };
 
     // 2. Provision container
-    logger.info(`${tag} provisioning`, { entityId, stage, owner, repo });
+    logger.info(`${tag} provisioning holyshipper container`, {
+      entityId,
+      stage,
+      owner,
+      repo,
+      image: process.env.HOLYSHIP_WORKER_IMAGE ?? "(default)",
+    });
 
     const dbRecordId = crypto.randomUUID();
     await this.db.insert(holyshipperContainers).values({
@@ -146,20 +223,34 @@ export class WorkerPool implements IEventBusAdapter {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    logger.debug(`${tag} DB record created`, { dbRecordId });
 
     let runnerUrl: string;
     let containerId: string;
     try {
+      const provisionStart = Date.now();
       const result = await this.fleetManager.provision(entityId, provisionConfig);
       runnerUrl = result.runnerUrl;
       containerId = result.containerId;
+      const provisionMs = Date.now() - provisionStart;
+
+      logger.info(`${tag} container provisioned`, {
+        entityId,
+        containerId: containerId.slice(0, 12),
+        runnerUrl,
+        provisionMs,
+      });
 
       await this.db
         .update(holyshipperContainers)
         .set({ containerId, runnerUrl, status: "running", provisionedAt: new Date(), updatedAt: new Date() })
         .where(eq(holyshipperContainers.id, dbRecordId));
     } catch (err) {
-      logger.error(`${tag} provision failed`, { entityId, error: err instanceof Error ? err.message : String(err) });
+      logger.error(`${tag} provision FAILED`, {
+        entityId,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       await this.db
         .update(holyshipperContainers)
         .set({ status: "failed", updatedAt: new Date() })
@@ -169,9 +260,17 @@ export class WorkerPool implements IEventBusAdapter {
 
     // 3. Dispatch prompt
     const modelTier = MODEL_TIER_OVERRIDE || AGENT_ROLE_TO_TIER[agentRole ?? ""] || "sonnet";
-    logger.info(`${tag} dispatching`, { entityId, invocationId, modelTier, promptLength: prompt.length });
+    logger.info(`${tag} dispatching prompt`, {
+      entityId,
+      invocationId,
+      modelTier,
+      tierSource: MODEL_TIER_OVERRIDE ? "env override" : `role:${agentRole ?? "default"}`,
+      promptLength: prompt.length,
+      runnerUrl,
+    });
 
     try {
+      const dispatchStart = Date.now();
       const res = await fetch(`${runnerUrl.replace(/\/$/, "")}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -179,15 +278,26 @@ export class WorkerPool implements IEventBusAdapter {
         signal: AbortSignal.timeout(600_000),
       });
 
+      const dispatchMs = Date.now() - dispatchStart;
+
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        logger.error(`${tag} dispatch HTTP error`, { entityId, status: res.status, body: text.slice(0, 500) });
+        logger.error(`${tag} dispatch HTTP error`, {
+          entityId,
+          status: res.status,
+          body: text.slice(0, 500),
+          dispatchMs,
+        });
         await this.teardown(dbRecordId, containerId, tag, entityId);
         return;
       }
 
+      logger.info(`${tag} dispatch response received`, { entityId, status: res.status, dispatchMs });
+
       // 4. Parse SSE result
       const body = await res.text();
+      logger.debug(`${tag} SSE body length`, { entityId, bodyLength: body.length });
+
       const sseEvents = body
         .split("\n")
         .filter((line) => line.startsWith("data:"))
@@ -200,9 +310,15 @@ export class WorkerPool implements IEventBusAdapter {
         })
         .filter(Boolean) as Array<Record<string, unknown>>;
 
+      logger.info(`${tag} SSE events parsed`, {
+        entityId,
+        eventCount: sseEvents.length,
+        types: sseEvents.map((e) => e.type),
+      });
+
       const resultEvent = sseEvents.find((e) => e.type === "result");
       if (!resultEvent) {
-        logger.error(`${tag} no result in SSE stream`, { entityId });
+        logger.error(`${tag} no result event in SSE stream`, { entityId, eventTypes: sseEvents.map((e) => e.type) });
         await this.teardown(dbRecordId, containerId, tag, entityId);
         return;
       }
@@ -212,20 +328,40 @@ export class WorkerPool implements IEventBusAdapter {
 
       logger.info(`${tag} dispatch complete`, {
         entityId,
-        signal,
+        signal: signal || "(empty)",
         artifactKeys: Object.keys(resultArtifacts),
         costUsd: resultEvent.costUsd,
+        isError: resultEvent.isError,
+        stopReason: resultEvent.stopReason,
       });
 
       // 5. Feed signal to engine — gate evaluation hits the still-running container
       if (signal) {
-        await this.engine.processSignal(entityId, signal, resultArtifacts);
-        logger.info(`${tag} signal processed`, { entityId, signal });
+        logger.info(`${tag} processing signal`, { entityId, signal });
+        try {
+          const signalResult = await this.engine.processSignal(entityId, signal, resultArtifacts);
+          logger.info(`${tag} signal processed`, {
+            entityId,
+            signal,
+            result: JSON.stringify(signalResult).slice(0, 500),
+          });
+        } catch (err) {
+          logger.error(`${tag} processSignal FAILED`, {
+            entityId,
+            signal,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        }
       } else {
-        logger.warn(`${tag} no signal`, { entityId });
+        logger.warn(`${tag} no signal in result — nothing to process`, { entityId });
       }
     } catch (err) {
-      logger.error(`${tag} dispatch failed`, { entityId, error: err instanceof Error ? err.message : String(err) });
+      logger.error(`${tag} dispatch FAILED`, {
+        entityId,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     }
 
     // 6. Teardown — processSignal is sync so gates are done
@@ -233,10 +369,15 @@ export class WorkerPool implements IEventBusAdapter {
   }
 
   private async teardown(dbRecordId: string, containerId: string, tag: string, entityId: string): Promise<void> {
+    logger.info(`${tag} tearing down container`, { entityId, containerId: containerId.slice(0, 12) });
     try {
       await this.fleetManager.teardown(containerId);
+      logger.info(`${tag} container removed`, { entityId, containerId: containerId.slice(0, 12) });
     } catch (err) {
-      logger.warn(`${tag} teardown failed`, { entityId, error: err instanceof Error ? err.message : String(err) });
+      logger.warn(`${tag} teardown failed (container may already be gone)`, {
+        entityId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     await this.db
       .update(holyshipperContainers)
