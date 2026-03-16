@@ -58,7 +58,7 @@ export function createRunnerGateHandler(config: RunnerGateClientConfig): RunnerP
     const timeout = setTimeout(() => controller.abort(), requestTimeout);
 
     try {
-      const res = await fetch(`${runnerUrl}/gate`, {
+      const res = await fetch(`${runnerUrl.replace(/\/$/, "")}/gate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
