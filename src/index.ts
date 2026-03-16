@@ -333,6 +333,41 @@ async function main() {
     logger.info("GitHub webhook routes mounted");
   }
 
+  // ─── 12b. GitHub repos endpoint (for dashboard + ship-it UI) ────────
+  if (hasGitHubApp) {
+    app.get("/api/github/repos", async (c) => {
+      try {
+        const installations = await installationRepo.listByTenant(tenantId);
+        if (installations.length === 0) {
+          return c.json({ repositories: [] });
+        }
+        const { token } = await getInstallationAccessToken(
+          config.GITHUB_APP_ID as string,
+          config.GITHUB_APP_PRIVATE_KEY as string,
+          installations[0].installationId,
+        );
+        const res = await fetch("https://api.github.com/installation/repositories?per_page=100", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        });
+        if (!res.ok) {
+          return c.json({ repositories: [], error: `GitHub API ${res.status}` }, 502);
+        }
+        const data = (await res.json()) as {
+          repositories: { id: number; full_name: string; name: string }[];
+        };
+        return c.json({ repositories: data.repositories });
+      } catch (err) {
+        logger.error("Failed to list repos", (err as Error).message);
+        return c.json({ repositories: [], error: (err as Error).message }, 500);
+      }
+    });
+    logger.info("GitHub repos endpoint mounted");
+  }
+
   // ─── 13. Crypto payments (BTCPay + EVM watchers) ────────────────────
   if (config.BTCPAY_API_KEY && config.BTCPAY_BASE_URL && config.BTCPAY_STORE_ID && config.BTCPAY_WEBHOOK_SECRET) {
     try {
