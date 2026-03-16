@@ -50,10 +50,11 @@ export class HolyshipperFleetManager implements IFleetManager {
   }
 
   async provision(entityId: string, config: ProvisionConfig): Promise<ProvisionResult> {
-    const botId = `hs-${entityId.slice(0, 8)}-${Date.now()}`;
+    const profileId = crypto.randomUUID();
+    const botName = `hs-${entityId.slice(0, 8)}-${Date.now()}`;
 
     logger.info("[fleet] provisioning holyshipper container", {
-      botId,
+      botName,
       entityId,
       image: this.image,
       owner: config.owner,
@@ -75,8 +76,8 @@ export class HolyshipperFleetManager implements IFleetManager {
 
     // Create ephemeral container via platform-core FleetManager
     const profile = await this.fleet.create({
-      id: botId,
-      name: botId,
+      id: profileId,
+      name: botName,
       tenantId: "holyship",
       image: this.image,
       env,
@@ -89,7 +90,7 @@ export class HolyshipperFleetManager implements IFleetManager {
     const containerId = profile.id;
 
     // Wait for container to be ready (health check)
-    const runnerUrl = await this.waitForReady(containerId, botId);
+    const runnerUrl = await this.waitForReady(containerId, botName);
 
     // Inject credentials
     await this.postCredentials(runnerUrl, config);
@@ -100,7 +101,7 @@ export class HolyshipperFleetManager implements IFleetManager {
     }
 
     logger.info("[fleet] holyshipper container ready", {
-      botId,
+      botName,
       entityId,
       runnerUrl,
     });
@@ -125,13 +126,15 @@ export class HolyshipperFleetManager implements IFleetManager {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private async waitForReady(_containerId: string, botId: string, timeoutMs = 30_000): Promise<string> {
+  private async waitForReady(_containerId: string, botName: string, timeoutMs = 30_000): Promise<string> {
     const start = Date.now();
     const interval = 1000;
 
     // For now, construct URL from container name + network
     // In production this would inspect the container for the mapped port
-    const runnerUrl = this.network ? `http://${botId}:${this.containerPort}` : `http://localhost:${this.containerPort}`;
+    const runnerUrl = this.network
+      ? `http://${botName}:${this.containerPort}`
+      : `http://localhost:${this.containerPort}`;
 
     while (Date.now() - start < timeoutMs) {
       try {
@@ -145,7 +148,7 @@ export class HolyshipperFleetManager implements IFleetManager {
       await new Promise((r) => setTimeout(r, interval));
     }
 
-    throw new Error(`Container ${botId} did not become ready within ${timeoutMs}ms`);
+    throw new Error(`Container ${botName} did not become ready within ${timeoutMs}ms`);
   }
 
   private async postCredentials(runnerUrl: string, config: ProvisionConfig): Promise<void> {
