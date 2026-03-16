@@ -359,7 +359,7 @@ async function main() {
   // Start reaper
   const stopReaper = engine.startReaper(30_000);
 
-  // ─── 9b. Holyshipper fleet lifecycle (ephemeral containers) ────────
+  // ─── 9b. Reactive worker pool (ephemeral holyshipper containers) ───
   if (config.HOLYSHIP_WORKER_IMAGE && config.HOLYSHIP_GATEWAY_KEY) {
     try {
       const Docker = (await import("dockerode")).default;
@@ -379,13 +379,14 @@ async function main() {
         network: config.DOCKER_NETWORK,
       });
 
-      const { EntityLifecycleManager } = await import("./fleet/entity-lifecycle.js");
-      const lifecycleManager = new EntityLifecycleManager(
-        engineDb,
+      const { WorkerPool } = await import("./fleet/worker-pool.js");
+      const workerPool = new WorkerPool({
+        engine,
+        db: engineDb,
         tenantId,
-        holyshipperFleet,
-        repos.entities,
-        async () => {
+        fleetManager: holyshipperFleet,
+        invocationRepo: repos.invocations,
+        getGithubToken: async () => {
           if (!hasGitHubApp) return null;
           const installations = await installationRepo.listByTenant(tenantId);
           if (installations.length === 0) return null;
@@ -396,15 +397,16 @@ async function main() {
           );
           return token;
         },
-      );
+        poolSize: 4,
+      });
 
-      eventEmitter.register(lifecycleManager);
-      logger.info("Holyshipper fleet lifecycle registered (ephemeral containers)");
+      eventEmitter.register(workerPool);
+      logger.info("Reactive worker pool registered (4 slots)");
     } catch (err) {
-      logger.warn("Holyshipper fleet lifecycle setup failed (non-fatal)", (err as Error).message);
+      logger.warn("Worker pool setup failed (non-fatal)", (err as Error).message);
     }
   } else {
-    logger.info("Holyshipper fleet lifecycle disabled (HOLYSHIP_WORKER_IMAGE or HOLYSHIP_GATEWAY_KEY not set)");
+    logger.info("Worker pool disabled (HOLYSHIP_WORKER_IMAGE or HOLYSHIP_GATEWAY_KEY not set)");
   }
 
   // ─── 10. Engine REST routes (claim/report for holyshippers) ────────
