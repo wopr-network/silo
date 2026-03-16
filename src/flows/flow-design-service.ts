@@ -38,14 +38,12 @@ export class FlowDesignService {
   private readonly interrogationService: InterrogationService;
   private readonly fleetManager: IFleetManager;
   private readonly getGithubToken: () => Promise<string | null>;
-  private readonly tenantId: string;
   private readonly dispatchTimeoutMs: number;
 
   constructor(config: FlowDesignServiceConfig) {
     this.interrogationService = config.interrogationService;
     this.fleetManager = config.fleetManager;
     this.getGithubToken = config.getGithubToken;
-    this.tenantId = config.tenantId;
     this.dispatchTimeoutMs = config.dispatchTimeoutMs ?? 600_000;
   }
 
