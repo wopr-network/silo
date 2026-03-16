@@ -287,7 +287,7 @@ async function main() {
   const tenantId = "default";
   const repos = createScopedRepos(engineDb, tenantId);
 
-  const eventEmitter = new EventEmitter();
+  const eventEmitter = new EventEmitter(logger);
   eventEmitter.register(new DomainEventPersistAdapter(repos.domainEvents));
 
   // GitHub primitive op handler (for gate evaluation)
