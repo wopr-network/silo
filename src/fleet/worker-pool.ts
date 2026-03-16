@@ -27,6 +27,9 @@ const AGENT_ROLE_TO_TIER: Record<string, string> = {
   "wopr-technical-writer": "haiku",
 };
 
+/** When set, overrides all tier selections — use "test" for free models in dev/staging */
+const MODEL_TIER_OVERRIDE = process.env.HOLYSHIP_MODEL_TIER_OVERRIDE ?? "";
+
 export interface WorkerPoolConfig {
   engine: Engine;
   db: Db;
@@ -158,7 +161,7 @@ export class WorkerPool implements IEventBusAdapter {
     }
 
     // 3. Dispatch prompt
-    const modelTier = AGENT_ROLE_TO_TIER[agentRole ?? ""] ?? "sonnet";
+    const modelTier = MODEL_TIER_OVERRIDE || AGENT_ROLE_TO_TIER[agentRole ?? ""] || "sonnet";
     logger.info(`${tag} dispatching`, { entityId, invocationId, modelTier, promptLength: prompt.length });
 
     try {
