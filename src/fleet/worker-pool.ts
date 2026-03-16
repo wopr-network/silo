@@ -334,9 +334,19 @@ export class WorkerPool implements IEventBusAdapter {
         types: sseEvents.map((e) => e.type),
       });
 
+      // Log any error events for debugging
+      const errorEvents = sseEvents.filter((e) => e.type === "error");
+      if (errorEvents.length > 0) {
+        logger.error(`${tag} SSE error events`, { entityId, errors: errorEvents });
+      }
+
       const resultEvent = sseEvents.find((e) => e.type === "result");
       if (!resultEvent) {
-        logger.error(`${tag} no result event in SSE stream`, { entityId, eventTypes: sseEvents.map((e) => e.type) });
+        logger.error(`${tag} no result event in SSE stream`, {
+          entityId,
+          eventTypes: sseEvents.map((e) => e.type),
+          rawBody: body.slice(0, 2000),
+        });
         await this.teardown(dbRecordId, containerId, tag, entityId);
         return;
       }
