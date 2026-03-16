@@ -132,10 +132,10 @@ export class HolyshipperFleetManager implements IFleetManager {
     const start = Date.now();
     const interval = 1000;
 
-    // For now, construct URL from container name + network
-    // In production this would inspect the container for the mapped port
+    // FleetManager prefixes container names with "wopr-"
+    const containerDns = `wopr-${botName.replace(/_/g, "-")}`;
     const runnerUrl = this.network
-      ? `http://${botName}:${this.containerPort}`
+      ? `http://${containerDns}:${this.containerPort}`
       : `http://localhost:${this.containerPort}`;
 
     while (Date.now() - start < timeoutMs) {
