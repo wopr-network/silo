@@ -1,0 +1,1 @@
+ALTER TABLE "holyshipper_containers" ADD COLUMN "runner_url" text;
