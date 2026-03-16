@@ -6,12 +6,12 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "main": "./dist/src/exports.js",
-  "types": "./dist/src/exports.d.ts",
+  "main": "./dist/exports.js",
+  "types": "./dist/exports.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/src/exports.d.ts",
-      "import": "./dist/src/exports.js"
+      "types": "./dist/exports.d.ts",
+      "import": "./dist/exports.js"
     },
     "./package.json": "./package.json"
   },
