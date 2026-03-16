@@ -62,7 +62,9 @@ export const STATES: CreateStateInput[] = [
 2. Identify which files to create, modify, or delete.
 3. Specify function signatures, data structures, and test cases.
 4. Post the spec as a comment on the issue starting with "## Implementation Spec".
-5. Say: spec_ready`,
+5. When done, output the following signal on a line by itself with no other text:
+
+spec_ready`,
   },
   {
     name: "code",
@@ -89,7 +91,9 @@ export const STATES: CreateStateInput[] = [
 2. Write clean, tested code.
 3. Create a pull request with a clear description.
 4. Run the project's CI gate locally before pushing (lint, build, test).
-5. Say: pr_created
+5. When done, output the following signal on a line by itself with no other text:
+
+pr_created
 
 Include the PR URL in your response.`,
   },
@@ -114,9 +118,17 @@ Include the PR URL in your response.`,
 2. Check every automated review bot comment (CodeRabbit, Sourcery, etc.).
 3. Verify CI is green.
 4. Check for: bugs, security issues, missing tests, spec violations, dead code.
-5. If everything passes: say "clean"
-6. If there are issues: say "issues" and list every finding with file, line, and description.
-7. If CI failed: say "ci_failed"`,
+5. When done, output ONE of the following signals on a line by itself with no other text:
+
+clean
+
+If there are issues, list every finding with file, line, and description, then output:
+
+issues
+
+If CI failed, output:
+
+ci_failed`,
   },
   {
     name: "fix",
@@ -144,9 +156,13 @@ Include the PR URL in your response.`,
 1. Fix every finding. Do not skip any.
 2. Run the CI gate locally (lint, build, test) before pushing.
 3. Push to the same branch.
-4. Say: fixes_pushed
+4. When done, output the following signal on a line by itself with no other text:
 
-If a finding contradicts the architect's spec, say: cant_resolve`,
+fixes_pushed
+
+If a finding contradicts the architect's spec, output instead:
+
+cant_resolve`,
   },
   {
     name: "docs",
@@ -165,10 +181,13 @@ If a finding contradicts the architect's spec, say: cant_resolve`,
 1. Read the PR diff and spec.
 2. Update or create documentation (README, docs/, JSDoc, comments).
 3. Push doc updates to the same branch. Do NOT create a new PR.
-4. Say: docs_ready
+4. When done, output the following signal on a line by itself with no other text:
 
-If the change doesn't need documentation updates, say: docs_ready
-If you can't complete documentation, say: cant_document`,
+docs_ready
+
+If you can't complete documentation, output instead:
+
+cant_document`,
   },
   {
     name: "learning",
@@ -188,7 +207,9 @@ If you can't complete documentation, say: cant_document`,
 1. What patterns or conventions did this work establish or reinforce?
 2. Were there any surprising findings during review?
 3. Update CLAUDE.md or project docs if new conventions were established.
-4. Say: learned`,
+4. When done, output the following signal on a line by itself with no other text:
+
+learned`,
   },
   {
     name: "merge",
@@ -203,9 +224,17 @@ If you can't complete documentation, say: cant_document`,
 ## Instructions
 1. Verify the PR is mergeable (no conflicts, CI green, reviews approved).
 2. Add the PR to the merge queue or merge directly.
-3. If merged: say "merged"
-4. If blocked (merge queue rejected, conflicts): say "blocked"
-5. If PR was closed without merge: say "closed"`,
+3. When done, output ONE of the following signals on a line by itself with no other text:
+
+merged
+
+If blocked (merge queue rejected, conflicts), output:
+
+blocked
+
+If PR was closed without merge, output:
+
+closed`,
   },
   // Terminal states — no prompt templates, no agents
   {

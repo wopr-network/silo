@@ -5,6 +5,7 @@
 
 ## Overview
 
+<<<<<<< HEAD
 When a repo is onboarded to Holy Ship, it goes through a five-step sequence:
 
 1. **Interrogate** — AI discovers what the repo has (capabilities, conventions, gaps)
@@ -20,6 +21,14 @@ The interrogation produces:
 3. **Internal knowledge** — Holy Ship's private learning DB, updated continuously by the flow's learning step
 4. **An actionable checklist** — each gap is a potential issue that Holy Ship can create and then actualize through the engineering flow
 5. **A custom flow definition** — generated after gaps are resolved, tailored to what the repo actually supports
+=======
+When a repo is onboarded to Holy Ship, an AI interrogates it to discover its capabilities, conventions, and gaps. The result is:
+
+1. **A capabilities config** stored in Holy Ship's DB — drives which flow gates/states apply at runtime
+2. **A bootstrapped CLAUDE.md** — the repo's public intelligence file (customer-controlled)
+3. **Internal knowledge** — Holy Ship's private learning DB, updated continuously by the flow's learning step
+4. **An actionable checklist** — each gap is a potential issue that Holy Ship can create and then actualize through the engineering flow
+>>>>>>> f6adf9d (docs: repo interrogation design spec)
 
 ## Architecture
 
@@ -242,6 +251,7 @@ The interrogation runs on the runner (Phase 1 heuristics + Phase 2 AI) because:
 - The runner sends back the structured `RepoConfig` — not the code itself
 
 The cloud stores the config and uses it for prompt engineering and flow orchestration. The blind boundary holds — the cloud never sees source code, but it knows everything about how the repo works.
+<<<<<<< HEAD
 
 ### Flow Design — The Final Step
 
@@ -275,3 +285,5 @@ The customer sees their custom flow in the dashboard. They can tweak it — togg
 As the repo changes — adds CI, adds tests, adopts a linter — the interrogation can re-run and the AI can propose flow updates. "Your repo now has CI. Want to add a CI gate to your flow?" This is a one-click upgrade, not a manual reconfiguration.
 
 The flow grows with the repo. The template is just how it starts.
+=======
+>>>>>>> f6adf9d (docs: repo interrogation design spec)
