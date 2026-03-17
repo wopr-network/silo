@@ -20,6 +20,7 @@ import { DomainEventPersistAdapter } from "./engine/domain-event-adapter.js";
 import { Engine } from "./engine/engine.js";
 import { EventEmitter } from "./engine/event-emitter.js";
 import type { PrimitiveOpHandler } from "./engine/gate-evaluator.js";
+import type { FlowEditService } from "./flows/flow-edit-service.js";
 import { provisionEngineeringFlow } from "./flows/provision.js";
 import { DrizzleGitHubInstallationRepository } from "./github/installation-repo.js";
 import { checkCiStatus, checkCommentExists, checkPrStatus } from "./github/primitive-ops.js";
@@ -361,6 +362,7 @@ async function main() {
   const stopReaper = engine.startReaper(30_000);
 
   // ─── 9b. Reactive worker pool (ephemeral holyshipper containers) ───
+  let flowEditService: FlowEditService | undefined;
   if (config.HOLYSHIP_WORKER_IMAGE && config.HOLYSHIP_GATEWAY_KEY) {
     try {
       const Docker = (await import("dockerode")).default;
@@ -378,6 +380,22 @@ async function main() {
         gatewayUrl: config.APP_BASE_URL ? `${config.APP_BASE_URL}/v1` : "http://localhost:3001/v1",
         gatewayKey: config.HOLYSHIP_GATEWAY_KEY,
         network: config.DOCKER_NETWORK,
+      });
+
+      const { FlowEditService } = await import("./flows/flow-edit-service.js");
+      flowEditService = new FlowEditService({
+        fleetManager: holyshipperFleet,
+        getGithubToken: async () => {
+          if (!hasGitHubApp) return null;
+          const installations = await installationRepo.listByTenant(tenantId);
+          if (installations.length === 0) return null;
+          const { token } = await getInstallationAccessToken(
+            config.GITHUB_APP_ID as string,
+            config.GITHUB_APP_PRIVATE_KEY as string,
+            installations[0].installationId,
+          );
+          return token;
+        },
       });
 
       const { WorkerPool } = await import("./fleet/worker-pool.js");
@@ -527,6 +545,7 @@ async function main() {
           );
           return token;
         },
+        flowEditService,
       }),
     );
     logger.info("Flow editor routes mounted");
