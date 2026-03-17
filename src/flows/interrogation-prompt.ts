@@ -2,7 +2,7 @@
  * Repo Interrogation Prompt Template.
  *
  * Dispatched to a runner when a repo is onboarded. The AI inspects the repo,
- * produces a structured RepoConfig, identifies gaps, and bootstraps a CLAUDE.md.
+ * produces a structured RepoConfig, identifies gaps, and bootstraps .holyship/knowledge.md.
  *
  * This is not a flow state — it's a one-shot dispatch that runs before any flow exists.
  * The output drives which flow gets designed for this repo.
@@ -67,7 +67,7 @@ Scan the repo for the following. Be thorough — check root and subdirectories.
 - Dependency update bot (dependabot.yml, renovate.json)?
 
 **Project Intelligence:**
-- CLAUDE.md present? Read it carefully — it contains the repo's conventions, CI gate commands, and gotchas.
+- .holyship/knowledge.md present? Read it carefully — it contains the repo's conventions, CI gate commands, and gotchas.
 - AGENTS.md? .cursorrules? .github/copilot-instructions.md?
 - Conventional commits? (check recent commit messages for patterns like feat:, fix:, chore:)
 
@@ -82,14 +82,14 @@ Based on what you found, answer:
 1. What does this repo actually do? (one paragraph)
 2. What's the full CI gate command? (the exact sequence to run before committing)
 3. What are the repo's conventions that an engineer must follow?
-4. What's fragile or unusual? (scan for TODO, FIXME, HACK comments; check CLAUDE.md gotchas)
+4. What's fragile or unusual? (scan for TODO, FIXME, HACK comments; check .holyship/knowledge.md gotchas)
 5. If monorepo: do capabilities differ per package?
 
 ## Output
 
 You MUST output a JSON block with the following schema. Output it on a line starting with \`REPO_CONFIG:\` followed by the JSON. Do not wrap in markdown code fences.
 
-REPO_CONFIG:{"repo":"org/name","defaultBranch":"main","description":"...","languages":["typescript"],"monorepo":false,"packages":[],"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasClaudeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
+REPO_CONFIG:{"repo":"org/name","defaultBranch":"main","description":"...","languages":["typescript"],"monorepo":false,"packages":[],"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasKnowledgeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
 
 After the REPO_CONFIG, output a gaps section. For each missing capability, output a line starting with \`GAP:\` followed by JSON:
 
@@ -98,7 +98,7 @@ GAP:{"capability":"testing","title":"Add test framework and initial tests","prio
 
 Only output GAPs for capabilities where supported is false or important sub-capabilities are missing.
 
-Finally, if no CLAUDE.md exists, output a \`CLAUDE_MD:\` line followed by the full contents of a bootstrapped CLAUDE.md for this repo, based on everything you learned. If one already exists, output \`CLAUDE_MD:EXISTS\`.
+Finally, if no .holyship/knowledge.md exists, output a \`KNOWLEDGE_MD:\` line followed by the full contents of a bootstrapped .holyship/knowledge.md for this repo, based on everything you learned. If one already exists, output \`KNOWLEDGE_MD:EXISTS\`.
 
 interrogation_complete`;
 
@@ -168,7 +168,7 @@ export interface RepoConfig {
     hasDependencyUpdates?: boolean;
   };
   intelligence: {
-    hasClaudeMd: boolean;
+    hasKnowledgeMd: boolean;
     hasAgentsMd: boolean;
     conventions: string[];
     ciGateCommand?: string | null;
@@ -185,28 +185,28 @@ export interface Gap {
 export interface InterrogationResult {
   config: RepoConfig;
   gaps: Gap[];
-  claudeMd: string | null; // null means CLAUDE.md already exists
+  knowledgeMd: string | null; // null means .holyship/knowledge.md already exists
 }
 
 /**
  * Parse raw AI output into structured InterrogationResult.
- * Scans lines for REPO_CONFIG:, GAP:, and CLAUDE_MD: prefixes.
+ * Scans lines for REPO_CONFIG:, GAP:, and KNOWLEDGE_MD: prefixes.
  */
 export function parseInterrogationOutput(output: string): InterrogationResult {
   const lines = output.split("\n");
 
   let config: RepoConfig | null = null;
   const gaps: Gap[] = [];
-  let claudeMd: string | null = null;
-  let inClaudeMd = false;
-  const claudeMdLines: string[] = [];
+  let knowledgeMd: string | null = null;
+  let inKnowledgeMd = false;
+  const knowledgeMdLines: string[] = [];
 
   for (const line of lines) {
-    if (inClaudeMd) {
-      // Everything after CLAUDE_MD: until end is the CLAUDE.md content
+    if (inKnowledgeMd) {
+      // Everything after KNOWLEDGE_MD: until end is the .holyship/knowledge.md content
       // (unless we hit interrogation_complete signal)
       if (line.trim() === "interrogation_complete") break;
-      claudeMdLines.push(line);
+      knowledgeMdLines.push(line);
       continue;
     }
 
@@ -216,24 +216,24 @@ export function parseInterrogationOutput(output: string): InterrogationResult {
     } else if (line.startsWith("GAP:")) {
       const json = line.slice("GAP:".length).trim();
       gaps.push(JSON.parse(json) as Gap);
-    } else if (line.startsWith("CLAUDE_MD:")) {
-      const rest = line.slice("CLAUDE_MD:".length).trim();
+    } else if (line.startsWith("KNOWLEDGE_MD:")) {
+      const rest = line.slice("KNOWLEDGE_MD:".length).trim();
       if (rest === "EXISTS") {
-        claudeMd = null;
+        knowledgeMd = null;
       } else {
-        inClaudeMd = true;
-        if (rest) claudeMdLines.push(rest);
+        inKnowledgeMd = true;
+        if (rest) knowledgeMdLines.push(rest);
       }
     }
   }
 
-  if (inClaudeMd && claudeMdLines.length > 0) {
-    claudeMd = claudeMdLines.join("\n").trim();
+  if (inKnowledgeMd && knowledgeMdLines.length > 0) {
+    knowledgeMd = knowledgeMdLines.join("\n").trim();
   }
 
   if (!config) {
     throw new Error("Interrogation output missing REPO_CONFIG line");
   }
 
-  return { config, gaps, claudeMd };
+  return { config, gaps, knowledgeMd };
 }

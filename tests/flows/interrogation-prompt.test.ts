@@ -5,11 +5,11 @@ describe("parseInterrogationOutput", () => {
   it("parses a complete interrogation output", () => {
     const output = `Some AI preamble text about inspecting the repo.
 
-REPO_CONFIG:{"repo":"org/my-app","defaultBranch":"main","description":"A web API","languages":["typescript"],"monorepo":false,"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasClaudeMd":false,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
+REPO_CONFIG:{"repo":"org/my-app","defaultBranch":"main","description":"A web API","languages":["typescript"],"monorepo":false,"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasKnowledgeMd":false,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
 GAP:{"capability":"reviewBots","title":"Configure review bots","priority":"medium","description":"No review bots configured."}
 GAP:{"capability":"docs","title":"Set up documentation","priority":"low","description":"No docs directory found."}
 GAP:{"capability":"security","title":"Add SECURITY.md","priority":"low","description":"No security policy."}
-CLAUDE_MD:# my-app
+KNOWLEDGE_MD:# my-app
 
 ## CI Gate
 pnpm lint && pnpm build && pnpm test
@@ -36,27 +36,27 @@ interrogation_complete`;
     expect(result.gaps[1].capability).toBe("docs");
     expect(result.gaps[2].capability).toBe("security");
 
-    expect(result.claudeMd).toContain("# my-app");
-    expect(result.claudeMd).toContain("pnpm lint && pnpm build && pnpm test");
+    expect(result.knowledgeMd).toContain("# my-app");
+    expect(result.knowledgeMd).toContain("pnpm lint && pnpm build && pnpm test");
   });
 
-  it("handles existing CLAUDE.md", () => {
-    const output = `REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"test","languages":["go"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasClaudeMd":true,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
-CLAUDE_MD:EXISTS
+  it("handles existing knowledge.md", () => {
+    const output = `REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"test","languages":["go"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasKnowledgeMd":true,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
+KNOWLEDGE_MD:EXISTS
 
 interrogation_complete`;
 
     const result = parseInterrogationOutput(output);
 
     expect(result.config.repo).toBe("org/app");
-    expect(result.config.intelligence.hasClaudeMd).toBe(true);
-    expect(result.claudeMd).toBeNull();
+    expect(result.config.intelligence.hasKnowledgeMd).toBe(true);
+    expect(result.knowledgeMd).toBeNull();
     expect(result.gaps).toHaveLength(0);
   });
 
   it("handles no gaps", () => {
-    const output = `REPO_CONFIG:{"repo":"org/perfect","defaultBranch":"main","description":"fully configured","languages":["typescript"],"monorepo":false,"ci":{"supported":true},"testing":{"supported":true},"linting":{"supported":true},"formatting":{"supported":true},"typeChecking":{"supported":true},"build":{"supported":true},"reviewBots":{"supported":true},"docs":{"supported":true},"specManagement":{"tracker":"github-issues"},"security":{"hasEnvExample":true,"hasSecurityPolicy":true,"hasSecretScanning":true,"hasDependencyUpdates":true},"intelligence":{"hasClaudeMd":true,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
-CLAUDE_MD:EXISTS
+    const output = `REPO_CONFIG:{"repo":"org/perfect","defaultBranch":"main","description":"fully configured","languages":["typescript"],"monorepo":false,"ci":{"supported":true},"testing":{"supported":true},"linting":{"supported":true},"formatting":{"supported":true},"typeChecking":{"supported":true},"build":{"supported":true},"reviewBots":{"supported":true},"docs":{"supported":true},"specManagement":{"tracker":"github-issues"},"security":{"hasEnvExample":true,"hasSecurityPolicy":true,"hasSecretScanning":true,"hasDependencyUpdates":true},"intelligence":{"hasKnowledgeMd":true,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
+KNOWLEDGE_MD:EXISTS
 
 interrogation_complete`;
 
@@ -64,7 +64,7 @@ interrogation_complete`;
 
     expect(result.config.repo).toBe("org/perfect");
     expect(result.gaps).toHaveLength(0);
-    expect(result.claudeMd).toBeNull();
+    expect(result.knowledgeMd).toBeNull();
   });
 
   it("throws on missing REPO_CONFIG", () => {
@@ -75,9 +75,9 @@ interrogation_complete`;
     expect(() => parseInterrogationOutput(output)).toThrow("missing REPO_CONFIG");
   });
 
-  it("handles multiline CLAUDE.md content", () => {
-    const output = `REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"test","languages":["python"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasClaudeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
-CLAUDE_MD:# My Python App
+  it("handles multiline knowledge.md content", () => {
+    const output = `REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"test","languages":["python"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasKnowledgeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}
+KNOWLEDGE_MD:# My Python App
 
 ## Setup
 pip install -r requirements.txt
@@ -93,8 +93,8 @@ interrogation_complete`;
 
     const result = parseInterrogationOutput(output);
 
-    expect(result.claudeMd).toContain("# My Python App");
-    expect(result.claudeMd).toContain("pip install -r requirements.txt");
-    expect(result.claudeMd).toContain("ML pipeline takes 20 minutes");
+    expect(result.knowledgeMd).toContain("# My Python App");
+    expect(result.knowledgeMd).toContain("pip install -r requirements.txt");
+    expect(result.knowledgeMd).toContain("ML pipeline takes 20 minutes");
   });
 });

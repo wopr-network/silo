@@ -7,11 +7,11 @@
  *
  * Flow graph:
  *
- *   spec → code → review ←→ fix
- *                    ↓
- *                  docs → learning → merge → done
- *                                      ↓
- *                                     fix → review (loop)
+ *   spec → code → review ←→ fix → docs → merge → done
+ *
+ * Learning is implicit — every agent gets a "what did you learn?" prompt
+ * after signaling done, before container teardown. Updates knowledge.md
+ * and ship.log as the last commit in the PR.
  *
  * Terminal states: done, stuck, cancelled, budget_exceeded
  */
@@ -27,7 +27,7 @@ import type {
 
 export const ENGINEERING_FLOW: CreateFlowInput = {
   name: "engineering",
-  description: "Ship correct code. Spec → Code → Review/Fix → Docs → Learning → Merge.",
+  description: "Ship correct code. Spec → Code → Review/Fix → Docs → Merge.",
   discipline: "engineering",
   initialState: "spec",
   maxConcurrent: 4,
@@ -190,28 +190,6 @@ If you can't complete documentation, output instead:
 cant_document`,
   },
   {
-    name: "learning",
-    agentRole: "learner",
-    modelTier: "haiku",
-    mode: "active",
-    promptTemplate: `You are a learning agent. Extract patterns and update project memory from this completed work.
-
-## Issue
-#{{entity.artifacts.issueNumber}}: {{entity.artifacts.issueTitle}}
-
-## What Happened
-- Spec: {{entity.artifacts.architectSpec}}
-- PR: {{entity.artifacts.prUrl}}
-
-## Instructions
-1. What patterns or conventions did this work establish or reinforce?
-2. Were there any surprising findings during review?
-3. Update CLAUDE.md or project docs if new conventions were established.
-4. When done, output the following signal on a line by itself with no other text:
-
-learned`,
-  },
-  {
     name: "merge",
     agentRole: "merger",
     modelTier: "haiku",
@@ -325,12 +303,9 @@ export const TRANSITIONS: CreateTransitionInput[] = [
   { fromState: "fix", toState: "review", trigger: "fixes_pushed", priority: 0 },
   { fromState: "fix", toState: "stuck", trigger: "cant_resolve", priority: 0 },
 
-  // docs outcomes
-  { fromState: "docs", toState: "learning", trigger: "docs_ready", priority: 0 },
+  // docs → merge
+  { fromState: "docs", toState: "merge", trigger: "docs_ready", priority: 0 },
   { fromState: "docs", toState: "stuck", trigger: "cant_document", priority: 0 },
-
-  // learning → merge
-  { fromState: "learning", toState: "merge", trigger: "learned", priority: 0 },
 
   // merge outcomes (gated: PR must be mergeable)
   { fromState: "merge", toState: "done", trigger: "merged", priority: 0 },
