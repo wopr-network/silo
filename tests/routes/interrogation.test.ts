@@ -33,12 +33,12 @@ describe("createInterrogationRoutes", () => {
         docs: { supported: false },
         specManagement: { tracker: "github-issues" },
         security: {},
-        intelligence: { hasClaudeMd: false, hasAgentsMd: false, conventions: [] },
+        intelligence: { hasKnowledgeMd: false, hasAgentsMd: false, conventions: [] },
       },
       gaps: [
         { capability: "reviewBots", title: "Configure review bots", priority: "medium" as const, description: "No bots" },
       ],
-      claudeMd: "# org/app",
+      knowledgeMd: "# org/app",
     });
 
     const app = createInterrogationRoutes({ interrogationService: svc });
@@ -48,7 +48,7 @@ describe("createInterrogationRoutes", () => {
     const body = await res.json();
     expect(body.repo).toBe("org/app");
     expect(body.gapCount).toBe(1);
-    expect(body.hasClaudeMd).toBe(true);
+    expect(body.hasKnowledgeMd).toBe(true);
     expect(svc.interrogate).toHaveBeenCalledWith("org/app");
   });
 
@@ -70,7 +70,7 @@ describe("createInterrogationRoutes", () => {
     vi.mocked(svc.getConfig).mockResolvedValue({
       id: "cfg-1",
       config: { repo: "org/app", defaultBranch: "main" } as any,
-      claudeMd: "# org/app",
+      knowledgeMd: "# org/app",
     });
 
     const app = createInterrogationRoutes({ interrogationService: svc });
@@ -79,7 +79,7 @@ describe("createInterrogationRoutes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.config.repo).toBe("org/app");
-    expect(body.claudeMd).toBe("# org/app");
+    expect(body.knowledgeMd).toBe("# org/app");
   });
 
   it("GET /repos/:owner/:repo/config returns 404 when no config", async () => {

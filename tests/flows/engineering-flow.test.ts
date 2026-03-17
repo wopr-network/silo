@@ -18,15 +18,14 @@ describe("Engineering flow definition", () => {
     expect(ENGINEERING_FLOW.initialState).toBe("spec");
   });
 
-  it("defines 11 states", () => {
-    expect(STATES).toHaveLength(11);
+  it("defines 10 states", () => {
+    expect(STATES).toHaveLength(10);
     const names = STATES.map((s) => s.name);
     expect(names).toContain("spec");
     expect(names).toContain("code");
     expect(names).toContain("review");
     expect(names).toContain("fix");
     expect(names).toContain("docs");
-    expect(names).toContain("learning");
     expect(names).toContain("merge");
     expect(names).toContain("done");
     expect(names).toContain("stuck");
@@ -40,8 +39,8 @@ describe("Engineering flow definition", () => {
     expect(names).toEqual(["spec-posted", "ci-green", "pr-mergeable"]);
   });
 
-  it("defines 13 transitions covering full flow graph", () => {
-    expect(TRANSITIONS).toHaveLength(13);
+  it("defines 12 transitions covering full flow graph", () => {
+    expect(TRANSITIONS).toHaveLength(12);
   });
 
   it("has gate wiring for spec→code, code→review, merge→done", () => {
@@ -121,8 +120,8 @@ describe("Engineering flow provisioning", () => {
     const flow = await repos.flows.getByName("engineering");
     expect(flow).not.toBeNull();
     expect(flow!.initialState).toBe("spec");
-    expect(flow!.states).toHaveLength(11);
-    expect(flow!.transitions).toHaveLength(13);
+    expect(flow!.states).toHaveLength(10);
+    expect(flow!.transitions).toHaveLength(12);
   });
 
   it("provisioning is idempotent", async () => {
@@ -266,13 +265,13 @@ describe("Engineering flow transition graph", () => {
     expect(result.newState).toBe("stuck");
   });
 
-  it("docs → learning on docs_ready", async () => {
+  it("docs → merge on docs_ready", async () => {
     const entity = await createEntity(9);
     await engine.processSignal(entity.id, "spec_ready", { architectSpec: "spec" });
     await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
     await engine.processSignal(entity.id, "clean");
     const result = await engine.processSignal(entity.id, "docs_ready");
-    expect(result.newState).toBe("learning");
+    expect(result.newState).toBe("merge");
   });
 
   it("docs → stuck on cant_document", async () => {
@@ -284,23 +283,12 @@ describe("Engineering flow transition graph", () => {
     expect(result.newState).toBe("stuck");
   });
 
-  it("learning → merge on learned", async () => {
-    const entity = await createEntity(11);
-    await engine.processSignal(entity.id, "spec_ready", { architectSpec: "spec" });
-    await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
-    await engine.processSignal(entity.id, "clean");
-    await engine.processSignal(entity.id, "docs_ready");
-    const result = await engine.processSignal(entity.id, "learned");
-    expect(result.newState).toBe("merge");
-  });
-
   it("merge → done on merged", async () => {
     const entity = await createEntity(12);
     await engine.processSignal(entity.id, "spec_ready", { architectSpec: "spec" });
     await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
     await engine.processSignal(entity.id, "clean");
     await engine.processSignal(entity.id, "docs_ready");
-    await engine.processSignal(entity.id, "learned");
     const result = await engine.processSignal(entity.id, "merged");
     expect(result.newState).toBe("done");
   });
@@ -311,7 +299,6 @@ describe("Engineering flow transition graph", () => {
     await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
     await engine.processSignal(entity.id, "clean");
     await engine.processSignal(entity.id, "docs_ready");
-    await engine.processSignal(entity.id, "learned");
     const result = await engine.processSignal(entity.id, "blocked");
     expect(result.newState).toBe("fix");
   });
@@ -322,12 +309,11 @@ describe("Engineering flow transition graph", () => {
     await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
     await engine.processSignal(entity.id, "clean");
     await engine.processSignal(entity.id, "docs_ready");
-    await engine.processSignal(entity.id, "learned");
     const result = await engine.processSignal(entity.id, "closed");
     expect(result.newState).toBe("stuck");
   });
 
-  it("happy path: spec → code → review → docs → learning → merge → done", async () => {
+  it("happy path: spec → code → review → docs → merge → done", async () => {
     const entity = await createEntity(100);
     expect(entity.state).toBe("spec");
 
@@ -341,13 +327,10 @@ describe("Engineering flow transition graph", () => {
     expect(r3.newState).toBe("docs");
 
     const r4 = await engine.processSignal(entity.id, "docs_ready");
-    expect(r4.newState).toBe("learning");
+    expect(r4.newState).toBe("merge");
 
-    const r5 = await engine.processSignal(entity.id, "learned");
-    expect(r5.newState).toBe("merge");
-
-    const r6 = await engine.processSignal(entity.id, "merged");
-    expect(r6.newState).toBe("done");
+    const r5 = await engine.processSignal(entity.id, "merged");
+    expect(r5.newState).toBe("done");
   });
 
   it("review/fix loop then success", async () => {
@@ -368,13 +351,12 @@ describe("Engineering flow transition graph", () => {
     expect(r3.newState).toBe("docs");
   });
 
-  it("merge blocked → fix → review → docs → learning → merge → done", async () => {
+  it("merge blocked → fix → review → docs → merge → done", async () => {
     const entity = await createEntity(300);
     await engine.processSignal(entity.id, "spec_ready", { architectSpec: "spec" });
     await engine.processSignal(entity.id, "pr_created", { prUrl: "url", prNumber: 1 });
     await engine.processSignal(entity.id, "clean");
     await engine.processSignal(entity.id, "docs_ready");
-    await engine.processSignal(entity.id, "learned");
 
     // Merge blocked
     const r1 = await engine.processSignal(entity.id, "blocked");
@@ -388,12 +370,9 @@ describe("Engineering flow transition graph", () => {
     expect(r3.newState).toBe("docs");
 
     const r4 = await engine.processSignal(entity.id, "docs_ready");
-    expect(r4.newState).toBe("learning");
+    expect(r4.newState).toBe("merge");
 
-    const r5 = await engine.processSignal(entity.id, "learned");
-    expect(r5.newState).toBe("merge");
-
-    const r6 = await engine.processSignal(entity.id, "merged");
-    expect(r6.newState).toBe("done");
+    const r5 = await engine.processSignal(entity.id, "merged");
+    expect(r5.newState).toBe("done");
   });
 });

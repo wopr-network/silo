@@ -81,10 +81,10 @@ function makeSseResponse(output: string): string {
 
 const SAMPLE_OUTPUT = `Some preamble text.
 
-REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"A web app","languages":["typescript"],"monorepo":false,"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasClaudeMd":false,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
+REPO_CONFIG:{"repo":"org/app","defaultBranch":"main","description":"A web app","languages":["typescript"],"monorepo":false,"ci":{"supported":true,"provider":"github-actions","gateCommand":"pnpm lint && pnpm build && pnpm test","hasMergeQueue":false,"requiredChecks":["build","test"]},"testing":{"supported":true,"framework":"vitest","runCommand":"pnpm test","hasCoverage":true,"coverageThreshold":98},"linting":{"supported":true,"tool":"biome","runCommand":"pnpm lint"},"formatting":{"supported":true,"tool":"biome","runCommand":"pnpm format"},"typeChecking":{"supported":true,"tool":"tsc","runCommand":"pnpm check"},"build":{"supported":true,"runCommand":"pnpm build","producesArtifacts":true,"dockerfile":false},"reviewBots":{"supported":false,"bots":[]},"docs":{"supported":false,"location":null,"hasApiDocs":false},"specManagement":{"tracker":"github-issues","specLocation":"issue-comments","hasTemplates":false},"security":{"hasEnvExample":false,"hasSecurityPolicy":false,"hasSecretScanning":false,"hasDependencyUpdates":false},"intelligence":{"hasKnowledgeMd":false,"hasAgentsMd":false,"conventions":["conventional-commits"],"ciGateCommand":"pnpm lint && pnpm build && pnpm test"}}
 GAP:{"capability":"reviewBots","title":"Configure review bots","priority":"medium","description":"No review bots configured."}
 GAP:{"capability":"docs","title":"Set up documentation","priority":"low","description":"No docs directory found."}
-CLAUDE_MD:# org/app
+KNOWLEDGE_MD:# org/app
 
 ## CI Gate
 pnpm lint && pnpm build && pnpm test
@@ -142,7 +142,7 @@ describe("InterrogationService", () => {
     expect(result.config.languages).toEqual(["typescript"]);
     expect(result.gaps).toHaveLength(2);
     expect(result.gaps[0].capability).toBe("reviewBots");
-    expect(result.claudeMd).toContain("# org/app");
+    expect(result.knowledgeMd).toContain("# org/app");
 
     // Stored in DB
     expect(db.insert).toHaveBeenCalled();
@@ -187,8 +187,8 @@ describe("InterrogationService", () => {
     // Some runners stream text events instead of putting output in result.artifacts
     const events = [
       `data:${JSON.stringify({ type: "content", text: "Some preamble.\n\n" })}\n`,
-      `data:${JSON.stringify({ type: "content", text: `REPO_CONFIG:{"repo":"x/y","defaultBranch":"main","description":"test","languages":["go"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasClaudeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}\n` })}\n`,
-      `data:${JSON.stringify({ type: "content", text: "CLAUDE_MD:EXISTS\n\ninterrogation_complete" })}\n`,
+      `data:${JSON.stringify({ type: "content", text: `REPO_CONFIG:{"repo":"x/y","defaultBranch":"main","description":"test","languages":["go"],"monorepo":false,"ci":{"supported":false},"testing":{"supported":false},"linting":{"supported":false},"formatting":{"supported":false},"typeChecking":{"supported":false},"build":{"supported":false},"reviewBots":{"supported":false},"docs":{"supported":false},"specManagement":{"tracker":"github-issues"},"security":{},"intelligence":{"hasKnowledgeMd":false,"hasAgentsMd":false,"conventions":[],"ciGateCommand":null}}\n` })}\n`,
+      `data:${JSON.stringify({ type: "content", text: "KNOWLEDGE_MD:EXISTS\n\ninterrogation_complete" })}\n`,
     ];
     const sseBody = events.join("");
 
@@ -200,7 +200,7 @@ describe("InterrogationService", () => {
     expect(result.config.repo).toBe("x/y");
     expect(result.config.languages).toEqual(["go"]);
     expect(result.gaps).toHaveLength(0);
-    expect(result.claudeMd).toBeNull();
+    expect(result.knowledgeMd).toBeNull();
 
     fetchSpy.mockRestore();
   });

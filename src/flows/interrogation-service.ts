@@ -34,7 +34,7 @@ export interface InterrogationServiceResult {
   repoConfigId: string;
   config: RepoConfig;
   gaps: Gap[];
-  claudeMd: string | null;
+  knowledgeMd: string | null;
 }
 
 export class InterrogationService {
@@ -118,14 +118,14 @@ export class InterrogationService {
       logger.info(`${tag} complete`, {
         repo: repoFullName,
         gapCount: result.gaps.length,
-        hasClaudeMd: result.claudeMd !== null,
+        hasKnowledgeMd: result.knowledgeMd !== null,
       });
 
       return {
         repoConfigId,
         config: result.config,
         gaps: result.gaps,
-        claudeMd: result.claudeMd,
+        knowledgeMd: result.knowledgeMd,
       };
     } finally {
       // Always teardown
@@ -200,7 +200,7 @@ export class InterrogationService {
         tenantId: this.tenantId,
         repo: repoFullName,
         config: result.config,
-        claudeMd: result.claudeMd,
+        claudeMd: result.knowledgeMd,
         status: "complete",
         createdAt: now,
         updatedAt: now,
@@ -209,7 +209,7 @@ export class InterrogationService {
         target: [repoConfigs.tenantId, repoConfigs.repo],
         set: {
           config: result.config,
-          claudeMd: result.claudeMd,
+          claudeMd: result.knowledgeMd,
           status: "complete",
           updatedAt: now,
         },
@@ -243,19 +243,21 @@ export class InterrogationService {
   /**
    * Get stored repo config for a repo.
    */
-  async getConfig(repoFullName: string): Promise<{ id: string; config: RepoConfig; claudeMd: string | null } | null> {
+  async getConfig(
+    repoFullName: string,
+  ): Promise<{ id: string; config: RepoConfig; knowledgeMd: string | null } | null> {
     const rows = await this.db
       .select({
         id: repoConfigs.id,
         config: repoConfigs.config,
-        claudeMd: repoConfigs.claudeMd,
+        knowledgeMd: repoConfigs.claudeMd,
       })
       .from(repoConfigs)
       .where(and(eq(repoConfigs.tenantId, this.tenantId), eq(repoConfigs.repo, repoFullName)))
       .limit(1);
 
     if (rows.length === 0) return null;
-    return rows[0] as { id: string; config: RepoConfig; claudeMd: string | null };
+    return rows[0] as { id: string; config: RepoConfig; knowledgeMd: string | null };
   }
 
   /**

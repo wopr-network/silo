@@ -41,7 +41,7 @@ export function createInterrogationRoutes(deps: InterrogationRouteDeps): Hono {
             title: g.title,
             priority: g.priority,
           })),
-          hasClaudeMd: result.claudeMd !== null,
+          hasKnowledgeMd: result.knowledgeMd !== null,
         },
         200,
       );
@@ -61,7 +61,7 @@ export function createInterrogationRoutes(deps: InterrogationRouteDeps): Hono {
     if (!result) {
       return c.json({ error: "No config found. Run interrogation first." }, 404);
     }
-    return c.json({ id: result.id, config: result.config, claudeMd: result.claudeMd }, 200);
+    return c.json({ id: result.id, config: result.config, knowledgeMd: result.knowledgeMd }, 200);
   });
 
   // GET /repos/:owner/:repo/gaps — get gap checklist
