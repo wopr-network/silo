@@ -44,6 +44,8 @@ The codebase map. Conventions, gotchas, CI gate commands, architecture notes, fr
 
 Replaces CLAUDE.md as the repo intelligence file. But unlike CLAUDE.md, it's maintained by the system — agents update it as they learn.
 
+**Migration from CLAUDE.md:** For existing repos with CLAUDE.md, the interrogation reads it as input and folds its contents into the bootstrapped knowledge.md. The original CLAUDE.md is left in place — Holy Ship reads from `.holyship/knowledge.md` only. Customers can remove CLAUDE.md at their discretion or keep it for tools that expect it.
+
 ### ship.log — What Happened
 
 Append-only history. Every entity that ships adds an entry. What went wrong. What was surprising. What the next agent should know.
@@ -91,7 +93,7 @@ The flow says `agentRole: architect`. The DB has the architect prompt template. 
 1. Read `flow.yaml` from repo → state says `agentRole: architect`
 2. Look up `architect` prompt template from DB
 3. Read `knowledge.md` from repo → inject conventions, CI gate, gotchas
-4. Read `ship.log` from repo → inject recent learnings relevant to this entity
+4. Read `ship.log` from repo → inject recent learnings relevant to this entity (last N entries by recency, capped at ~2K tokens to avoid filling context window; relevance filtering deferred to implementation)
 5. Add RepoConfig from DB → inject capabilities, language, tools
 6. Add entity context → issue number, PR number, branch
 7. Dispatch hydrated prompt to runner
