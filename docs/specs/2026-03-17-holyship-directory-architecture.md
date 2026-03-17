@@ -107,3 +107,20 @@ The flow is theirs. The knowledge is theirs. The history is theirs. No lock-in.
 The prompt templates are ours. The cross-repo learning is ours. The fleet intelligence is ours. That's what the subscription pays for.
 
 We earn it every month by being better than what you could do yourself with the same three files.
+
+## Implicit Learning
+
+Learning is not a flow state. It's implicit — every agent learns after every step.
+
+When an agent signals done (spec_ready, pr_created, merged, etc.), before the container tears down, it gets one more prompt: "What did you learn?" Same session. Same context. Everything the agent encountered is still in memory — every file it read, every test that failed, every quirk it hit.
+
+The agent:
+1. Updates `.holyship/knowledge.md` if it discovered something about the codebase
+2. Appends to `.holyship/ship.log` what happened during this step
+3. These are the last commit(s) in the PR
+
+Then the container tears down.
+
+This requires **session persistence** in the OpenCode SDK — the learning prompt reuses the agent's existing session so it has full context. The session ID is passed from the work dispatch to the learning dispatch. This is trivial (the SDK already supports `resume: sessionId`) but must be wired into the runner lifecycle: work prompt → signal → learning prompt → teardown.
+
+Every agent learns. Architect, coder, reviewer, fixer. Not because they're in a "learning state" — because learning is what Holy Ship does.
