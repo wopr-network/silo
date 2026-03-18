@@ -617,6 +617,7 @@ async function main() {
       // Mount crypto webhook route
       const { cryptoWebhookRoutes } = await import("./routes/crypto-webhook.js");
       app.route("/api/webhooks/crypto", cryptoWebhookRoutes);
+      logger.info("Crypto webhook mounted (BTCPay + EVM)");
     } catch (err) {
       logger.warn("Crypto payment setup failed (non-fatal)", (err as Error).message);
     }
