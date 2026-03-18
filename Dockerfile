@@ -37,7 +37,7 @@ COPY --chown=holyship:holyship --from=deps /app/node_modules ./node_modules
 COPY --chown=holyship:holyship --from=build /app/dist ./dist
 COPY --chown=holyship:holyship drizzle/ ./drizzle/
 COPY --chown=holyship:holyship package.json ./
-RUN mkdir -p gates
+RUN mkdir -p gates /tmp/fleet && chown holyship:holyship /tmp/fleet
 
 USER holyship
 
