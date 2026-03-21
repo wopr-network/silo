@@ -4,7 +4,7 @@
  * Delegates to platform-core's handleKeyServerWebhook for crediting.
  */
 
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   type CryptoWebhookDeps,
   type CryptoWebhookPayload,
@@ -31,11 +31,16 @@ cryptoWebhookRoutes.post("/", async (c) => {
   const body = await c.req.text();
   const sig = c.req.header("x-webhook-signature") ?? c.req.header("btcpay-sig") ?? "";
   const expected = `sha256=${createHmac("sha256", _webhookSecret).update(body).digest("hex")}`;
-  if (sig !== expected) {
+  if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
     return c.json({ error: "Invalid signature" }, 401);
   }
 
-  const payload = JSON.parse(body) as CryptoWebhookPayload;
+  let payload: CryptoWebhookPayload;
+  try {
+    payload = JSON.parse(body) as CryptoWebhookPayload;
+  } catch {
+    return c.json({ error: "Malformed JSON body" }, 400);
+  }
   logger.info("Crypto webhook received", JSON.stringify({ chargeId: payload.chargeId, status: payload.status }));
 
   const result = await handleKeyServerWebhook(_deps, payload);
