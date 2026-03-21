@@ -59,6 +59,9 @@ const envSchema = z.object({
   // EVM (stablecoin + ETH payments)
   EVM_XPUB: optStr,
   EVM_RPC_BASE: optStr,
+
+  // Crypto service
+  CRYPTO_SERVICE_URL: optStr,
 });
 
 export type Config = z.infer<typeof envSchema>;
