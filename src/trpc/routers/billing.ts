@@ -372,7 +372,7 @@ export const billingRouter = router({
         xpub: z.string().min(1).nullable().optional(),
         confirmations: z.number().int().min(1),
         addressType: z.string().min(1).optional(),
-        iconUrl: z.string().nullable().optional(),
+        iconUrl: z.string().url().nullable().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
