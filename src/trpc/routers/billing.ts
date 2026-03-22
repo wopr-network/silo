@@ -318,43 +318,14 @@ export const billingRouter = router({
     .mutation(async ({ input, ctx }) => {
       const tenant = ctx.tenantId;
       await assertOrgAdminOrOwner(tenant, ctx.user.id);
-      const { cryptoChargeRepo, evmXpub, priceOracle, paymentMethodStore } = deps();
-      if (!cryptoChargeRepo || !evmXpub || !priceOracle || !paymentMethodStore) {
+      const { cryptoClient } = deps();
+      if (!cryptoClient) {
         throw new TRPCError({ code: "NOT_IMPLEMENTED", message: "Crypto payments not configured" });
       }
-      const method = await paymentMethodStore.getById(input.methodId);
-      if (!method || !method.enabled) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Payment method ${input.methodId} not available` });
-      }
-      let utxoNetwork: "mainnet" | "testnet" | "regtest" | undefined;
-      if (method.type === "native" && method.rpcUrl && ["bitcoin", "litecoin", "dogecoin"].includes(method.chain)) {
-        try {
-          const parsed = new URL(method.rpcUrl);
-          const rpcUser = decodeURIComponent(parsed.username);
-          const rpcPassword = decodeURIComponent(parsed.password);
-          parsed.username = "";
-          parsed.password = "";
-          const cleanUrl = parsed.toString().replace(/\/$/, "");
-          const resp = await fetch(cleanUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Basic ${Buffer.from(`${rpcUser}:${rpcPassword}`).toString("base64")}`,
-            },
-            body: JSON.stringify({ jsonrpc: "2.0", method: "getblockchaininfo", params: [], id: 1 }),
-          });
-          const info = (await resp.json()) as { result?: { chain?: string } };
-          if (info.result?.chain === "regtest") utxoNetwork = "regtest";
-          else if (info.result?.chain === "test") utxoNetwork = "testnet";
-        } catch {
-          // Default to mainnet if detection fails
-        }
-      }
-      return createUnifiedCheckout(
-        { chargeStore: cryptoChargeRepo, oracle: priceOracle, evmXpub, utxoNetwork },
-        method,
-        { tenant, amountUsd: input.amountUsd },
-      );
+      return createUnifiedCheckout({ cryptoService: cryptoClient }, input.methodId, {
+        tenant,
+        amountUsd: input.amountUsd,
+      });
     }),
 
   /** Check the status of a crypto charge. */
@@ -400,6 +371,7 @@ export const billingRouter = router({
         oracleAddress: z.string().min(1).nullable().optional(),
         xpub: z.string().min(1).nullable().optional(),
         confirmations: z.number().int().min(1),
+        addressType: z.string().min(1).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -411,6 +383,7 @@ export const billingRouter = router({
         ...input,
         oracleAddress: input.oracleAddress ?? null,
         xpub: input.xpub ?? null,
+        addressType: input.addressType ?? "evm",
       });
       await auditLogger?.log({
         userId: ctx.user.id,
