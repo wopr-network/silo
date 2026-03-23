@@ -154,7 +154,11 @@ async function main() {
       budgetChecker,
       creditLedger,
       providers: { openrouter: { apiKey: config.OPENROUTER_API_KEY } },
-      resolveServiceKey: (key: string) => serviceKeyRepo.resolve(key),
+      resolveServiceKey: async (key: string) => {
+        const tenant = await serviceKeyRepo.resolve(key);
+        if (tenant) tenant.type = "platform_service";
+        return tenant;
+      },
     });
     logger.info("Inference gateway mounted at /v1 (OpenRouter)");
   } else {
