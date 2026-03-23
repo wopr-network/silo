@@ -520,6 +520,52 @@ async function main() {
       }
     });
     logger.info("GitHub repos endpoint mounted");
+
+    // GitHub issues endpoint — proxy to GitHub API via installation token
+    app.get("/api/github/repos/:owner/:repo/issues", async (c) => {
+      try {
+        const owner = c.req.param("owner");
+        const repo = c.req.param("repo");
+        const state = c.req.query("state") ?? "open";
+        const perPage = c.req.query("per_page") ?? "50";
+        const installations = await installationRepo.listByTenant(tenantId);
+        if (installations.length === 0) {
+          return c.json({ issues: [] });
+        }
+        const { token } = await getInstallationAccessToken(
+          config.GITHUB_APP_ID as string,
+          config.GITHUB_APP_PRIVATE_KEY as string,
+          installations[0].installationId,
+        );
+        const res = await fetch(
+          `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?state=${encodeURIComponent(state)}&per_page=${encodeURIComponent(perPage)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          },
+        );
+        if (!res.ok) {
+          return c.json({ issues: [], error: `GitHub API ${res.status}` }, 502);
+        }
+        const issues = (await res.json()) as {
+          number: number;
+          title: string;
+          labels: { name: string; color: string }[];
+          created_at: string;
+          html_url: string;
+          pull_request?: unknown;
+        }[];
+        // Filter out PRs (GitHub API returns PRs as issues)
+        return c.json({ issues: issues.filter((i) => !i.pull_request) });
+      } catch (err) {
+        logger.error("Failed to list issues", err);
+        return c.json({ issues: [], error: (err as Error).message }, 500);
+      }
+    });
+    logger.info("GitHub issues endpoint mounted");
   }
 
   // ─── 12c+12d. Flow editor + interrogation routes ────────────────────
