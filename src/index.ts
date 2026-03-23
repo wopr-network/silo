@@ -370,6 +370,7 @@ async function main() {
   });
 
   // ─── 9c. Reactive worker pool (ephemeral holyshipper containers) ───
+  let holyshipperFleetManager: import("./fleet/provision-holyshipper.js").IFleetManager | undefined;
   if (config.HOLYSHIP_WORKER_IMAGE && config.HOLYSHIP_GATEWAY_KEY) {
     try {
       const Docker = (await import("dockerode")).default;
@@ -381,7 +382,7 @@ async function main() {
       const coreFleetManager = new FleetManager(docker, profileStore);
 
       const { HolyshipperFleetManager } = await import("./fleet/holyshipper-fleet-manager.js");
-      const holyshipperFleet = new HolyshipperFleetManager({
+      holyshipperFleetManager = new HolyshipperFleetManager({
         fleetManager: coreFleetManager,
         image: config.HOLYSHIP_WORKER_IMAGE,
         gatewayUrl: config.APP_BASE_URL ? `${config.APP_BASE_URL}/v1` : "http://localhost:3001/v1",
@@ -394,7 +395,7 @@ async function main() {
         engine,
         db: engineDb,
         tenantId,
-        fleetManager: holyshipperFleet,
+        fleetManager: holyshipperFleetManager,
         invocationRepo: repos.invocations,
         getGithubToken: async () => {
           if (!hasGitHubApp) return null;
@@ -544,16 +545,14 @@ async function main() {
       return installation.accessToken;
     };
 
-    // fleetManager is only used by interrogate() — gap creation never calls it.
-    const noopFleet: import("./fleet/provision-holyshipper.js").IFleetManager = {
-      provision: () => Promise.reject(new Error("Fleet not configured")),
-      teardown: () => Promise.resolve(),
-    };
-
     const interrogationService = new InterrogationService({
       db: engineDb,
       tenantId,
-      fleetManager: noopFleet,
+      fleetManager: holyshipperFleetManager ?? {
+        provision: () =>
+          Promise.reject(new Error("Fleet not configured — set HOLYSHIP_WORKER_IMAGE + HOLYSHIP_GATEWAY_KEY")),
+        teardown: () => Promise.resolve(),
+      },
       getGithubToken,
     });
 
