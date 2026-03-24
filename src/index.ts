@@ -705,7 +705,7 @@ async function main() {
   if (config.RESEND_API_KEY) {
     try {
       const {
-        EmailClient,
+        getEmailClient,
         NotificationWorker,
         DrizzleNotificationQueueStore,
         DrizzleNotificationPreferencesStore,
@@ -715,9 +715,10 @@ async function main() {
 
       // biome-ignore lint/suspicious/noExplicitAny: PgDatabase generic
       const pgDb = platformDb as any;
-      const emailFrom = _productConfig?.product.fromEmail ?? config.FROM_EMAIL;
-      const emailReplyTo = _productConfig?.product.emailSupport ?? undefined;
-      const emailClient = new EmailClient({ apiKey: config.RESEND_API_KEY, from: emailFrom, replyTo: emailReplyTo });
+      const emailClient = getEmailClient({
+        from: _productConfig?.product.fromEmail || undefined,
+        replyTo: _productConfig?.product.emailSupport || undefined,
+      });
       const queueStore = new DrizzleNotificationQueueStore(platformDb);
       const prefsStore = new DrizzleNotificationPreferencesStore(platformDb);
       const templateRepo = new DrizzleNotificationTemplateRepository(pgDb);
