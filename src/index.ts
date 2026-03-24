@@ -89,20 +89,24 @@ async function main() {
   logger.info("Database migrations complete");
 
   // ─── 2b. Product config (DB-driven) ────────────────────────────────
-  const productConfigMod = (await import("@wopr-network/platform-core/product-config" as string)) as {
-    platformBoot: (opts: { slug: string; db: unknown; devOrigins?: string[] }) => Promise<{
-      service: unknown;
-      config: { product: { brandName: string; domain: string } };
-      corsOrigins: string[];
-      seeded: boolean;
-    }>;
-  };
-  const { config: productConfig, seeded: productConfigSeeded } = await productConfigMod.platformBoot({
-    slug: config.PRODUCT_SLUG,
-    db: platformDb,
-  });
-  if (productConfigSeeded) logger.info(`Auto-seeded product config for "${config.PRODUCT_SLUG}"`);
-  logger.info(`Product config loaded: ${productConfig.product.brandName} (${productConfig.product.domain})`);
+  try {
+    const productConfigMod = (await import("@wopr-network/platform-core/product-config" as string)) as {
+      platformBoot: (opts: { slug: string; db: unknown; devOrigins?: string[] }) => Promise<{
+        service: unknown;
+        config: { product: { brandName: string; domain: string } };
+        corsOrigins: string[];
+        seeded: boolean;
+      }>;
+    };
+    const { config: productConfig, seeded: productConfigSeeded } = await productConfigMod.platformBoot({
+      slug: config.PRODUCT_SLUG,
+      db: platformDb,
+    });
+    if (productConfigSeeded) logger.info(`Auto-seeded product config for "${config.PRODUCT_SLUG}"`);
+    logger.info(`Product config loaded: ${productConfig.product.brandName} (${productConfig.product.domain})`);
+  } catch (err) {
+    logger.warn("Product config boot failed (non-fatal)", { error: (err as Error).message });
+  }
 
   // ─── 3. Seed notification templates ────────────────────────────────
   try {
