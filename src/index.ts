@@ -88,6 +88,22 @@ async function main() {
   await runMigrations(pool);
   logger.info("Database migrations complete");
 
+  // ─── 2b. Product config (DB-driven) ────────────────────────────────
+  const productConfigMod = (await import("@wopr-network/platform-core/product-config" as string)) as {
+    platformBoot: (opts: { slug: string; db: unknown; devOrigins?: string[] }) => Promise<{
+      service: unknown;
+      config: { product: { brandName: string; domain: string } };
+      corsOrigins: string[];
+      seeded: boolean;
+    }>;
+  };
+  const { config: productConfig, seeded: productConfigSeeded } = await productConfigMod.platformBoot({
+    slug: config.PRODUCT_SLUG,
+    db: platformDb,
+  });
+  if (productConfigSeeded) logger.info(`Auto-seeded product config for "${config.PRODUCT_SLUG}"`);
+  logger.info(`Product config loaded: ${productConfig.product.brandName} (${productConfig.product.domain})`);
+
   // ─── 3. Seed notification templates ────────────────────────────────
   try {
     const { DEFAULT_TEMPLATES, DrizzleNotificationTemplateRepository } = await import(

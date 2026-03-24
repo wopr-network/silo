@@ -57,6 +57,9 @@ const envSchema = z.object({
   // EVM (stablecoin + ETH payments)
   EVM_XPUB: optStr,
   EVM_RPC_BASE: optStr,
+
+  // Product config
+  PRODUCT_SLUG: z.string().default("holyship"),
 });
 
 export type Config = z.infer<typeof envSchema>;
