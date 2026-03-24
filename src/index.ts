@@ -39,6 +39,12 @@ import { createInterrogationRoutes } from "./routes/interrogation.js";
 let notificationWorkerTimer: ReturnType<typeof setInterval> | null = null;
 
 // ---------------------------------------------------------------------------
+// DB-driven product config (populated during boot, used by notification pipeline)
+// ---------------------------------------------------------------------------
+let _productConfig: { product: { brandName: string; domain: string; fromEmail: string; emailSupport: string } } | null =
+  null;
+
+// ---------------------------------------------------------------------------
 // GitHub token resolution
 // ---------------------------------------------------------------------------
 
@@ -93,7 +99,9 @@ async function main() {
     const productConfigMod = (await import("@wopr-network/platform-core/product-config" as string)) as {
       platformBoot: (opts: { slug: string; db: unknown; devOrigins?: string[] }) => Promise<{
         service: unknown;
-        config: { product: { brandName: string; domain: string } };
+        config: {
+          product: { brandName: string; domain: string; fromEmail: string; emailSupport: string };
+        };
         corsOrigins: string[];
         seeded: boolean;
       }>;
@@ -102,6 +110,7 @@ async function main() {
       slug: config.PRODUCT_SLUG,
       db: platformDb,
     });
+    _productConfig = productConfig;
     if (productConfigSeeded) logger.info(`Auto-seeded product config for "${config.PRODUCT_SLUG}"`);
     logger.info(`Product config loaded: ${productConfig.product.brandName} (${productConfig.product.domain})`);
   } catch (err) {
@@ -706,7 +715,9 @@ async function main() {
 
       // biome-ignore lint/suspicious/noExplicitAny: PgDatabase generic
       const pgDb = platformDb as any;
-      const emailClient = new EmailClient({ apiKey: config.RESEND_API_KEY, from: config.FROM_EMAIL });
+      const emailFrom = _productConfig?.product.fromEmail ?? config.FROM_EMAIL;
+      const emailReplyTo = _productConfig?.product.emailSupport ?? undefined;
+      const emailClient = new EmailClient({ apiKey: config.RESEND_API_KEY, from: emailFrom, replyTo: emailReplyTo });
       const queueStore = new DrizzleNotificationQueueStore(platformDb);
       const prefsStore = new DrizzleNotificationPreferencesStore(platformDb);
       const templateRepo = new DrizzleNotificationTemplateRepository(pgDb);
