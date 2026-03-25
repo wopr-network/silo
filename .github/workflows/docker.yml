@@ -29,4 +29,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/wopr-network/holyship:latest
+          tags: |
+            ghcr.io/wopr-network/holyship:staging
+            ghcr.io/wopr-network/holyship:${{ github.sha }}
