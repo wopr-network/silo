@@ -30,8 +30,8 @@ importers:
         specifier: ^11.13.4
         version: 11.13.4(typescript@5.9.3)
       '@wopr-network/platform-core':
-        specifier: ^1.63.0
-        version: 1.63.0(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6)
+        specifier: ^1.67.1
+        version: 1.67.1(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6)
       dockerode:
         specifier: ^4.0.9
         version: 4.0.9
@@ -1578,8 +1578,14 @@ packages:
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
 
-  '@wopr-network/platform-core@1.63.0':
-    resolution: {integrity: sha512-DBueTtdytB70mE72L6EHR9KmQJCAVLAg36UyZpWLQallrFNOE5goNhapWnxt9EoaZQE2Fw2WnE+pqAhCzPC9rQ==}
+  '@wopr-network/crypto-plugins@1.0.1':
+    resolution: {integrity: sha512-fTVlf3fZzEPBILDg9f+XE9iW6WCZXQsJCr9NGykxaoJT4rQGiDU8cZMhQiQacMzx4hbAgbdBDTv7l5eMomQU+Q==}
+    hasBin: true
+    peerDependencies:
+      '@wopr-network/platform-core': '*'
+
+  '@wopr-network/platform-core@1.67.1':
+    resolution: {integrity: sha512-kHhOhpzIe0vqE81tvPyzL1oconaIFjjPOTZvbLMY1F9mAqd8RVMCZaBfWfYdZN0XKC5AqGoZlYsYQQqkNwc9Cg==}
     peerDependencies:
       '@trpc/server': '>=11'
       better-auth: '>=1.5'
@@ -4420,7 +4426,21 @@ snapshots:
       '@vitest/pretty-format': 4.0.18
       tinyrainbow: 3.0.3
 
-  '@wopr-network/platform-core@1.63.0(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6)':
+  '@wopr-network/crypto-plugins@1.0.1(@wopr-network/platform-core@1.67.1(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6))(typescript@5.9.3)(zod@4.3.6)':
+    dependencies:
+      '@noble/curves': 2.0.1
+      '@noble/hashes': 2.0.1
+      '@scure/bip32': 2.0.1
+      '@scure/bip39': 2.0.1
+      '@wopr-network/platform-core': 1.67.1(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6)
+      viem: 2.47.4(typescript@5.9.3)(zod@4.3.6)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@wopr-network/platform-core@1.67.1(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6)':
     dependencies:
       '@aws-sdk/client-ses': 3.1015.0
       '@hono/node-server': 1.19.11(hono@4.12.5)
@@ -4430,6 +4450,7 @@ snapshots:
       '@scure/bip32': 2.0.1
       '@scure/bip39': 2.0.1
       '@trpc/server': 11.13.4(typescript@5.9.3)
+      '@wopr-network/crypto-plugins': 1.0.1(@wopr-network/platform-core@1.67.1(@trpc/server@11.13.4(typescript@5.9.3))(better-auth@1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2)))(dockerode@4.0.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(hono@4.12.5)(pg@8.20.0)(resend@6.9.3)(stripe@18.5.0(@types/node@25.3.5))(typescript@5.9.3)(ws@8.18.3)(zod@4.3.6))(typescript@5.9.3)(zod@4.3.6)
       better-auth: 1.5.5(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(mongodb@7.1.0)(pg@8.20.0)(vitest@4.0.18(@opentelemetry/api@1.9.0)(@types/node@25.3.5)(tsx@4.21.0)(yaml@2.8.2))
       dockerode: 4.0.9
       drizzle-orm: 0.45.1(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.6)(better-sqlite3@12.6.2)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8)

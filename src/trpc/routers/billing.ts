@@ -11,14 +11,7 @@ import type {
   IPaymentMethodStore,
   IPaymentProcessor,
 } from "@wopr-network/platform-core/billing";
-import {
-  ChainlinkOracle,
-  type CryptoServiceClient,
-  createRpcCaller,
-  createUnifiedCheckout,
-  type IPriceOracle,
-  MIN_CHECKOUT_USD,
-} from "@wopr-network/platform-core/billing";
+import { type CryptoServiceClient, createUnifiedCheckout, MIN_CHECKOUT_USD } from "@wopr-network/platform-core/billing";
 import type { ILedger } from "@wopr-network/platform-core/credits";
 import {
   ALLOWED_SCHEDULE_INTERVALS,
@@ -156,7 +149,6 @@ export interface BillingRouterDeps {
   cryptoClient?: CryptoServiceClient;
   cryptoChargeRepo?: ICryptoChargeRepository;
   evmXpub?: string;
-  priceOracle?: IPriceOracle;
   paymentMethodStore?: IPaymentMethodStore;
   auditLogger?: AuditLogger;
   promotionEngine?: PromotionEngine;
@@ -173,23 +165,16 @@ export function setCryptoBillingDeps(
   cryptoClient: CryptoServiceClient,
   cryptoChargeRepo: ICryptoChargeRepository,
   evmXpub?: string,
-  evmRpcUrl?: string,
+  _evmRpcUrl?: string,
   paymentMethodStore?: IPaymentMethodStore,
 ): void {
-  let priceOracle: IPriceOracle | undefined;
-  if (evmRpcUrl) {
-    const rpcCall = createRpcCaller(evmRpcUrl);
-    priceOracle = new ChainlinkOracle({ rpcCall });
-  }
-
   if (!_deps) {
-    _deps = { cryptoClient, cryptoChargeRepo, evmXpub, priceOracle, paymentMethodStore } as BillingRouterDeps;
+    _deps = { cryptoClient, cryptoChargeRepo, evmXpub, paymentMethodStore } as BillingRouterDeps;
     return;
   }
   _deps.cryptoClient = cryptoClient;
   _deps.cryptoChargeRepo = cryptoChargeRepo;
   if (evmXpub) _deps.evmXpub = evmXpub;
-  if (priceOracle) _deps.priceOracle = priceOracle;
   if (paymentMethodStore) _deps.paymentMethodStore = paymentMethodStore;
 }
 
@@ -388,6 +373,11 @@ export const billingRouter = router({
         iconUrl: input.iconUrl ?? null,
         encodingParams: "",
         watcherType: "",
+        rpcHeaders: "{}",
+        oracleAssetId: null,
+        keyRingId: null,
+        encoding: null,
+        pluginId: null,
       });
       await auditLogger?.log({
         userId: ctx.user.id,
