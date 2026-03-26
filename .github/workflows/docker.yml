@@ -32,3 +32,46 @@ jobs:
           tags: |
             ghcr.io/wopr-network/holyship:staging
             ghcr.io/wopr-network/holyship:${{ github.sha }}
+
+  deploy-staging:
+    runs-on: [self-hosted, Linux, X64]
+    needs: build-push
+    steps:
+      - name: Deploy to staging VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: root
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/holyship
+            COMPOSE="docker compose -f docker-compose.yml -f docker-compose.staging.yml"
+            $COMPOSE stop staging-api 2>/dev/null || true
+            $COMPOSE pull staging-api
+            $COMPOSE up -d staging-postgres
+            sleep 3
+            $COMPOSE exec -T staging-postgres psql -U holyship -d holyship -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
+            docker compose exec -T postgres pg_dump -U holyship --no-owner --no-acl holyship | \
+              $COMPOSE exec -T staging-postgres psql -U holyship -d holyship -q
+            $COMPOSE up -d staging-api staging-ui
+            docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || docker compose restart caddy
+            echo "Staging deployed"
+
+      - name: Verify staging health
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: root
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            for i in $(seq 1 30); do
+              if docker exec holyship-staging-api-1 curl -sf http://localhost:3001/health >/dev/null 2>&1; then
+                echo "Staging API is healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Health check timed out"
+            docker logs holyship-staging-api-1 --tail 20
+            exit 1
