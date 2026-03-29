@@ -114,9 +114,11 @@ async function main() {
   // ─── 4. BetterAuth init ───────────────────────────────────────────────
   const { initBetterAuth, runAuthMigrations } = await import("@wopr-network/platform-core/auth/better-auth");
   const { grantSignupCredits } = await import("@wopr-network/platform-core/credits");
+  const productDomain = container.productConfig.product?.domain;
   initBetterAuth({
     pool: container.pool,
     db: platformDb,
+    cookieDomain: productDomain ? `.${productDomain}` : undefined,
     onUserCreated: async (userId: string) => {
       try {
         const granted = await grantSignupCredits(container.creditLedger, userId);
