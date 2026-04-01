@@ -33,14 +33,23 @@ describe("Engineering flow definition", () => {
     expect(names).toContain("budget_exceeded");
   });
 
-  it("defines 3 opinionated gates", () => {
-    expect(GATES).toHaveLength(3);
+  it("defines 7 gates", () => {
+    expect(GATES).toHaveLength(7);
     const names = GATES.map((g) => g.name);
-    expect(names).toEqual(["spec-posted", "ci-green", "pr-mergeable"]);
+    expect(names).toEqual(["spec-posted", "ci-green", "pr-mergeable", "pr-exists", "review-status", "pr-updated", "docs-committed"]);
   });
 
   it("defines 12 transitions covering full flow graph", () => {
     expect(TRANSITIONS).toHaveLength(12);
+  });
+
+  it("spec-posted gate has outcomes map and artifactKey", () => {
+    const specGate = GATES.find((g) => g.name === "spec-posted");
+    expect(specGate?.outcomes).toEqual({
+      exists: { proceed: true },
+      not_found: { proceed: false },
+    });
+    expect(specGate?.primitiveParams?.artifactKey).toBe("architectSpec");
   });
 
   it("has gate wiring for spec→code, code→review, merge→done", () => {

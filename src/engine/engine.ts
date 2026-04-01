@@ -237,6 +237,13 @@ export class Engine {
       return { gated: true, ...routing, terminal: false };
     }
 
+    // Persist gate-extracted artifacts (e.g., spec body, PR metadata)
+    if (routing.artifacts && Object.keys(routing.artifacts).length > 0) {
+      await entityRepo.updateArtifacts(entityId, routing.artifacts);
+      const refreshed = await entityRepo.get(entityId);
+      if (refreshed) entity = refreshed;
+    }
+
     // Gate passed or redirected — determine the actual destination.
     let toState = routing.kind === "redirect" ? routing.toState : transition.toState;
     const trigger = routing.kind === "redirect" ? routing.trigger : signal;
@@ -463,8 +470,8 @@ export class Engine {
     flow: Flow,
     txRepos?: TransactionRepos | null,
   ): Promise<
-    | { kind: "proceed"; gatesPassed: string[] }
-    | { kind: "redirect"; toState: string; trigger: string; gatesPassed: string[] }
+    | { kind: "proceed"; gatesPassed: string[]; artifacts?: Record<string, unknown> }
+    | { kind: "redirect"; toState: string; trigger: string; gatesPassed: string[]; artifacts?: Record<string, unknown> }
     | {
         kind: "block";
         gateTimedOut: boolean;
@@ -537,6 +544,7 @@ export class Engine {
         toState: namedOutcome.toState,
         trigger: `gate:${gate.name}:${outcomeLabel}`,
         gatesPassed: [gate.name],
+        artifacts: gateResult.artifacts,
       };
     }
 
@@ -548,7 +556,7 @@ export class Engine {
         gateId: gate.id,
         emittedAt: new Date(),
       });
-      return { kind: "proceed", gatesPassed: [gate.name] };
+      return { kind: "proceed", gatesPassed: [gate.name], artifacts: gateResult.artifacts };
     }
 
     // Gate failed — persist failure context and emit event

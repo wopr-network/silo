@@ -19,7 +19,15 @@ import { EventEmitter } from "./engine/event-emitter.js";
 import type { PrimitiveOpHandler } from "./engine/gate-evaluator.js";
 import { provisionEngineeringFlow } from "./flows/provision.js";
 import { DrizzleGitHubInstallationRepository } from "./github/installation-repo.js";
-import { checkCiStatus, checkCommentExists, checkPrStatus } from "./github/primitive-ops.js";
+import {
+  checkCiStatus,
+  checkCommentExists,
+  checkFilesChangedSince,
+  checkPrForBranch,
+  checkPrHeadChanged,
+  checkPrReviewStatus,
+  checkPrStatus,
+} from "./github/primitive-ops.js";
 import { getInstallationAccessToken } from "./github/token-generator.js";
 import { createGitHubWebhookRoutes } from "./github/webhook.js";
 import { logger } from "./logger.js";
@@ -337,10 +345,34 @@ async function main() {
             return checkCiStatus(ctx, { ref: params.ref as string });
           case "vcs.pr_status":
             return checkPrStatus(ctx, { pullNumber: Number(params.pullNumber) });
-          case "issue_tracker.comment_exists":
-            return checkCommentExists(ctx, {
+          case "issue_tracker.comment_exists": {
+            const result = await checkCommentExists(ctx, {
               issueNumber: Number(params.issueNumber),
               pattern: params.pattern as string,
+            });
+            const artifactKey = params.artifactKey as string | undefined;
+            if (artifactKey && result.artifacts) {
+              const arts = result.artifacts as Record<string, unknown>;
+              if (arts.extractedBody) {
+                arts[artifactKey] = arts.extractedBody;
+                delete arts.extractedBody;
+              }
+            }
+            return result;
+          }
+          case "vcs.pr_for_branch":
+            return checkPrForBranch(ctx, { branchPattern: params.branchPattern as string });
+          case "vcs.pr_review_status":
+            return checkPrReviewStatus(ctx, { pullNumber: Number(params.pullNumber) });
+          case "vcs.pr_head_changed":
+            return checkPrHeadChanged(ctx, {
+              pullNumber: Number(params.pullNumber),
+              lastKnownSha: params.lastKnownSha as string,
+            });
+          case "vcs.files_changed_since":
+            return checkFilesChangedSince(ctx, {
+              pullNumber: Number(params.pullNumber),
+              pathPatterns: params.pathPatterns as string,
             });
           default:
             return { outcome: "error", message: `Unknown primitive op: ${primitiveOp}` };

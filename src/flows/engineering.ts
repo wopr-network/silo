@@ -245,11 +245,16 @@ export const GATES: CreateGateInput[] = [
     primitiveParams: {
       issueNumber: "{{entity.artifacts.issueNumber}}",
       pattern: "## Implementation Spec",
+      artifactKey: "architectSpec",
     },
     timeoutMs: 120_000,
     failurePrompt:
       "The spec gate checked for a comment starting with '## Implementation Spec' on issue #{{entity.artifacts.issueNumber}} and did not find one. Post the spec as a comment on the issue. The comment MUST start with the exact heading '## Implementation Spec'.",
     timeoutPrompt: "The spec gate timed out after 2 minutes. The GitHub API may be slow. Try posting the spec again.",
+    outcomes: {
+      exists: { proceed: true },
+      not_found: { proceed: false },
+    },
   },
   {
     name: "ci-green",
@@ -283,6 +288,64 @@ export const GATES: CreateGateInput[] = [
       mergeable: { proceed: true },
       blocked: { toState: "fix" },
       closed: { toState: "stuck" },
+    },
+  },
+  {
+    name: "pr-exists",
+    type: "primitive",
+    primitiveOp: "vcs.pr_for_branch",
+    primitiveParams: {
+      branchPattern: "agent/{{entity.id}}/",
+    },
+    timeoutMs: 120_000,
+    failurePrompt: "No PR found from a branch matching the entity pattern. Create a PR from your working branch.",
+    outcomes: {
+      exists: { proceed: true },
+      not_found: { proceed: false },
+    },
+  },
+  {
+    name: "review-status",
+    type: "primitive",
+    primitiveOp: "vcs.pr_review_status",
+    primitiveParams: {
+      pullNumber: "{{entity.artifacts.prNumber}}",
+    },
+    timeoutMs: 300_000,
+    failurePrompt: "Could not determine PR review status for PR #{{entity.artifacts.prNumber}}.",
+    outcomes: {
+      clean: { proceed: true },
+      has_issues: { toState: "fix" },
+    },
+  },
+  {
+    name: "pr-updated",
+    type: "primitive",
+    primitiveOp: "vcs.pr_head_changed",
+    primitiveParams: {
+      pullNumber: "{{entity.artifacts.prNumber}}",
+      lastKnownSha: "{{entity.artifacts.headSha}}",
+    },
+    timeoutMs: 120_000,
+    failurePrompt: "PR head SHA has not changed since last review. Push your fixes to the branch.",
+    outcomes: {
+      changed: { proceed: true },
+      unchanged: { proceed: false },
+    },
+  },
+  {
+    name: "docs-committed",
+    type: "primitive",
+    primitiveOp: "vcs.files_changed_since",
+    primitiveParams: {
+      pullNumber: "{{entity.artifacts.prNumber}}",
+      pathPatterns: "docs/,README*,*.md,CHANGELOG*",
+    },
+    timeoutMs: 120_000,
+    failurePrompt: "No documentation files were changed in the PR. Update docs, README, or add a CHANGELOG entry.",
+    outcomes: {
+      changed: { proceed: true },
+      unchanged: { proceed: false },
     },
   },
 ];
@@ -324,5 +387,9 @@ export const TRANSITIONS: CreateTransitionInput[] = [
 export const GATE_WIRING: Record<string, { fromState: string; trigger: string }> = {
   "spec-posted": { fromState: "spec", trigger: "spec_ready" },
   "ci-green": { fromState: "code", trigger: "pr_created" },
+  "pr-exists": { fromState: "code", trigger: "pr_created" },
+  "review-status": { fromState: "review", trigger: "clean" },
+  "pr-updated": { fromState: "fix", trigger: "fixes_pushed" },
+  "docs-committed": { fromState: "docs", trigger: "docs_ready" },
   "pr-mergeable": { fromState: "merge", trigger: "merged" },
 };

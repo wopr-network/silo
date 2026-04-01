@@ -16,6 +16,8 @@ export interface GateEvalResult {
   outcome?: string;
   /** Human-readable message from structured JSON output. */
   message?: string;
+  /** Artifacts extracted by the gate op (e.g., comment body, PR metadata). */
+  artifacts?: Record<string, unknown>;
 }
 
 /**
@@ -26,7 +28,7 @@ export type PrimitiveOpHandler = (
   primitiveOp: string,
   primitiveParams: Record<string, unknown>,
   entity: Entity,
-) => Promise<{ outcome: string; message?: string }>;
+) => Promise<{ outcome: string; message?: string; artifacts?: Record<string, unknown> }>;
 
 // Anchor path-traversal checks to the project root. realpathSync resolves symlinks
 // so the containment check works even when the project directory itself is a symlink.
@@ -91,7 +93,7 @@ export async function evaluateGate(
       passed = outcomeConfig?.proceed === true;
       output = message;
       await gateRepo.record(entity.id, gate.id, passed, output);
-      return { passed, timedOut: false, output, outcome, message };
+      return { passed, timedOut: false, output, outcome, message, artifacts: opResult.artifacts };
     } catch (err) {
       const msg = `Primitive gate error: ${err instanceof Error ? err.message : String(err)}`;
       await gateRepo.record(entity.id, gate.id, false, msg);
